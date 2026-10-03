@@ -1,4 +1,4 @@
-"""Typed configuration with CLI > process > root .env > provider defaults."""
+"""Typed configuration with CLI > process > root .env > configured defaults."""
 
 import math
 import os
@@ -55,6 +55,30 @@ def _positive(value, name: str, *, integer: bool = False):
     if result <= 0 or not math.isfinite(result):
         raise ConfigurationError(f"{name} must be a positive number.")
     return result
+
+
+def load_thread_count(
+    cli_value: int | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    env_file: str | Path | None = None,
+) -> int:
+    """Resolve the CLI CPU thread budget without loading provider settings."""
+    if cli_value is not None:
+        value, name = cli_value, "--threads"
+    else:
+        from dotenv import dotenv_values
+
+        path = Path(env_file) if env_file is not None else PROJECT_DIR / ".env"
+        values = dict(dotenv_values(path, interpolate=False)) if path.is_file() else {}
+        values.update(os.environ if environ is None else environ)
+        value = _optional(values.get("OVS_THREADS")) or "2"
+        name = "OVS_THREADS"
+
+    try:
+        return _positive(value, name, integer=True)
+    except ConfigurationError:
+        raise ConfigurationError(f"{name} must be a positive integer.") from None
 
 
 def load_provider_config(

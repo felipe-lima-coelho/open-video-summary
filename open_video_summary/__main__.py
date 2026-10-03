@@ -8,8 +8,10 @@ import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 
+from open_video_summary.errors import ConfigurationError
 from open_video_summary.utils.config import PROJECT_DIR, ModelPaths
 from open_video_summary.utils.paths import project_path, portable_path
+from open_video_summary.utils.providers import load_thread_count
 
 
 def _cpu_settings(threads: int) -> None:
@@ -210,8 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--threads",
         type=int,
-        default=2,
-        help="CPU thread budget; summarize uses up to this many visual workers.",
+        default=None,
+        help=(
+            "CPU thread budget (default: OVS_THREADS or 2); summarize uses up to "
+            "this many visual workers."
+        ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     prepare = subparsers.add_parser(
@@ -253,8 +258,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.threads < 1:
+    if args.threads is not None and args.threads < 1:
         parser.error("--threads must be positive.")
+    try:
+        args.threads = load_thread_count(args.threads)
+    except ConfigurationError as exc:
+        parser.error(str(exc))
     _cpu_settings(args.threads)
     try:
         if args.command == "prepare-demo":

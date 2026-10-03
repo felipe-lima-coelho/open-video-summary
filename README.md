@@ -56,6 +56,12 @@ Choose the CPU budget with the global `--threads` option **before** `summarize`:
 .\.venv\Scripts\python.exe -m open_video_summary --threads 4 summarize
 ```
 
+Set `OVS_THREADS=4` in the repository-root `.env` to use that budget by default.
+The CLI reads that file from any working directory. An explicit `--threads`
+value overrides the process environment and `.env`; otherwise, `OVS_THREADS`
+from the process environment takes priority over `.env`. Blank values are treated
+as absent, and the final default is two threads.
+
 For visual extraction, the runner starts at most `min(threads, unique videos)`
 Windows-compatible processes. Each process decodes one full video and runs SIFT
 and keyframe matching with one OpenCV/BLAS/OpenMP thread. A budget of one uses
@@ -69,10 +75,9 @@ Other summarization stages keep the native-library thread settings selected by
 finishes, so those two compute phases do not multiply the thread budget.
 FFmpeg rendering still uses two threads independently. Codec helper threads and
 library housekeeping threads mean this is not a limit on the OS thread count.
-The CLI sets the usual OpenMP/BLAS environment limits itself; there is no separate
-`.env` thread option. The already-pinned `threadpoolctl` dependency also limits
-native pools inside workers when the calling Python program imported them before
-Windows spawned the child.
+The CLI sets the usual OpenMP/BLAS environment limits itself. The already-pinned
+`threadpoolctl` dependency also limits native pools inside workers when the
+calling Python program imported them before Windows spawned the child.
 
 `QualityPick` keeps full-video SIFT descriptors in memory for reuse by segments
 from the same source during one evaluation. The cache holds at most 256 MiB of
@@ -194,7 +199,7 @@ the key for each hosted provider you choose. Do not commit `.env` or put real
 keys in `.env.example`.
 
 Settings follow this priority: explicit CLI option, process environment, root
-`.env`, then provider default. Blank optional values are treated as absent;
+`.env`, then the configured default. Blank optional values are treated as absent;
 `OVS_STT_LANGUAGE=auto` explicitly requests language detection. If you choose a
 different provider in `.env`, update its model too. Leaving the model unset uses
 `gemma2` for Ollama, `gpt-6-luna` for OpenAI, `base` for local Whisper, or
@@ -218,6 +223,7 @@ The supported settings and defaults are:
 | `OVS_STT_LANGUAGE` | `pt` | Language code; `auto` enables detection |
 | `OVS_STT_TIMEOUT_SECONDS` | `120` | ElevenLabs HTTP and FFmpeg audio-extraction timeout; it does not interrupt synchronous local Whisper inference |
 | `OVS_MAX_ATTEMPTS` | `3` | Maximum total attempts for LLM generation and transient hosted STT failures |
+| `OVS_THREADS` | `2` | CPU thread budget used by the CLI; an explicit global `--threads` value takes priority |
 
 For example, use OpenAI with a compatible endpoint by setting
 `OVS_LLM_BASE_URL=https://gateway.example/v1`. That endpoint must implement the
