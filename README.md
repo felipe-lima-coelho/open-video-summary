@@ -42,10 +42,47 @@ The command writes:
 - `outputs/bebe_real_summary.mp4`: the summary video with audio;
 - `outputs/bebe_real_summary.json`: selected clips and timestamps;
 - `outputs/bebe_real_summary_handler.json`: selection decisions;
+- `outputs/bebe_real_summary_visual_profile.json`: visual stage timings and counters;
 - `app.log`: execution log.
 
 Selected clips and duration depend on the algorithm. Running the bundled example
 checks that the pipeline works; it is not a scientific evaluation.
+
+### Visual processing and timing
+
+`QualityPick` keeps full-video SIFT descriptors in memory for reuse by segments
+from the same source during one evaluation. The cache holds at most 256 MiB of
+descriptor arrays and is released after the evaluation, including on failure.
+It keys entries by canonical file path, file metadata, and extraction settings;
+larger entries are recomputed, and least recently used entries are evicted when
+needed. Sampled frames and active candidate-group/KMeans arrays require additional
+memory beyond this cache capacity. Custom feature extractors retain their original
+per-segment calls.
+Python callers can set `QualityPick(max_descriptor_cache_bytes=0, ...)` to
+disable the cache.
+
+Extraction still uses the full source video at its original resolution, one
+sampled frame per second, and the same first/last-frame exclusion. Each candidate
+group still fits its own 300-word KMeans dictionary with the same descriptor
+order and multiplicities. SIFT reuses one detector per extraction. Descriptor
+matching keeps the same dot products, thresholds, and NumPy sort behavior for
+ties and NaNs; repeated reverse comparisons reuse their exact previous result.
+
+The visual profile records total `QualityPick` elapsed time separately from
+exclusive substage times: frame decoding (including sampling and grayscale
+conversion), SIFT detection, keyframe matching, descriptor assembly, KMeans fit,
+KMeans prediction, BoVW dataframe construction, and quality ranking. Their sum
+can be smaller than the total because it excludes orchestration and logging.
+Counters include actual video reads, decoded/sampled frames, SIFT frames, cache
+hits/misses, and KMeans fits. The profile contains no transcript or video pixels.
+Python callers can read `QualityPick.last_profile`; the CLI saves it alongside
+the summary and also logs it in `app.log`.
+
+The existing KMeans default has no fixed random seed, and candidates are sets.
+Independent runs can therefore differ even with unchanged settings. Controlled
+comparisons must hold the candidate order, random state, and thread settings
+constant. The CLI continues to use two CPU threads by default; use the existing
+global `--threads` option before `summarize` when measuring another setting.
 
 ## Choose transcription and topic models
 

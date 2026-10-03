@@ -16,6 +16,7 @@ from open_video_summary.utils import log
 from open_video_summary.entities.image import Keyframe
 from open_video_summary.entities.video import VideoSegment
 from open_video_summary.handlers.image import KeyframeHandler
+from open_video_summary.utils.processing.metrics import visual_count, visual_stage
 
 
 class BagOfVisualWords:
@@ -31,29 +32,39 @@ class BagOfVisualWords:
             raise ValueError("KMeans instance is not initialized.")
 
         log.info("Fitting KMeans...")
-        self.__kmeans.fit(concatenate(list(self.__items.values())))
+        with visual_stage("descriptor_assembly"):
+            features = concatenate(list(self.__items.values()))
+        with visual_stage("kmeans_fit"):
+            self.__kmeans.fit(features)
+        visual_count("kmeans_fits")
 
     def generate_bovw_dataframe(self) -> DataFrame:
         if self.__kmeans is None:
             raise ValueError("KMeans has not been fitted.")
 
-        self.__bovw_df = DataFrame(
-            self.__items.items(), columns=["segment", "features"]
-        )
+        with visual_stage("bovw_dataframe"):
+            self.__bovw_df = DataFrame(
+                self.__items.items(), columns=["segment", "features"]
+            )
 
-        tfs = self.__bovw_df.features.apply(self.__kmeans.predict).apply(Counter)
-        doc_freq = Counter(key for a in tfs for key in a.keys())
+        with visual_stage("kmeans_predict"):
+            predictions = self.__bovw_df.features.apply(self.__kmeans.predict)
+        visual_count("kmeans_predictions", len(self.__items))
 
-        for key in doc_freq.keys():
-            term_freq = tfs.apply(lambda x: x.get(key))
-            term_idf = log10(self.__dict_size / doc_freq.get(key))
+        with visual_stage("bovw_dataframe"):
+            tfs = predictions.apply(Counter)
+            doc_freq = Counter(key for a in tfs for key in a.keys())
 
-            new_df = self.__bovw_df.copy()
-            new_df[key] = term_freq * term_idf
-            self.__bovw_df = new_df
+            for key in doc_freq.keys():
+                term_freq = tfs.apply(lambda x: x.get(key))
+                term_idf = log10(self.__dict_size / doc_freq.get(key))
 
-        self.__bovw_df.drop(columns=["features"], inplace=True)
-        self.__bovw_df.set_index("segment", drop=True, inplace=True)
+                new_df = self.__bovw_df.copy()
+                new_df[key] = term_freq * term_idf
+                self.__bovw_df = new_df
+
+            self.__bovw_df.drop(columns=["features"], inplace=True)
+            self.__bovw_df.set_index("segment", drop=True, inplace=True)
 
         return self.__bovw_df
 
@@ -62,17 +73,28 @@ class ImageProcessor:
     @staticmethod
     def ks_sift(frames: list):
         segment_keyframes: list[Keyframe] = []
+        detector = None
         for frame in frames[1:-1]:
-            _, descriptor = SIFT_create().detectAndCompute(frame, None)
+            with visual_stage("sift_detect"):
+                if detector is None:
+                    detector = SIFT_create()
+                _, descriptor = detector.detectAndCompute(frame, None)
+            visual_count("sift_frames")
 
             if descriptor is None:
                 continue
 
             keyframe = Keyframe(descriptor=descriptor)
-            if KeyframeHandler.is_keyframe(keyframe, segment_keyframes):
+            with visual_stage("keyframe_match"):
+                keep = KeyframeHandler.is_keyframe(keyframe, segment_keyframes)
+            if keep:
                 segment_keyframes.append(keyframe)
 
-        return concatenate([kf.descriptor for kf in segment_keyframes])
+        with visual_stage("descriptor_assembly"):
+            descriptors = concatenate([kf.descriptor for kf in segment_keyframes])
+        visual_count("keyframes_retained", len(segment_keyframes))
+        visual_count("descriptors_retained", len(descriptors))
+        return descriptors
 
     @staticmethod
     def get_frame_histogram(frame):

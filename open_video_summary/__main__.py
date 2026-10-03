@@ -62,6 +62,16 @@ def _summarize(args) -> None:
         video_output_path=output.as_posix(),
         handler_output_path=handler_path.as_posix(),
     )
+    visual_profile_path = output.with_name(f"{output.stem}_visual_profile.json")
+    visual_profile = next(
+        criterion.last_profile
+        for criterion in HSMVideoSumm.selection_criteria
+        if criterion.name == "QualityPick"
+    )
+    visual_profile_path.parent.mkdir(parents=True, exist_ok=True)
+    visual_profile_path.write_text(
+        json.dumps(visual_profile, indent=2), encoding="utf-8"
+    )
     if not summary.segments:
         raise ValueError("HSMVideoSumm did not select any segments.")
     if not args.no_render:
@@ -73,6 +83,7 @@ def _summarize(args) -> None:
     )
     print(f"Summary metadata: {portable_path(metadata_path)}")
     print(f"Selection log: {portable_path(handler_path)}")
+    print(f"Visual timings: {portable_path(visual_profile_path)}")
     if not args.no_render:
         print(f"Video summary: {portable_path(output)}")
 
