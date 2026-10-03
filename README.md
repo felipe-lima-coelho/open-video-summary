@@ -1,52 +1,56 @@
 # Open Video Summary
 
-Projeto de pesquisa em sumarização de vídeos e multivídeos. A biblioteca reúne
-segmentação por transcrição/tópicos e critérios de seleção como introdução,
-subjetividade, redundância, qualidade visual e cronologia.
+Research project on video and multi-video summarization. The library combines
+transcript and topic segmentation with selection criteria such as introduction,
+subjectivity, redundancy, visual quality, and chronology.
 
-## Teste local no Windows
+## Local test on Windows
 
-Use **Python 3.11 x64**. O Python 3.13 não é compatível com o TensorFlow 2.17
-usado neste projeto. O ambiente abaixo usa CPU e funciona com GPU integrada AMD.
-Não é necessário ativar o ambiente virtual nem instalar Poetry para esse teste.
+Use **Python 3.11 x64**. Python 3.13 is not compatible with the TensorFlow 2.17
+used by this project. The setup below uses the CPU and works with an integrated
+AMD GPU. You do not need to activate the virtual environment or install Poetry
+for this test.
 
-Na raiz do clone, execute no PowerShell:
+From the repository root, run these commands in PowerShell:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
 .\.venv\Scripts\python.exe -m open_video_summary summarize
 ```
 
-O primeiro comando cria `.venv`, instala as versões de `requirements-windows.lock`,
-instala o projeto em modo editável e prepara os recursos originais do notebook.
-Ele pode ser repetido: os vídeos e o modelo completos são reutilizados.
-`-ExecutionPolicy Bypass` vale somente para esse processo PowerShell.
+The first command creates `.venv`, installs the versions pinned in
+`requirements-windows.lock`, installs the project in editable mode, and prepares
+the notebook's original assets. It can be run again: existing videos and the
+model are reused. `-ExecutionPolicy Bypass` applies only to that PowerShell
+process.
 
-A primeira preparação baixa aproximadamente 662 MB do classificador original de
-subjetividade, além das dependências Python. PyTorch CPU tem cerca de 207 MB e
-TensorFlow para Windows cerca de 382 MB de download. Reserve alguns GB em disco.
-O ZIP do modelo tem seu SHA256 verificado antes da extração. Os três vídeos de
-exemplo já estão no clone em `data/raw/bebe_real.zip` (35 MB).
+The first setup downloads approximately 662 MB for the original subjectivity
+classifier, in addition to the Python dependencies. The PyTorch CPU package
+download is about 207 MB, and the Windows TensorFlow download is about 382 MB.
+Allow a few GB of disk space. The model ZIP's SHA256 is checked before
+extraction. The three sample videos are already in the clone at
+`data/raw/bebe_real.zip` (35 MB).
 
-O comando `summarize` executa o **HSMVideoSumm original** nos três vídeos e nos
-13 segmentos de `data/processed/bebe_real.json`. Usa o classificador treinado e
-os critérios científicos existentes. As transcrições e os tópicos desse exemplo
-já foram calculados; esse teste não precisa de servidor Ollama, chave de API ou
-download do Whisper. O processamento e a codificação usam CPU, com dois threads
-por padrão. Durante testes, prefira fechar aplicações que consomem muita RAM.
+The `summarize` command runs the **original HSMVideoSumm** on the three videos and
+the 13 segments in `data/processed/bebe_real.json`. It uses the trained
+classifier and the existing research criteria. The example's transcripts and
+topics have already been calculated, so this test does not need an Ollama
+server, an API key, or a Whisper download. Processing and encoding use the CPU,
+with two threads by default. During testing, consider closing applications that
+use a lot of memory.
 
-Os resultados são:
+The results are:
 
-- `outputs/bebe_real_summary.mp4`: resumo com vídeo e áudio;
-- `outputs/bebe_real_summary.json`: segmentos selecionados e seus tempos;
-- `outputs/bebe_real_summary_handler.json`: decisões dos critérios de seleção;
-- `app.log`: registro da execução.
+- `outputs/bebe_real_summary.mp4`: summary video with audio;
+- `outputs/bebe_real_summary.json`: selected segments and their timestamps;
+- `outputs/bebe_real_summary_handler.json`: selection criteria decisions;
+- `app.log`: execution log.
 
-A duração e os segmentos escolhidos dependem da seleção do algoritmo. A execução
-do exemplo verifica o funcionamento do pipeline; a qualidade científica exige
-avaliação com as métricas e os dados da pesquisa.
+The duration and selected segments depend on the algorithm's choices. Running
+the example checks that the pipeline works; scientific quality requires
+evaluation with the research metrics and data.
 
-Para conferir o ambiente ou repetir apenas a preparação:
+To check the environment or repeat only the setup:
 
 ```powershell
 .\.venv\Scripts\python.exe -m open_video_summary doctor
@@ -55,42 +59,43 @@ Para conferir o ambiente ou repetir apenas a preparação:
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-## Caminhos e reprodução em outro clone
+## Paths and reproducibility in another clone
 
-Todos os caminhos relativos da API, da CLI e dos JSONs são interpretados a partir
-da raiz do repositório, encontrada pelo código do pacote. Por exemplo,
-`data/raw/bebe_real/jornal_nacional.mp4` não depende do usuário, da letra do disco
-ou do diretório de trabalho. O carregador resolve tanto `path` do vídeo quanto
-`video_path` dos segmentos. Os exportadores gravam caminhos internos ao projeto
-relativos à raiz e usam UTF-8. Caminhos absolutos externos também são aceitos.
+All relative paths in the API, CLI, and JSON files are interpreted from the
+repository root, which the package code locates. For example,
+`data/raw/bebe_real/jornal_nacional.mp4` does not depend on the user, the drive
+letter, or the working directory. The loader resolves both the video's `path`
+and the segments' `video_path`. Exporters write paths inside the project as
+root-relative paths in UTF-8. Absolute paths outside the repository are also
+supported.
 
-Não versione `.venv`, modelos baixados, caches e resultados. Copie os vídeos
-necessários para `data/raw/<conjunto>/` ao compartilhar um experimento. O clone
-inclui metadados de cinco conjuntos, mas somente `bebe_real` inclui os MP4s.
-Outros vídeos estão no [diretório original de conjuntos de dados](https://drive.google.com/drive/folders/1y19ih3j36UqXlWFcgyxNXsNWluE3lky6?usp=drive_link).
+Do not check in `.venv`, downloaded models, caches, or results. Copy the videos
+needed for an experiment into `data/raw/<dataset>/` when sharing it. The clone
+includes metadata for five datasets, but only `bebe_real` includes MP4s. Other
+videos are available in the [original dataset directory](https://drive.google.com/drive/folders/1y19ih3j36UqXlWFcgyxNXsNWluE3lky6?usp=drive_link).
 
-Para testar outro conjunto já segmentado:
+To test another dataset that has already been segmented:
 
 ```powershell
 .\.venv\Scripts\python.exe -m open_video_summary summarize --dataset data/processed/meu_conjunto.json --output outputs/meu_resumo.mp4
 ```
 
-Para executar a partir de outro diretório, invoque o Python do clone pelo caminho
-até ele. Os argumentos continuam relativos à raiz do projeto. A instalação
-editável precisa ser refeita se você mover a pasta ou criar outro clone.
+To run from another directory, invoke the clone's Python executable using its
+path. Arguments remain relative to the project root. Repeat the editable install
+if you move the folder or create another clone.
 
-## Novos vídeos: Whisper e Ollama
+## New videos: Whisper and Ollama
 
-A criação de segmentos a partir de MP4s brutos é uma etapa adicional. Ela exige
-o executável `ffmpeg` no PATH, um servidor [Ollama](https://ollama.com/download)
-em execução e um modelo disponível nesse servidor. O pacote Python `ollama`
-instalado pelo projeto é o cliente da API; ele não instala o servidor.
-O pacote Python `ffmpeg` também não substitui o executável.
+Creating segments from raw MP4s is an additional step. It requires the `ffmpeg`
+executable on PATH, a running [Ollama](https://ollama.com/download) server, and a
+model available on that server. The Python `ollama` package installed by the
+project is an API client; it does not install the server. The Python `ffmpeg`
+package also does not replace the executable.
 
-Confira o FFmpeg com `ffmpeg -version`. Caso precise instalá-lo no Windows,
-use `winget install -e --id Gyan.FFmpeg` e abra um novo PowerShell.
+Check FFmpeg with `ffmpeg -version`. To install it on Windows, run
+`winget install -e --id Gyan.FFmpeg` and open a new PowerShell window.
 
-Depois de instalar o servidor Ollama, por exemplo:
+After installing the Ollama server, for example:
 
 ```powershell
 ollama pull gemma2
@@ -98,27 +103,29 @@ ollama pull gemma2
 .\.venv\Scripts\python.exe -m open_video_summary summarize --dataset outputs/meu_conjunto_segments.json --output outputs/meu_resumo.mp4
 ```
 
-`gemma2` é o modelo usado pelo adaptador original e requer um download adicional
-de vários GB; ele não é baixado pelo setup. A CLI verifica o servidor/modelo
-antes de carregar o Whisper. O Whisper `base` é uma opção inicial mais leve
-para CPU e baixa seus pesos na primeira transcrição. `tiny` também está disponível.
-O notebook original usava `medium`; escolha `--whisper-model medium` para esse
-modelo maior. A escolha do modelo pode mudar as transcrições e os resultados.
-O cache do Whisper fica em `.cache/whisper` na raiz do projeto.
+`gemma2` is the model used by the original adapter and requires an additional
+download of several GB; the setup does not download it. The CLI checks the
+server and model before loading Whisper. Whisper `base` is a lighter starting
+option for the CPU and downloads its weights during the first transcription.
+`tiny` is also available. The original notebook used `medium`; choose
+`--whisper-model medium` to use that larger model. The model choice can change
+the transcripts and results. The Whisper cache is stored in `.cache/whisper` at
+the project root.
 
-## Notebooks e versões
+## Notebooks and versions
 
-Abra os notebooks com o kernel `.venv/Scripts/python.exe` em seu editor Jupyter.
-`notebooks/hsmvideosumm.ipynb` prepara os mesmos recursos e executa o resumo.
-`notebooks/video-segmenter.ipynb` usa `base` e somente o conjunto de vídeos
-incluído no clone; requer Whisper/Ollama e grava novos resultados em `outputs`.
-`notebooks/llm-evaluations.ipynb` requer seus próprios conjuntos de avaliação,
-modelos Ollama e, quando aplicável, acesso ao Kaggle. Esses recursos adicionais
-não são necessários ao teste local de HSMVideoSumm.
+Open the notebooks in your Jupyter editor with the `.venv/Scripts/python.exe`
+kernel. `notebooks/hsmvideosumm.ipynb` prepares the same assets and runs the
+summary. `notebooks/video-segmenter.ipynb` uses `base` and only the video dataset
+included in the clone; it requires Whisper and Ollama and writes new results to
+`outputs`. `notebooks/llm-evaluations.ipynb` requires its own evaluation
+datasets, Ollama models, and, where applicable, Kaggle access. These additional
+resources are not needed for the local HSMVideoSumm test.
 
-`requirements-windows.lock` foi derivado de `poetry.lock` para Windows x64 e
-Python 3.11. Preserva as versões do projeto, com PyTorch `2.6.0+cpu`, acrescenta
-`tensorflow-intel==2.17.1` requerido pelo wheel Windows de TensorFlow e usa
-`tensorflow-io-gcs-filesystem==0.31.0`, que possui wheel para essa plataforma.
-O lock original contém `0.37.1`, sem wheel Windows. Para outros ambientes,
-o fluxo original continua sendo `poetry install` com Python compatível.
+`requirements-windows.lock` was derived from `poetry.lock` for Windows x64 and
+Python 3.11. It preserves the project's versions, uses PyTorch `2.6.0+cpu`, adds
+`tensorflow-intel==2.17.1`, which is required by the Windows TensorFlow wheel,
+and uses `tensorflow-io-gcs-filesystem==0.31.0`, which has a wheel for this
+platform. The original lock file contains `0.37.1`, which has no Windows wheel.
+For other environments, the original workflow remains `poetry install` with a
+compatible Python version.
