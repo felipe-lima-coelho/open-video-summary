@@ -4,7 +4,7 @@ These instructions apply throughout this repository. Follow the user's request a
 
 ## Project map
 
-- This is research code for video and multi-video summarization. The existing `HSMVideoSumm` combines transcript/topic segments with introduction, subjectivity, redundancy, visual-quality, chronology, and filtering criteria.
+- This is research code for video and multi-video summarization. The existing `HSMVideoSumm` combines transcript/topic segments with introduction, subjectivity, redundancy, visual-quality, and chronology criteria.
 - `open_video_summary/core/summarizers` coordinates summaries; `core/selection_criteria` contains selection rules; `core/segmenter` creates segments; `entities`, `handlers`, and `parsers` define and persist video, segment, summary, and decision data.
 - `open_video_summary/__main__.py` is the local CLI. `data/processed/*.json` contains versioned segmented datasets. `notebooks/` contains research and evaluation workflows. Read the relevant module or notebook before changing its behavior.
 
