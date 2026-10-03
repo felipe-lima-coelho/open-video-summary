@@ -16,6 +16,7 @@ class ServiceMetadata:
     sent_reasoning_effort: str | None = None
     reported_reasoning_effort: str | None = None
     requested_language: str | None = None
+    sent_language: str | None = None
     reported_language: str | None = None
     duration_seconds: float | None = None
     audio_duration_seconds: float | None = None

@@ -66,16 +66,27 @@ either provider.
 The OpenAI adapter uses the Responses API and structured output. GPT-6 Luna
 supports the Responses API, structured output, and reasoning effort values
 `none`, `low`, `medium`, `high`, `xhigh`, and `max`. The adapter omits temperature
-when reasoning is enabled. A blank `OVS_LLM_REASONING_EFFORT` leaves the setting
+to use each model's accepted generation defaults. A blank `OVS_LLM_REASONING_EFFORT` leaves the setting
 to the model (GPT-6 Luna currently defaults to `medium`); `none` is an explicit
 request to disable reasoning. See the
 [GPT-6 Luna model page](https://developers.openai.com/api/docs/models/gpt-6-luna),
 [reasoning guide](https://developers.openai.com/api/docs/guides/reasoning), and
 [structured outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs).
+Known model capabilities are checked before requests: [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)
+and [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+accept `low`, `medium`, `high`, `xhigh`, and `max`; [GPT-5](https://developers.openai.com/api/docs/models/gpt-5)
+accepts `minimal`, `low`, `medium`, and `high`. Unrecognized future model IDs are
+sent to the service, whose compatibility errors become internal configuration errors.
 
 ElevenLabs uses Scribe v2 for hosted transcription. `pt` selects Portuguese; set
 `OVS_STT_LANGUAGE=auto` to let the service detect the language. The local Whisper
-adapter also accepts `auto`. See the [speech-to-text API](https://elevenlabs.io/docs/api-reference/speech-to-text/convert)
+adapter also accepts `auto`. It maps ISO aliases such as `por` to `pt`, using
+the [ISO language code list](https://www.loc.gov/standards/iso639-2/php/code_list.php),
+and validates them against the installed Whisper tokenizer before loading model
+weights or audio. Native codes such as `haw` and `yue` remain available when the
+installed tokenizer supports them. Run metadata preserves the requested code,
+the translated code sent to the provider, and the language reported in its response.
+See the [speech-to-text API](https://elevenlabs.io/docs/api-reference/speech-to-text/convert)
 and [Scribe language and capability guide](https://elevenlabs.io/docs/overview/capabilities/speech-to-text).
 
 ## Configure providers
@@ -109,7 +120,7 @@ The supported settings and defaults are:
 | `ELEVENLABS_API_KEY` | empty | ElevenLabs credential |
 | `OVS_LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
 | `OVS_LLM_MODEL` | provider default | `gemma2` or `gpt-6-luna` |
-| `OVS_LLM_REASONING_EFFORT` | model default | OpenAI effort; `none`, `low`, `medium`, `high`, `xhigh`, or `max` |
+| `OVS_LLM_REASONING_EFFORT` | model default | OpenAI effort; accepted values depend on the model (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) |
 | `OVS_LLM_BASE_URL` | provider default | Ollama/OpenAI API endpoint or a compatible gateway |
 | `OVS_LLM_TIMEOUT_SECONDS` | `120` | LLM request timeout |
 | `OVS_STT_PROVIDER` | `whisper_local` | `whisper_local` or `elevenlabs` |

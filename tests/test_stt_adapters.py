@@ -180,6 +180,14 @@ class STTAdapterTests(unittest.TestCase):
             patch.object(stt.shutil, "which", return_value="ffmpeg"),
             patch.object(stt, "_version", return_value="1.15.8"),
             patch.object(
+                stt,
+                "_whisper_languages",
+                return_value={
+                    code: code
+                    for code in ("pt", "es", "en", "fr", "de", "zh", "jw", "haw", "yue")
+                },
+            ),
+            patch.object(
                 stt.importlib, "import_module", return_value=whisper
             ) as imports,
         ):
@@ -241,7 +249,70 @@ ElevenLabsSTT(STTConfig(provider='elevenlabs', model='scribe_v2'))
         self.assertEqual(first.words[:2], first.segments[0].words)
         self.assertEqual("whisper_local", first.metadata.provider)
         self.assertEqual("es", second.metadata.requested_language)
+        self.assertEqual("es", second.metadata.sent_language)
         self.assertEqual(3.0, first.metadata.audio_duration_seconds)
+
+    def test_local_iso_alias_is_translated_before_model_load_and_recorded(self):
+        with self.local() as (adapter, whisper, model, audio, imports):
+            adapter.config = replace(adapter.config, language="POR")
+            adapter.preflight()
+            imports.assert_not_called()
+            whisper.load_model.assert_not_called()
+            result = adapter.transcribe(self.audio_path)
+            whisper.transcribe.assert_called_once_with(
+                model, audio, language="pt", fp16=False, verbose=None
+            )
+        self.assertEqual("POR", result.metadata.requested_language)
+        self.assertEqual("pt", result.metadata.sent_language)
+        self.assertEqual("pt", result.metadata.reported_language)
+
+    def test_local_language_aliases_follow_installed_capabilities(self):
+        languages = {
+            code: code
+            for code in ("pt", "en", "fr", "zh", "de", "jw", "haw", "yue", "xyz")
+        }
+        with patch.object(stt, "_whisper_languages", return_value=languages):
+            for requested, sent in {
+                "por": "pt", "eng": "en", "fra": "fr", "fre": "fr",
+                "zho": "zh", "chi": "zh", "deu": "de", "ger": "de",
+                "jav": "jw", "jv": "jw", "haw": "haw", "yue": "yue",
+                "xyz": "xyz",
+            }.items():
+                with self.subTest(requested=requested):
+                    self.assertEqual(sent, stt._whisper_language(requested))
+            # A reliable ISO alias still needs support in the selected SDK.
+            with self.assertRaises(ConfigurationError):
+                stt._whisper_language("spa")
+        with patch.object(stt, "_whisper_languages") as registry:
+            self.assertIsNone(stt._whisper_language(None))
+            registry.assert_not_called()
+
+    def test_local_unsupported_language_fails_before_model_or_audio(self):
+        with self.local() as (adapter, whisper, _, _, imports):
+            for language in ("zzz", "ace", "aa", "pt-BR"):
+                with self.subTest(language=language):
+                    adapter.config = replace(adapter.config, language=language)
+                    with self.assertRaises(ConfigurationError):
+                        adapter.preflight()
+            adapter.config = replace(adapter.config, language="pt")
+            with self.assertRaises(ConfigurationError):
+                adapter.transcribe("missing-input.mp4", language="zzz")
+            whisper.load_model.assert_not_called()
+            whisper.load_audio.assert_not_called()
+            whisper.transcribe.assert_not_called()
+            imports.assert_not_called()
+
+    def test_local_registry_is_selected_only_and_sdk_failure_is_safe(self):
+        with patch.object(
+            stt.importlib,
+            "import_module",
+            return_value=SimpleNamespace(LANGUAGES={"pt": "portuguese"}),
+        ) as imports:
+            self.assertEqual("pt", stt._whisper_language("por"))
+            imports.assert_called_once_with("whisper.tokenizer")
+        with patch.object(stt.importlib, "import_module", side_effect=ImportError):
+            with self.assertRaises(ConfigurationError):
+                stt._whisper_language("pt")
 
     def test_scribe_call_honors_model_language_and_configured_timeout(self):
         config = replace(self.config, model="custom-future-scribe-model")
@@ -272,6 +343,7 @@ ElevenLabsSTT(STTConfig(provider='elevenlabs', model='scribe_v2'))
         self.assertEqual(3.0, result.metadata.audio_duration_seconds)
         self.assertGreaterEqual(result.metadata.duration_seconds, 0)
         self.assertEqual(1, result.metadata.attempts)
+        self.assertEqual("pt", result.metadata.sent_language)
         record = json.dumps(asdict(result.metadata))
         self.assertNotIn("Olá", record)
         self.assertNotIn("synthetic-test-key", record)
@@ -300,6 +372,23 @@ ElevenLabsSTT(STTConfig(provider='elevenlabs', model='scribe_v2'))
             )
         self.assertIsNone(first.metadata.requested_language)
         self.assertEqual("pt", second.metadata.requested_language)
+
+    def test_remote_language_normalization_does_not_import_local_capabilities(self):
+        with (
+            self.remote(config=replace(self.config, language="POR")) as fake,
+            patch.object(
+                stt, "_whisper_languages", side_effect=AssertionError("local import")
+            ),
+        ):
+            fake.adapter.preflight()
+            fake.imports.assert_not_called()
+            result = fake.adapter.transcribe(self.audio_path)
+            self.assertEqual(
+                "por", fake.client.speech_to_text.convert.call_args.kwargs["language_code"]
+            )
+        self.assertEqual("POR", result.metadata.requested_language)
+        self.assertEqual("por", result.metadata.sent_language)
+        self.assertEqual("por", result.metadata.reported_language)
 
     def test_spaces_punctuation_and_events_preserve_speech_intervals(self):
         response = {

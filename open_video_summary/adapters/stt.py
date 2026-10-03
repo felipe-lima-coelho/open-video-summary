@@ -50,6 +50,35 @@ _AUDIO_SUFFIXES = {
     ".wma",
 }
 _OPEN_PUNCTUATION = "([{¿¡“«"
+# ISO-639 terminology and bibliographic synonyms for Whisper's languages.
+# Source: https://www.loc.gov/standards/iso639-2/php/code_list.php
+# Supported codes remain defined by the installed tokenizer, including new codes.
+_WHISPER_LANGUAGE_ALIASES = {
+    "afr": "af", "alb": "sq", "amh": "am", "ara": "ar", "arm": "hy",
+    "asm": "as", "aze": "az", "bak": "ba", "baq": "eu", "bel": "be",
+    "ben": "bn", "bod": "bo", "bos": "bs", "bre": "br", "bul": "bg",
+    "bur": "my", "cat": "ca", "ces": "cs", "chi": "zh", "cos": "co",
+    "cym": "cy", "cze": "cs", "dan": "da", "deu": "de", "dut": "nl",
+    "ell": "el", "eng": "en", "est": "et", "eus": "eu", "fao": "fo",
+    "fas": "fa", "fin": "fi", "fra": "fr", "fre": "fr", "geo": "ka",
+    "ger": "de", "glg": "gl", "gre": "el", "guj": "gu", "hat": "ht",
+    "hau": "ha", "heb": "he", "hin": "hi", "hrv": "hr", "hun": "hu",
+    "hye": "hy", "ice": "is", "ind": "id", "isl": "is", "ita": "it",
+    "jav": "jw", "jpn": "ja", "jv": "jw", "kan": "kn", "kat": "ka",
+    "kaz": "kk", "khm": "km", "kor": "ko", "lao": "lo", "lat": "la",
+    "lav": "lv", "lin": "ln", "lit": "lt", "ltz": "lb", "mac": "mk",
+    "mal": "ml", "mao": "mi", "mar": "mr", "may": "ms", "mkd": "mk",
+    "mlg": "mg", "mlt": "mt", "mon": "mn", "mri": "mi", "msa": "ms",
+    "mya": "my", "nep": "ne", "nld": "nl", "nno": "nn", "nor": "no",
+    "oci": "oc", "pan": "pa", "per": "fa", "pol": "pl", "por": "pt",
+    "pus": "ps", "ron": "ro", "rum": "ro", "rus": "ru", "san": "sa",
+    "sin": "si", "slk": "sk", "slo": "sk", "slv": "sl", "sna": "sn",
+    "snd": "sd", "som": "so", "spa": "es", "sqi": "sq", "srp": "sr",
+    "sun": "su", "swa": "sw", "swe": "sv", "tam": "ta", "tat": "tt",
+    "tel": "te", "tgk": "tg", "tgl": "tl", "tha": "th", "tib": "bo",
+    "tuk": "tk", "tur": "tr", "ukr": "uk", "urd": "ur", "uzb": "uz",
+    "vie": "vi", "wel": "cy", "yid": "yi", "yor": "yo", "zho": "zh",
+}
 
 
 def _field(value, name, default=None):
@@ -106,7 +135,37 @@ def _language(value: str | None) -> str | None:
         not isinstance(value, str) or re.fullmatch(r"[a-zA-Z]{2,3}", value) is None
     ):
         raise ConfigurationError("The STT language must be an ISO-639 code or None.")
-    return value
+    return value.lower() if value is not None else None
+
+
+def _whisper_languages() -> Mapping:
+    """Read capabilities only for the selected local provider, before model load."""
+    try:
+        languages = importlib.import_module("whisper.tokenizer").LANGUAGES
+    except (ImportError, AttributeError):
+        raise ConfigurationError(
+            "The local Whisper language registry could not be loaded."
+        ) from None
+    if not isinstance(languages, Mapping) or not languages:
+        raise ConfigurationError("The local Whisper language registry is invalid.")
+    return languages
+
+
+def _whisper_language(value: str | None) -> str | None:
+    language = _language(value)
+    if language is None:
+        return None
+    languages = _whisper_languages()
+    # An installed native code takes precedence over an alias introduced here.
+    if language in languages:
+        return language
+    translated = _WHISPER_LANGUAGE_ALIASES.get(language)
+    if translated not in languages:
+        raise ConfigurationError(
+            "The configured language is unsupported by the installed local Whisper. "
+            "Use a supported ISO-639 code or auto for language detection."
+        )
+    return translated
 
 
 def _media_path(value: str | Path) -> Path:
@@ -509,12 +568,14 @@ class _STTAdapter:
         attempts: int = 1,
         status: str = "completed",
         audio_duration: float | None = None,
+        sent_language: str | None = None,
     ) -> ServiceMetadata:
         metadata = ServiceMetadata(
             provider=self.config.provider,
             requested_model=self.config.model,
             returned_model=_reported_model(response) if result is not None else None,
             requested_language=language,
+            sent_language=sent_language,
             reported_language=result.language if result is not None else None,
             duration_seconds=time.perf_counter() - started,
             audio_duration_seconds=audio_duration,
@@ -536,8 +597,8 @@ class LocalWhisperSTT(_STTAdapter):
 
     def preflight(self) -> None:
         _validate_config(self.config)
-        _language(self.config.language)
         _require_dependency("whisper_timestamped")
+        _whisper_language(self.config.language)
         if shutil.which("ffmpeg") is None:
             raise ConfigurationError("Local Whisper requires FFmpeg on PATH.")
 
@@ -545,10 +606,12 @@ class LocalWhisperSTT(_STTAdapter):
         self, media_path: str | Path, language: str | None = None
     ) -> TranscriptionResult:
         self.preflight()
-        language = _language(self.config.language if language is None else language)
+        requested_language = self.config.language if language is None else language
+        language = _whisper_language(requested_language)
         path = _media_path(media_path)
         started, sdk_version = time.perf_counter(), _version("whisper-timestamped")
         audio_duration = None
+        sent_language = None
         try:
             try:
                 whisper = importlib.import_module("whisper_timestamped")
@@ -564,6 +627,7 @@ class LocalWhisperSTT(_STTAdapter):
                 )
             audio = whisper.load_audio(str(path))
             audio_duration = len(audio) / 16000
+            sent_language = language
             response = whisper.transcribe(
                 self._model,
                 audio,
@@ -574,11 +638,12 @@ class LocalWhisperSTT(_STTAdapter):
             result = _local_result(response)
             metadata = self._metadata(
                 started,
-                language,
+                requested_language,
                 sdk_version,
                 response=response,
                 result=result,
                 audio_duration=audio_duration,
+                sent_language=sent_language,
             )
             return replace(result, metadata=metadata)
         except Exception as error:
@@ -600,10 +665,11 @@ class LocalWhisperSTT(_STTAdapter):
                 )
             self._metadata(
                 started,
-                language,
+                requested_language,
                 sdk_version,
                 status=type(failure).__name__,
                 audio_duration=audio_duration,
+                sent_language=sent_language,
             )
             raise failure from None
 
@@ -624,10 +690,12 @@ class ElevenLabsSTT(_STTAdapter):
         self, media_path: str | Path, language: str | None = None
     ) -> TranscriptionResult:
         self.preflight()
-        language = _language(self.config.language if language is None else language)
+        requested_language = self.config.language if language is None else language
+        language = _language(requested_language)
         path = _media_path(media_path)
         started, sdk_version = time.perf_counter(), _version("elevenlabs")
         attempts, audio_duration = 0, None
+        sent_language = None
         try:
             try:
                 client_class = importlib.import_module("elevenlabs.client").ElevenLabs
@@ -653,6 +721,7 @@ class ElevenLabsSTT(_STTAdapter):
                             ) from None
                         try:
                             with upload:
+                                sent_language = language
                                 response = client.speech_to_text.convert(
                                     file=upload,
                                     model_id=self.config.model,
@@ -680,12 +749,13 @@ class ElevenLabsSTT(_STTAdapter):
                 audio_duration = _timestamp(reported_duration)
             metadata = self._metadata(
                 started,
-                language,
+                requested_language,
                 sdk_version,
                 response=response,
                 result=result,
                 attempts=attempts,
                 audio_duration=audio_duration,
+                sent_language=sent_language,
             )
             return replace(result, metadata=metadata)
         except Exception as error:
@@ -698,10 +768,11 @@ class ElevenLabsSTT(_STTAdapter):
             )
             self._metadata(
                 started,
-                language,
+                requested_language,
                 sdk_version,
                 attempts=attempts,
                 status=type(failure).__name__,
                 audio_duration=audio_duration,
+                sent_language=sent_language,
             )
             raise failure from None
