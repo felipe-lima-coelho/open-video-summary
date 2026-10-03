@@ -4116,7 +4116,6 @@ description = "threadpoolctl"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version >= \"3.12\" or python_version == \"3.11\""
 files = [
     {file = "threadpoolctl-3.6.0-py3-none-any.whl", hash = "sha256:43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb"},
     {file = "threadpoolctl-3.6.0.tar.gz", hash = "sha256:8ab8b4aa3491d812b623328249fab5302a68d2d71745c8a4c719a2fcaba9f44e"},
@@ -4888,4 +4887,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "0ce328b85eea62238f10202268c5d54df97ecdf5d54c61398541bfeab24b624a"
+content-hash = "2dab74343f19dc3c9bfc680d9e2a6cc6f656ce5a797c3815ec572fe8e7c513b1"

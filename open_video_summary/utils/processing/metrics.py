@@ -13,14 +13,27 @@ class VisualProfile:
     counters: Counter = field(default_factory=Counter)
     total_seconds: float = 0.0
     status: str = "failed"
+    workers: list = field(default_factory=list)
 
     def as_dict(self) -> dict:
-        return {
+        result = {
             "status": self.status,
             "total_seconds": self.total_seconds,
             "stage_seconds": dict(self.stage_seconds),
             "counters": dict(self.counters),
         }
+        if self.workers:
+            result["workers"] = list(self.workers)
+            result["worker_cpu_seconds"] = sum(
+                worker["cpu_seconds"] for worker in self.workers
+            )
+            result["worker_stage_seconds"] = dict(
+                sum(
+                    (Counter(worker["stage_seconds"]) for worker in self.workers),
+                    Counter(),
+                )
+            )
+        return result
 
 
 _profile: ContextVar[VisualProfile | None] = ContextVar("visual_profile", default=None)
@@ -78,3 +91,11 @@ def visual_maximum(name: str, value: int) -> None:
     profile = _profile.get()
     if profile is not None:
         profile.counters[name] = max(profile.counters[name], value)
+
+
+def visual_worker(worker: dict, counters: dict) -> None:
+    """Keep overlapping worker work separate from parent wall-time stages."""
+    profile = _profile.get()
+    if profile is not None:
+        profile.workers.append(worker)
+        profile.counters.update(counters)

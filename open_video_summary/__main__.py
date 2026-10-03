@@ -48,6 +48,10 @@ def _summarize(args) -> None:
     torch.set_num_threads(args.threads)
     from open_video_summary.core.summarizers import HSMVideoSumm
 
+    for criterion in HSMVideoSumm.selection_criteria:
+        if criterion.name == "QualityPick":
+            criterion.visual_threads = args.threads
+
     output = project_path(args.output)
     handler_path = output.with_name(f"{output.stem}_handler.json")
     metadata_path = output.with_suffix(".json")
@@ -203,7 +207,12 @@ def _segment(args) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Open Video Summary CPU runner.")
-    parser.add_argument("--threads", type=int, default=2)
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=2,
+        help="CPU thread budget; summarize uses up to this many visual workers.",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     prepare = subparsers.add_parser(
         "prepare-demo", help="Extract demo videos and original classifier."

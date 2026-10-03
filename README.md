@@ -35,7 +35,7 @@ This runs the original HSMVideoSumm on the three videos and 13 pre-segmented
 clips in `data/processed/bebe_real.json`. The transcripts and topics are already
 in that versioned dataset, so the command does not need Ollama, OpenAI, Whisper,
 ElevenLabs, or an API key. HSMVideoSumm, video processing, and rendering run
-locally on the CPU, using two threads by default.
+locally on the CPU, with a CPU thread budget of two by default.
 
 The command writes:
 
@@ -50,16 +50,48 @@ checks that the pipeline works; it is not a scientific evaluation.
 
 ### Visual processing and timing
 
+Choose the CPU budget with the global `--threads` option **before** `summarize`:
+
+```powershell
+.\.venv\Scripts\python.exe -m open_video_summary --threads 4 summarize
+```
+
+For visual extraction, the runner starts at most `min(threads, unique videos)`
+Windows-compatible processes. Each process decodes one full video and runs SIFT
+and keyframe matching with one OpenCV/BLAS/OpenMP thread. A budget of one uses
+the original serial path. With three source videos, budgets of four and eight
+both allow at most three extraction workers. Each evaluation creates and closes
+its own pool; startup and numerical-library imports can outweigh parallel work
+on small inputs.
+
+Other summarization stages keep the native-library thread settings selected by
+`--threads`. KMeans fits run in the parent, after the active extraction window
+finishes, so those two compute phases do not multiply the thread budget.
+FFmpeg rendering still uses two threads independently. Codec helper threads and
+library housekeeping threads mean this is not a limit on the OS thread count.
+The CLI sets the usual OpenMP/BLAS environment limits itself; there is no separate
+`.env` thread option. The already-pinned `threadpoolctl` dependency also limits
+native pools inside workers when the calling Python program imported them before
+Windows spawned the child.
+
 `QualityPick` keeps full-video SIFT descriptors in memory for reuse by segments
 from the same source during one evaluation. The cache holds at most 256 MiB of
 descriptor arrays and is released after the evaluation, including on failure.
 It keys entries by canonical file path, file metadata, and extraction settings;
 larger entries are recomputed, and least recently used entries are evicted when
 needed. Sampled frames and active candidate-group/KMeans arrays require additional
-memory beyond this cache capacity. Custom feature extractors retain their original
-per-segment calls.
-Python callers can set `QualityPick(max_descriptor_cache_bytes=0, ...)` to
-disable the cache.
+memory beyond this cache capacity. Parallel workers each hold their own sampled
+frames and SIFT working memory. At most one pending task per worker is prefetched;
+completed descriptors wait in temporary numeric `.npy` files until their original
+request order. These files contain no pickled objects and are deleted on consumption
+or pool cleanup, including on failure. Futures retain metadata rather than arrays.
+If a source changes or a previously consumed entry needs recomputing after cache
+eviction, prefetch closes and the remaining requests use the serial path.
+Custom feature extractors retain their original serial per-segment calls.
+Python callers opt into workers with `QualityPick(visual_threads=4, ...)`; the
+Python API defaults to serial extraction. On Windows, call a parallel evaluation
+inside the usual `if __name__ == "__main__":` guard in an importable Python script.
+Setting `max_descriptor_cache_bytes=0` disables both reuse and speculative extraction.
 
 Extraction still uses the full source video at its original resolution, one
 sampled frame per second, and the same first/last-frame exclusion. Each candidate
@@ -68,11 +100,19 @@ order and multiplicities. SIFT reuses one detector per extraction. Descriptor
 matching keeps the same dot products, thresholds, and NumPy sort behavior for
 ties and NaNs; repeated reverse comparisons reuse their exact previous result.
 
-The visual profile records total `QualityPick` elapsed time separately from
-exclusive substage times: frame decoding (including sampling and grayscale
-conversion), SIFT detection, keyframe matching, descriptor assembly, KMeans fit,
-KMeans prediction, BoVW dataframe construction, and quality ranking. Their sum
-can be smaller than the total because it excludes orchestration and logging.
+The visual profile records total `QualityPick` elapsed time, including process
+startup, imports, temporary-file I/O, waiting, and cleanup. `stage_seconds` holds
+exclusive times in the parent: extraction stages when serial, or worker waiting
+and descriptor loading when parallel, plus KMeans fit/prediction, BoVW dataframe
+construction, and quality ranking. Their sum can be smaller than the total
+because it excludes some orchestration and logging.
+`worker_stage_seconds` separately sums work across processes: frame decoding
+(including sampling and grayscale conversion), SIFT detection, keyframe matching,
+and descriptor assembly. These overlapping times must not be added to the parent
+stages or treated as elapsed time. `workers` records task PIDs, monotonic start/end
+times, extraction CPU time, native thread limits, and import/spool timing.
+`worker_cpu_seconds` sums extraction CPU time; it excludes process startup and
+imports, whose full cost is included in the total elapsed time.
 Counters include actual video reads, decoded/sampled frames, SIFT frames, cache
 hits/misses, and KMeans fits. The profile contains no transcript or video pixels.
 Python callers can read `QualityPick.last_profile`; the CLI saves it alongside
@@ -80,9 +120,10 @@ the summary and also logs it in `app.log`.
 
 The existing KMeans default has no fixed random seed, and candidates are sets.
 Independent runs can therefore differ even with unchanged settings. Controlled
-comparisons must hold the candidate order, random state, and thread settings
-constant. The CLI continues to use two CPU threads by default; use the existing
-global `--threads` option before `summarize` when measuring another setting.
+comparisons must hold the candidate order and random state constant and record
+thread settings. Parallel extraction consumes the same arrays in the original
+candidate order and leaves random seeds, dictionary fitting, and ranking in the
+parent unchanged. It does not make the existing algorithm deterministic.
 
 ## Choose transcription and topic models
 

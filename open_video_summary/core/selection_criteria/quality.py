@@ -1,6 +1,7 @@
 import json
 import os
 from collections import OrderedDict
+from contextlib import nullcontext
 from contextvars import ContextVar
 from typing import Callable
 from numpy import ndarray
@@ -13,6 +14,7 @@ from open_video_summary.handlers.summary import SummarySegmentHandler
 from open_video_summary.core.selection_criteria.base import SelectionCriteria
 from open_video_summary.utils.processing.image import BagOfVisualWords, ImageProcessor
 from open_video_summary.utils.paths import project_path
+from open_video_summary.utils.processing.parallel import DescriptorWorkers
 from open_video_summary.utils.processing.metrics import (
     VisualProfile,
     collect_visual_profile,
@@ -58,6 +60,9 @@ class _DescriptorCache:
 _descriptor_cache: ContextVar[_DescriptorCache | None] = ContextVar(
     "visual_descriptor_cache", default=None
 )
+_descriptor_workers: ContextVar[DescriptorWorkers | None] = ContextVar(
+    "visual_descriptor_workers", default=None
+)
 
 
 class QualityPick(SelectionCriteria):
@@ -68,14 +73,18 @@ class QualityPick(SelectionCriteria):
         bovw_dict_size: int = 300,
         features_extractor: Callable = ImageProcessor.ks_sift,
         max_descriptor_cache_bytes: int = 256 * 1024 * 1024,
+        visual_threads: int = 1,
     ) -> None:
         if max_descriptor_cache_bytes < 0:
             raise ValueError("max_descriptor_cache_bytes must be non-negative.")
+        if visual_threads < 1:
+            raise ValueError("visual_threads must be positive.")
         super().__init__(read_from="pick", source_criteria=source_criteria)
         self.top_n_segments = top_n_segments
         self.bovw_dict_size = bovw_dict_size
         self.features_extractor = features_extractor
         self.max_descriptor_cache_bytes = max_descriptor_cache_bytes
+        self.visual_threads = visual_threads
         self.last_profile = None
 
     def evaluate(self, handler: SummarySegmentHandler) -> SummarySegmentHandler:
@@ -94,24 +103,34 @@ class QualityPick(SelectionCriteria):
                     f"Retrieved {len(clusters)} cluster to execute {self.name} criteria."
                 )
 
-                for cluster in clusters:
-                    seg_features = self.extract_segments_visual_features(cluster)
-                    df = self.get_bovw_dataframe(seg_features)
+                workers = self._create_descriptor_workers(clusters, cache)
+                with workers if workers is not None else nullcontext():
+                    workers_token = _descriptor_workers.set(workers)
+                    try:
+                        for cluster in clusters:
+                            seg_features = self.extract_segments_visual_features(
+                                cluster
+                            )
+                            if workers is not None:
+                                workers.wait_before_fit()
+                            df = self.get_bovw_dataframe(seg_features)
 
-                    log.info(
-                        f"Retrieving top-{self.top_n_segments} segments from cluster."
-                    )
+                            log.info(
+                                f"Retrieving top-{self.top_n_segments} segments from cluster."
+                            )
 
-                    with visual_stage("quality_ranking"):
-                        df["histogram_sum"] = df.sum(axis=1)
-                        top_segments = df.nlargest(
-                            self.top_n_segments, columns="histogram_sum"
-                        ).index.to_list()
+                            with visual_stage("quality_ranking"):
+                                df["histogram_sum"] = df.sum(axis=1)
+                                top_segments = df.nlargest(
+                                    self.top_n_segments, columns="histogram_sum"
+                                ).index.to_list()
 
-                    # Discarding whole cluster and including only best-quality segment
-                    map(lambda s: self.discard(handler, s), cluster)
-                    for segment in top_segments:
-                        self.include(handler, segment)
+                            # Discarding whole cluster and including only best-quality segment
+                            map(lambda s: self.discard(handler, s), cluster)
+                            for segment in top_segments:
+                                self.include(handler, segment)
+                    finally:
+                        _descriptor_workers.reset(workers_token)
         finally:
             _descriptor_cache.reset(cache_token)
             cache.clear()
@@ -123,6 +142,8 @@ class QualityPick(SelectionCriteria):
                 "resolution": "source",
                 "bovw_dict_size": self.bovw_dict_size,
                 "max_descriptor_cache_bytes": self.max_descriptor_cache_bytes,
+                "visual_threads": self.visual_threads,
+                "worker_native_threads": 1,
                 "features_extractor": (
                     "ks_sift"
                     if self.features_extractor is ImageProcessor.ks_sift
@@ -133,11 +154,29 @@ class QualityPick(SelectionCriteria):
 
         return handler
 
+    def _create_descriptor_workers(self, clusters, cache):
+        if (
+            self.visual_threads <= 1
+            or cache.max_bytes == 0
+            or self.features_extractor is not ImageProcessor.ks_sift
+        ):
+            return None
+        sources = {}
+        for cluster in clusters:
+            for segment in cluster:
+                key = self._descriptor_cache_key(segment, cache)
+                if key is not None:
+                    sources.setdefault(key, key[0])
+        if len(sources) < 2:
+            return None
+        return DescriptorWorkers(sources, workers=self.visual_threads)
+
     def extract_segments_visual_features(
         self, segments: set[VideoSegment]
     ) -> dict[VideoSegment, ndarray]:
         log.info("Extracting visual features from segments.")
         cache = _descriptor_cache.get()
+        workers = _descriptor_workers.get()
         result = {}
         for segment in segments:
             visual_count("segment_feature_requests")
@@ -146,15 +185,18 @@ class QualityPick(SelectionCriteria):
             if descriptors is None:
                 if key is None:
                     visual_count("cache_bypasses")
-                frames = VideoProcessor.retrieve_video_frames(
-                    segment.video_path, grayscale=True
-                )
-                if self.features_extractor is ImageProcessor.ks_sift:
-                    descriptors = self.features_extractor(frames)
-                else:
-                    with visual_stage("custom_feature_extraction"):
+                if workers is not None and key is not None:
+                    descriptors = workers.get(key)
+                if descriptors is None:
+                    frames = VideoProcessor.retrieve_video_frames(
+                        segment.video_path, grayscale=True
+                    )
+                    if self.features_extractor is ImageProcessor.ks_sift:
                         descriptors = self.features_extractor(frames)
-                del frames
+                    else:
+                        with visual_stage("custom_feature_extraction"):
+                            descriptors = self.features_extractor(frames)
+                    del frames
                 if key is not None:
                     cache.put(key, descriptors)
             result[segment] = descriptors

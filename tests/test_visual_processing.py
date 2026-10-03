@@ -6,7 +6,7 @@ import unittest
 from math import log10
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import cv2
 import numpy as np
@@ -304,7 +304,7 @@ class QualityCacheTests(unittest.TestCase):
 
     def test_custom_extractor_keeps_per_segment_call_behavior(self):
         extract = Mock(side_effect=[self.descriptors, self.descriptors + 1])
-        criterion = QualityPick("fixture", features_extractor=extract)
+        criterion = QualityPick("fixture", features_extractor=extract, visual_threads=4)
         with (
             patch.object(VideoProcessor, "retrieve_video_frames", return_value=[]),
             patch.object(criterion, "get_bovw_dataframe", side_effect=self.dataframe),
@@ -314,6 +314,66 @@ class QualityCacheTests(unittest.TestCase):
             )
         self.assertEqual(2, extract.call_count)
         self.assertEqual(2, criterion.last_profile["counters"]["cache_bypasses"])
+
+    def test_parallel_preserves_group_order_cache_multiplicity_and_fit_barrier(self):
+        groups = [
+            [self.segment(0, 0), self.segment(1, 0)],
+            [self.segment(0, 1), self.segment(2, 1)],
+        ]
+        handler = self.handler(groups)
+        criterion = QualityPick("fixture", visual_threads=2)
+        workers = MagicMock()
+        workers.get.return_value = self.descriptors
+        events = []
+        workers.wait_before_fit.side_effect = lambda: events.append("barrier")
+
+        def dataframe(items):
+            self.assertEqual("barrier", events[-1])
+            events.append("fit")
+            return self.dataframe(items)
+
+        with (
+            patch(
+                "open_video_summary.core.selection_criteria.quality.DescriptorWorkers",
+                return_value=workers,
+            ) as create,
+            patch.object(
+                criterion, "get_bovw_dataframe", side_effect=dataframe
+            ) as bovw,
+            patch.object(VideoProcessor, "retrieve_video_frames") as decode,
+        ):
+            criterion.evaluate(handler)
+        self.assertEqual(2, create.call_args.kwargs["workers"])
+        self.assertEqual(3, len(create.call_args.args[0]))
+        self.assertEqual(3, workers.get.call_count)
+        self.assertEqual(["barrier", "fit", "barrier", "fit"], events)
+        decode.assert_not_called()
+        for group, call in zip(
+            criterion.get_criteria_input(handler), bovw.call_args_list
+        ):
+            self.assertEqual(list(group), list(call.args[0]))
+            self.assertTrue(
+                all(array is self.descriptors for array in call.args[0].values())
+            )
+        workers.__exit__.assert_called_once()
+
+    def test_parallel_is_disabled_for_zero_cache_or_single_source(self):
+        for cache_bytes, groups in (
+            (0, [[self.segment(0), self.segment(1)]]),
+            (1024, [[self.segment(0, 0)], [self.segment(0, 1)]]),
+        ):
+            criterion = QualityPick(
+                "fixture", visual_threads=4, max_descriptor_cache_bytes=cache_bytes
+            )
+            with patch(
+                "open_video_summary.core.selection_criteria.quality.DescriptorWorkers"
+            ) as create:
+                self.run_mocked(criterion, self.handler(groups))
+            create.assert_not_called()
+
+    def test_visual_thread_budget_must_be_positive(self):
+        with self.assertRaisesRegex(ValueError, "visual_threads must be positive"):
+            QualityPick("fixture", visual_threads=0)
 
     def test_failed_run_does_not_leave_cache_or_active_profile(self):
         criterion = QualityPick("fixture")
@@ -458,6 +518,7 @@ class VisualProfileAndBovwTests(unittest.TestCase):
             )
             self.assertEqual(profile, saved)
             self.assertEqual([summary], dump.call_args.args[0])
+            self.assertEqual(2, summarizer.selection_criteria[0].visual_threads)
 
 
 if __name__ == "__main__":
