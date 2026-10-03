@@ -81,10 +81,12 @@ It keys entries by canonical file path, file metadata, and extraction settings;
 larger entries are recomputed, and least recently used entries are evicted when
 needed. Sampled frames and active candidate-group/KMeans arrays require additional
 memory beyond this cache capacity. Parallel workers each hold their own sampled
-frames and SIFT working memory. At most one pending task per worker is prefetched;
-completed descriptors wait in temporary numeric `.npy` files until their original
-request order. These files contain no pickled objects and are deleted on consumption
-or pool cleanup, including on failure. Futures retain metadata rather than arrays.
+frames and SIFT working memory. Prefetch holds at most `min(workers + 1, unique videos)`
+pending tasks, including one extra task so a worker can continue when a later video
+finishes before the first requested result. Completed descriptors wait in temporary
+numeric `.npy` files until their original request order. These files contain no
+pickled objects and are deleted on consumption or pool cleanup, including on
+failure. Futures retain metadata rather than arrays.
 If a source changes or a previously consumed entry needs recomputing after cache
 eviction, prefetch closes and the remaining requests use the serial path.
 Custom feature extractors retain their original serial per-segment calls.
@@ -114,7 +116,8 @@ times, extraction CPU time, native thread limits, and import/spool timing.
 `worker_cpu_seconds` sums extraction CPU time; it excludes process startup and
 imports, whose full cost is included in the total elapsed time.
 Counters include actual video reads, decoded/sampled frames, SIFT frames, cache
-hits/misses, and KMeans fits. The profile contains no transcript or video pixels.
+hits/misses, KMeans fits, and the pending-task limit and peak. The profile contains
+no transcript or video pixels.
 Python callers can read `QualityPick.last_profile`; the CLI saves it alongside
 the summary and also logs it in `app.log`.
 

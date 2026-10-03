@@ -3,6 +3,7 @@
 import json
 import tempfile
 import unittest
+from concurrent.futures import Future
 from math import log10
 from pathlib import Path
 from types import SimpleNamespace
@@ -356,6 +357,64 @@ class QualityCacheTests(unittest.TestCase):
                 all(array is self.descriptors for array in call.args[0].values())
             )
         workers.__exit__.assert_called_once()
+
+    def test_parallel_cache_eviction_or_oversize_closes_spool_before_recomputing(self):
+        groups = [
+            [self.segment(0, 0)],
+            [self.segment(1, 0)],
+            [self.segment(2, 0)],
+            [self.segment(0, 1)],
+        ]
+
+        def submit(function, path, signature, output, task):
+            np.save(output, self.descriptors, allow_pickle=False)
+            future = Future()
+            future.set_result({"stale": False, "output": output})
+            return future
+
+        for limit in (self.descriptors.nbytes - 1, self.descriptors.nbytes):
+            with self.subTest(cache_bytes=limit):
+                executor = Mock()
+                executor.submit.side_effect = submit
+                with (
+                    patch(
+                        "open_video_summary.utils.processing.parallel.ProcessPoolExecutor",
+                        return_value=executor,
+                    ),
+                    patch.object(
+                        VideoProcessor, "retrieve_video_frames", return_value=[]
+                    ) as decode,
+                    patch.object(
+                        ImageProcessor, "ks_sift", return_value=self.descriptors
+                    ) as extract,
+                ):
+                    criterion = QualityPick(
+                        "fixture",
+                        features_extractor=extract,
+                        visual_threads=2,
+                        max_descriptor_cache_bytes=limit,
+                    )
+                    with patch.object(
+                        criterion, "get_bovw_dataframe", side_effect=self.dataframe
+                    ) as bovw:
+                        criterion.evaluate(self.handler(groups))
+                counters = criterion.last_profile["counters"]
+                self.assertEqual(3, executor.submit.call_count)
+                self.assertEqual(3, counters["worker_pending_limit"])
+                self.assertEqual(3, counters["worker_pending_peak"])
+                self.assertEqual(1, counters["worker_fallbacks"])
+                self.assertLessEqual(counters.get("cache_peak_bytes", 0), limit)
+                self.assertEqual(1, decode.call_count)
+                self.assertEqual(1, extract.call_count)
+                self.assertEqual(4, bovw.call_count)
+                for call in bovw.call_args_list:
+                    for descriptors in call.args[0].values():
+                        np.testing.assert_array_equal(self.descriptors, descriptors)
+                spool = Path(executor.submit.call_args_list[0].args[3]).parent
+                self.assertFalse(spool.exists())
+                executor.shutdown.assert_called_once_with(
+                    wait=True, cancel_futures=True
+                )
 
     def test_parallel_is_disabled_for_zero_cache_or_single_source(self):
         for cache_bytes, groups in (

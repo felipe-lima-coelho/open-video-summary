@@ -109,10 +109,11 @@ def _extract_to_file(path: str, expected_signature: tuple, output: str, task: in
 
 
 class DescriptorWorkers:
-    """Prefetch at most ``workers`` unique videos and consume in request order."""
+    """Prefetch at most ``workers + 1`` videos and consume in request order."""
 
     def __init__(self, sources: dict, workers: int) -> None:
         self.workers = min(workers, len(sources))
+        self.pending_limit = min(self.workers + 1, len(sources))
         self.sources = iter(sources.items())
         self.pending = OrderedDict()
         self.executor = None
@@ -129,6 +130,7 @@ class DescriptorWorkers:
                 initializer=_initialize_worker,
             )
             visual_maximum("parallel_workers", self.workers)
+            visual_maximum("worker_pending_limit", self.pending_limit)
             self._fill()
             return self
         except BaseException:
@@ -136,7 +138,9 @@ class DescriptorWorkers:
             raise
 
     def _fill(self) -> None:
-        while not self.closed and len(self.pending) < self.workers:
+        # One queued task can keep a worker busy when a later video finishes
+        # before the first requested result. Pending arrays stay on disk.
+        while not self.closed and len(self.pending) < self.pending_limit:
             source = next(self.sources, None)
             if source is None:
                 break

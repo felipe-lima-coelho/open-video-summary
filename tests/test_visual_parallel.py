@@ -7,8 +7,9 @@ import sys
 import tempfile
 import textwrap
 import unittest
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -69,14 +70,15 @@ class DescriptorWorkerTests(unittest.TestCase):
         ):
             with DescriptorWorkers(self.sources, workers=2) as workers:
                 temporary = Path(workers.directory.name)
-                self.assertEqual(2, self.executor.submit.call_count)
+                self.assertEqual(3, self.executor.submit.call_count)
+                self.assertEqual(3, workers.pending_limit)
                 for index, key in enumerate(self.sources):
                     actual = workers.get(key)
                     np.testing.assert_array_equal(
                         np.full((2, 128), index, dtype=np.float32), actual
                     )
-                    self.assertLessEqual(len(workers.pending), 2)
-                    self.assertLessEqual(len(list(temporary.glob("*.npy"))), 2)
+                    self.assertLessEqual(len(workers.pending), 3)
+                    self.assertLessEqual(len(list(temporary.glob("*.npy"))), 3)
                     submitted = self.executor.submit.call_count
                     workers.wait_before_fit()
                     self.assertEqual(submitted, self.executor.submit.call_count)
@@ -84,12 +86,80 @@ class DescriptorWorkerTests(unittest.TestCase):
         self.assertEqual(
             "spawn", create.call_args.kwargs["mp_context"].get_start_method()
         )
+        self.assertEqual(2, create.call_args.kwargs["max_workers"])
         self.executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
         report = self.profile.as_dict()
+        self.assertEqual(3, report["counters"]["worker_pending_limit"])
+        self.assertEqual(3, report["counters"]["worker_pending_peak"])
         self.assertEqual(5, report["counters"]["video_reads"])
         self.assertEqual(10.0, report["worker_cpu_seconds"])
         self.assertEqual({"sift_detect": 5.0}, report["worker_stage_seconds"])
         self.assertNotIn("sift_detect", report["stage_seconds"])
+
+    def test_third_task_starts_before_first_finishes_when_second_completes(self):
+        release_first = Event()
+        second_finished = Event()
+        third_started = Event()
+
+        def extract(path, signature, output, task):
+            if task == 0:
+                self.assertTrue(release_first.wait(timeout=15))
+            elif task == 2:
+                self.assertTrue(second_finished.is_set())
+                third_started.set()
+            result = self.submit(None, path, signature, output, task).result()
+            if task == 1:
+                second_finished.set()
+            return result
+
+        # Use real executor scheduling with two threads, without numerical work
+        # or process startup. The production executor still uses Windows spawn.
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            with (
+                patch(
+                    "open_video_summary.utils.processing.parallel.ProcessPoolExecutor",
+                    return_value=executor,
+                ) as create,
+                patch(
+                    "open_video_summary.utils.processing.parallel._extract_to_file",
+                    side_effect=extract,
+                ),
+                collect_visual_profile(self.profile),
+                DescriptorWorkers(self.sources, workers=2) as workers,
+            ):
+                temporary = Path(workers.directory.name)
+                try:
+                    self.assertTrue(second_finished.wait(timeout=5))
+                    self.assertTrue(third_started.wait(timeout=5))
+                    keys = list(self.sources)
+                    self.assertFalse(workers.pending[keys[0]].done())
+                    self.assertEqual(3, len(workers.pending))
+                    self.assertEqual(2, create.call_args.kwargs["max_workers"])
+                finally:
+                    release_first.set()
+                for task, key in enumerate(keys):
+                    np.testing.assert_array_equal(
+                        np.full((2, 128), task, dtype=np.float32), workers.get(key)
+                    )
+                    self.assertLessEqual(len(workers.pending), 3)
+        self.assertFalse(temporary.exists())
+        self.assertEqual(3, self.profile.counters["worker_pending_peak"])
+
+    def test_pending_limit_is_capped_by_unique_source_count(self):
+        with (
+            patch(
+                "open_video_summary.utils.processing.parallel.ProcessPoolExecutor",
+                return_value=self.executor,
+            ) as create,
+            collect_visual_profile(self.profile),
+            DescriptorWorkers(self.sources, workers=8) as workers,
+        ):
+            self.assertEqual(5, create.call_args.kwargs["max_workers"])
+            self.assertEqual(5, workers.pending_limit)
+            self.assertEqual(5, self.executor.submit.call_count)
+            self.assertEqual(5, len(workers.pending))
+        self.assertEqual(5, self.profile.counters["worker_pending_limit"])
+        self.assertEqual(5, self.profile.counters["worker_pending_peak"])
 
     def test_changed_source_closes_speculation_before_serial_fallback(self):
         with (
@@ -107,7 +177,7 @@ class DescriptorWorkerTests(unittest.TestCase):
             self.assertTrue(workers.closed)
             self.assertFalse(temporary.exists())
         self.assertEqual(1, self.profile.counters["worker_stale_results"])
-        self.assertEqual(2, self.profile.counters["video_reads"])
+        self.assertEqual(3, self.profile.counters["video_reads"])
 
     def test_evicted_request_falls_back_without_growing_pending_window(self):
         with (
@@ -122,9 +192,9 @@ class DescriptorWorkerTests(unittest.TestCase):
             workers.get(key)
             self.assertIsNone(workers.get(key))
             self.assertTrue(workers.closed)
-            self.assertEqual(3, self.executor.submit.call_count)
+            self.assertEqual(4, self.executor.submit.call_count)
         self.assertEqual(1, self.profile.counters["worker_fallbacks"])
-        self.assertEqual(3, self.profile.counters["video_reads"])
+        self.assertEqual(4, self.profile.counters["video_reads"])
 
     def test_later_failure_is_raised_in_request_order_and_cleans_everything(self):
         self.failure_task = 1
@@ -172,7 +242,7 @@ class RealSpawnTests(unittest.TestCase):
                 rng = np.random.default_rng(713)
                 groups = []
                 sources = []
-                for source in range(2):
+                for source in range(3):
                     path = directory / f"source_{source}.avi"
                     writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 1, (128, 96))
                     assert writer.isOpened()
@@ -205,7 +275,7 @@ class RealSpawnTests(unittest.TestCase):
                         outputs.append((handler, records, np.random.get_state(), criterion.last_profile))
                 serial, parallel = outputs
                 assert serial[0].include == parallel[0].include
-                assert len(serial[1]) == len(parallel[1]) == 4
+                assert len(serial[1]) == len(parallel[1]) == 6
                 for (left_segment, left), (right_segment, right) in zip(serial[1], parallel[1]):
                     assert left_segment == right_segment
                     np.testing.assert_array_equal(left, right)
@@ -213,10 +283,13 @@ class RealSpawnTests(unittest.TestCase):
                 np.testing.assert_array_equal(serial[2][1], parallel[2][1])
                 assert serial[2][2:] == parallel[2][2:]
                 profile = parallel[3]
-                assert profile["counters"]["video_reads"] == 2
-                assert profile["counters"]["cache_hits"] == 2
+                assert profile["counters"]["video_reads"] == 3
+                assert profile["counters"]["cache_hits"] == 3
                 assert profile["counters"]["parallel_workers"] == 2
-                assert len(profile["workers"]) == 2
+                assert profile["counters"]["worker_pending_limit"] == 3
+                assert profile["counters"]["worker_pending_peak"] == 3
+                assert len(profile["workers"]) == 3
+                assert len({worker["pid"] for worker in profile["workers"]}) <= 2
                 for worker in profile["workers"]:
                     assert worker["pid"] != os.getpid()
                     assert worker["opencv_threads"] == 1
