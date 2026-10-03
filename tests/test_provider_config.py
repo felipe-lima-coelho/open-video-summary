@@ -57,7 +57,8 @@ class ProviderConfigurationTests(unittest.TestCase):
             environ={"OPENAI_API_KEY": " ", "OVS_STT_LANGUAGE": ""}
         )
         self.assertIsNone(config.llm.api_key)
-        self.assertIsNone(config.stt.language)
+        self.assertEqual("pt", config.stt.language)
+        self.assertIsNone(self.load(environ={"OVS_STT_LANGUAGE": "auto"}).stt.language)
 
     def test_custom_endpoint_and_secret_not_in_repr(self):
         config = self.load(

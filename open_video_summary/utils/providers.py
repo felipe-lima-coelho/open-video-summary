@@ -82,12 +82,6 @@ def load_provider_config(
         value = explicit if explicit is not None else values.get(variable)
         return _optional(value) if _optional(value) is not None else default
 
-    def optional_get(argument: str, variable: str, default=None):
-        explicit = supplied.get(argument)
-        if explicit is not None:
-            return _optional(explicit)
-        return _optional(values[variable]) if variable in values else default
-
     llm_provider = get("llm_provider", "OVS_LLM_PROVIDER", "ollama").lower()
     stt_provider = get("stt_provider", "OVS_STT_PROVIDER", "whisper_local").lower()
     if llm_provider not in LLM_PROVIDERS:
@@ -111,10 +105,11 @@ def load_provider_config(
         ),
         max_attempts=attempts,
     )
+    language = get("language", "OVS_STT_LANGUAGE", "pt")
     stt = STTConfig(
         provider=stt_provider,
         model=get("stt_model", "OVS_STT_MODEL", stt_definition.default_model),
-        language=optional_get("language", "OVS_STT_LANGUAGE", "pt"),
+        language=None if language.lower() == "auto" else language,
         api_key=_optional(values.get(stt_definition.key_variable)),
         timeout_seconds=_positive(
             get("stt_timeout", "OVS_STT_TIMEOUT_SECONDS", "120"),
