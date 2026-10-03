@@ -72,7 +72,7 @@ class TimedWord:
     text: str
     start: float
     end: float
-    # The normalized source separator before the next timed word.
+    # The source separator before the next timed word, including whitespace.
     separator_after: str = " "
 
 

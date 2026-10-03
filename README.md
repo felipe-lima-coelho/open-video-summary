@@ -87,7 +87,13 @@ weights or audio. Native codes such as `haw` and `yue` remain available when the
 installed tokenizer supports them. Run metadata preserves the requested code,
 the translated code sent to the provider, and the language reported in its response.
 Timed words keep the source separators, so languages and mixed text without
-spaces retain their spelling and original word timestamps. The default sentence
+spaces retain their spelling and original word timestamps. Internal transcript
+whitespace and punctuation keep their source positions. Leading and trailing
+utterance whitespace is trimmed, including residue at transcript edges after
+removing audio events. Word-token punctuation
+supplements a source gap only when that gap has no punctuation; conflicting
+punctuation is rejected. Valid reported model and language fields remain in run
+metadata even when the transcript is invalid. The default sentence
 boundaries include `.`, `!`, `?`, `。`, `！`, and `？`; custom boundaries remain configurable.
 See the [speech-to-text API](https://elevenlabs.io/docs/api-reference/speech-to-text/convert)
 and [Scribe language and capability guide](https://elevenlabs.io/docs/overview/capabilities/speech-to-text).

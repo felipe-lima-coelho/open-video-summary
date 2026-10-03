@@ -191,44 +191,65 @@ def _text(value) -> str:
 
 
 def _lexical_key(value: str) -> str:
+    # Canonical decomposition is only for comparisons, never emitted as text.
     return "".join(
         character
-        for character in unicodedata.normalize("NFC", value)
+        for character in unicodedata.normalize("NFD", value)
         if character.isalnum() or unicodedata.category(character).startswith("M")
     )
 
 
-def _merge_punctuation(word: str, transcript_token: str) -> str:
-    def split(token):
-        letters, punctuation = [], [""]
-        for character in unicodedata.normalize("NFC", token):
-            if _lexical_key(character):
-                letters.append(character)
-                punctuation.append("")
-            else:
-                punctuation[-1] += character
-        return letters, punctuation
+def _source_text(value) -> str:
+    if not isinstance(value, str):
+        raise InvalidResponseError("STT returned a non-text transcript or token.")
+    # Whisper prefixes utterances with whitespace. Internal source characters,
+    # including whitespace, remain authoritative during alignment.
+    return value.strip()
 
-    letters, original = split(word)
-    _, reported = split(transcript_token)
-    merged = []
-    for left, right in zip(original, reported):
-        left_punctuation = "".join(left.split())
-        right_punctuation = "".join(right.split())
-        if (
-            left_punctuation and right_punctuation
-            and left_punctuation != right_punctuation
+
+def _lexical_units(text: str):
+    """Locate source character spans without rewriting Unicode or whitespace."""
+    cursor = 0
+    while cursor < len(text):
+        start = cursor
+        cursor += 1
+        if not _lexical_key(text[start]):
+            continue
+        while cursor < len(text) and unicodedata.category(text[cursor]).startswith(
+            "M"
         ):
-            raise InvalidResponseError(
-                "STT transcript and words have conflicting punctuation."
-            )
-        merged.append(
-            right if right_punctuation or not left_punctuation else left + right
-        )
-    return "".join(
-        punctuation + (letters[index] if index < len(letters) else "")
-        for index, punctuation in enumerate(merged)
-    )
+            cursor += 1
+        yield _lexical_key(text[start:cursor]), start, cursor
+
+
+def _text_layout(text: str):
+    """Index literal source units and gaps by canonical lexical offsets."""
+    units, gaps, offsets = [], [], [0]
+    previous_end = 0
+    for key, start, end in _lexical_units(text):
+        gaps.append(text[previous_end:start])
+        units.append(text[start:end])
+        offsets.append(offsets[-1] + len(key))
+        previous_end = end
+    gaps.append(text[previous_end:])
+    return units, gaps, offsets
+
+
+def _gap_parts(gap: str, quoted: set[str]) -> tuple[str, str, str]:
+    """Partition one source span; never move or repeat its characters."""
+    opening = None
+    for index, character in enumerate(gap):
+        if not character.isspace():
+            if _punctuation_opens(character, quoted) and opening is None:
+                opening = index
+    split = len(gap) if opening is None else opening
+    spaces = list(re.finditer(r"\s+", gap))
+    if spaces:
+        # A whitespace run separates the words. Prefer the run preceding an
+        # opening quote/bracket, or the last run after closing punctuation.
+        separator = min(spaces, key=lambda match: abs(match.end() - split))
+        return gap[:separator.start()], separator.group(), gap[separator.end():]
+    return gap[:split], "", gap[split:]
 
 
 def _punctuation_opens(token: str, quoted: set[str]) -> bool:
@@ -286,7 +307,8 @@ def _words(
     previous_end = 0.0
     for item in items:
         kind = _field(item, "type") if elevenlabs else "word"
-        token = _text(_field(item, "text"))
+        raw_text = _field(item, "text")
+        token = _source_text(raw_text) if kind == "audio_event" else _text(raw_text)
         if kind == "audio_event":
             events.append((token, len(words)))
             continue
@@ -302,7 +324,7 @@ def _words(
         if not _lexical_key(token):
             # Punctuation has no speech timing of its own. Keep the adjacent
             # spoken word's interval rather than manufacture an interval.
-            if words and not opens:
+            if words and not opens and not prefix:
                 words[-1] = replace(words[-1], text=words[-1].text + token)
             else:
                 prefix += token
@@ -322,7 +344,7 @@ def _align_text(
     transcript,
     events: list[tuple[str, int]] | None = None,
 ) -> tuple[str, tuple[TimedWord, ...]]:
-    text = unicodedata.normalize("NFC", _text(transcript))
+    text = _source_text(transcript)
     cursor, word_index, event_spans = 0, 0, []
     for event, words_before in events or ():
         if not event:
@@ -331,16 +353,20 @@ def _align_text(
         # equal string globally could discard spoken text with the same label.
         while word_index < words_before:
             expected = _lexical_key(words[word_index].text)
-            for letter in expected:
-                while cursor < len(text) and not _lexical_key(text[cursor]):
-                    cursor += 1
-                if cursor >= len(text) or text[cursor] != letter:
+            matched, consumed = 0, 0
+            for key, _, end in _lexical_units(text[cursor:]):
+                if not expected.startswith(key, matched):
                     raise InvalidResponseError(
                         "STT events and timed speech do not align."
                     )
-                cursor += 1
+                matched += len(key)
+                consumed = end
+                if matched == len(expected):
+                    break
+            if matched != len(expected):
+                raise InvalidResponseError("STT events and timed speech do not align.")
+            cursor += consumed
             word_index += 1
-        event = unicodedata.normalize("NFC", event)
         location = text.find(event, cursor)
         if location < 0:
             continue
@@ -350,7 +376,7 @@ def _align_text(
         cursor = location + len(event)
     for start, end in reversed(event_spans):
         text = text[:start] + text[end:]
-    text = _text(text)
+    text = _source_text(text)
     if not words:
         if _lexical_key(text):
             raise InvalidResponseError(
@@ -365,40 +391,66 @@ def _align_text(
     expected = [_lexical_key(word.text) for word in words]
     if _lexical_key(text) != "".join(expected):
         raise InvalidResponseError("STT transcript text and timed words do not align.")
-    positions = [index for index, letter in enumerate(text) if _lexical_key(letter)]
+    units, gaps, offsets = _text_layout(text)
+    source_boundaries = {offset: index for index, offset in enumerate(offsets)}
+    word_gaps, suffix_lengths, boundaries = {}, {}, [0]
+    for word, key in zip(words, expected):
+        _, punctuation, word_offsets = _text_layout(word.text)
+        for gap, offset in zip(punctuation, word_offsets):
+            position = boundaries[-1] + offset
+            word_gaps[position] = word_gaps.get(position, "") + "".join(gap.split())
+        boundaries.append(boundaries[-1] + len(key))
+        suffix_lengths[boundaries[-1]] = len("".join(punctuation[-1].split()))
+
+    if any(boundary not in source_boundaries for boundary in boundaries):
+        raise InvalidResponseError("STT word boundaries split a source character.")
+    for position, punctuation in word_gaps.items():
+        if not punctuation:
+            continue
+        if position not in source_boundaries:
+            raise InvalidResponseError("STT punctuation splits a source character.")
+        index = source_boundaries[position]
+        source = "".join(gaps[index].split())
+        remaining = iter(source)
+        if all(character in remaining for character in punctuation):
+            continue
+        if source:
+            raise InvalidResponseError(
+                "STT transcript and words have conflicting punctuation."
+            )
+        # Only an empty source punctuation gap is supplemented. Reconcile on
+        # the global lexical axis before assigning any punctuation to a word.
+        split = suffix_lengths.get(position, len(punctuation))
+        gaps[index] = punctuation[:split] + gaps[index] + punctuation[split:]
+
+    text = gaps[0] + "".join(unit + gap for unit, gap in zip(units, gaps[1:]))
     tokens, separators, quoted = [], [], set()
-    lexical_cursor, previous_end = 0, 0
-    for key in expected:
-        start = positions[lexical_cursor]
-        lexical_cursor += len(key)
-        end = positions[lexical_cursor - 1] + 1
-        gap, prefix = text[previous_end:start], ""
-        for mark in "".join(gap.split()):
-            opens = _punctuation_opens(mark, quoted)
-            if tokens and not opens:
-                tokens[-1] += mark
-            else:
-                prefix += mark
-        if tokens:
-            separators.append(" " if any(mark.isspace() for mark in gap) else "")
-        token = prefix + text[start:end]
+    prefix = gaps[0]
+    _gap_parts(prefix, quoted)
+    for start, end in zip(boundaries, boundaries[1:]):
+        left, right = source_boundaries[start], source_boundaries[end]
+        token = prefix + "".join(
+            units[index] + (gaps[index + 1] if index + 1 < right else "")
+            for index in range(left, right)
+        )
+        if right < len(units):
+            suffix, separator, prefix = _gap_parts(gaps[right], quoted)
+            token += suffix
+            separators.append(separator)
+        else:
+            token += gaps[right]
         tokens.append(token)
-        previous_end = end
-    tokens[-1] += "".join(text[previous_end:].split())
     aligned = tuple(
         replace(
             word,
-            text=_merge_punctuation(word.text, token),
+            text=token,
             separator_after=(
                 separators[index] if index < len(separators) else word.separator_after
             ),
         )
         for index, (token, word) in enumerate(zip(tokens, words))
     )
-    result_text = aligned[0].text + "".join(
-        separator + word.text for separator, word in zip(separators, aligned[1:])
-    )
-    return _text(result_text), aligned
+    return text, aligned
 
 
 def _reported_language(response, field: str) -> str | None:
@@ -421,7 +473,7 @@ def _local_result(response) -> TranscriptionResult:
         raise InvalidResponseError("Local Whisper did not return transcript segments.")
     segments, all_words, previous_end = [], [], 0.0
     for item in raw_segments:
-        segment_text = _text(_field(item, "text"))
+        segment_text = _source_text(_field(item, "text"))
         raw_words = _field(item, "words", [])
         if not segment_text and raw_words == []:
             continue
@@ -591,19 +643,31 @@ class _STTAdapter:
         sdk_version: str | None,
         *,
         response=None,
-        result: TranscriptionResult | None = None,
         attempts: int = 1,
         status: str = "completed",
         audio_duration: float | None = None,
         sent_language: str | None = None,
     ) -> ServiceMetadata:
+        def reported(read, *args):
+            # A malformed transcript can still report valid scalar settings.
+            # An invalid metadata field must not hide the original failure.
+            try:
+                return read(response, *args)
+            except InvalidResponseError:
+                if status == "completed":
+                    raise
+                return None
+
         metadata = ServiceMetadata(
             provider=self.config.provider,
             requested_model=self.config.model,
-            returned_model=_reported_model(response) if result is not None else None,
+            returned_model=reported(_reported_model),
             requested_language=language,
             sent_language=sent_language,
-            reported_language=result.language if result is not None else None,
+            reported_language=reported(
+                _reported_language,
+                "language" if self.config.provider == "whisper_local" else "language_code",
+            ),
             duration_seconds=time.perf_counter() - started,
             audio_duration_seconds=audio_duration,
             adapter_version="1",
@@ -639,6 +703,7 @@ class LocalWhisperSTT(_STTAdapter):
         started, sdk_version = time.perf_counter(), _version("whisper-timestamped")
         audio_duration = None
         sent_language = None
+        response = None
         try:
             try:
                 whisper = importlib.import_module("whisper_timestamped")
@@ -668,7 +733,6 @@ class LocalWhisperSTT(_STTAdapter):
                 requested_language,
                 sdk_version,
                 response=response,
-                result=result,
                 audio_duration=audio_duration,
                 sent_language=sent_language,
             )
@@ -694,6 +758,7 @@ class LocalWhisperSTT(_STTAdapter):
                 started,
                 requested_language,
                 sdk_version,
+                response=response,
                 status=type(failure).__name__,
                 audio_duration=audio_duration,
                 sent_language=sent_language,
@@ -723,6 +788,7 @@ class ElevenLabsSTT(_STTAdapter):
         started, sdk_version = time.perf_counter(), _version("elevenlabs")
         attempts, audio_duration = 0, None
         sent_language = None
+        response = None
         try:
             try:
                 client_class = importlib.import_module("elevenlabs.client").ElevenLabs
@@ -779,7 +845,6 @@ class ElevenLabsSTT(_STTAdapter):
                 requested_language,
                 sdk_version,
                 response=response,
-                result=result,
                 attempts=attempts,
                 audio_duration=audio_duration,
                 sent_language=sent_language,
@@ -797,6 +862,7 @@ class ElevenLabsSTT(_STTAdapter):
                 started,
                 requested_language,
                 sdk_version,
+                response=response,
                 attempts=attempts,
                 status=type(failure).__name__,
                 audio_duration=audio_duration,

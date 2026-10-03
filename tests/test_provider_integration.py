@@ -309,6 +309,67 @@ class SegmentationIntegrationTests(unittest.TestCase):
         self.assertEqual(["你好。世界。"], [segment.content for segment in segments])
         self.assertEqual([(0, 3)], [(segment.start, segment.end) for segment in segments])
 
+    def test_source_punctuation_and_whitespace_survive_both_segmenter_flows(self):
+        samples = [
+            ("The price is $5.", ["The", "price", "is", "$5."]),
+            ("It is -5 degrees.", ["It", "is", "-5", "degrees."]),
+            ("Use #Python now.", ["Use", "#Python", "now."]),
+            ("Hello @world.", ["Hello", "@world."]),
+            ("Score +5.", ["Score", "+5."]),
+            ("Type /help.", ["Type", "/help."]),
+            ("state-of-the-art.", ["state", "-of", "-the", "-art."]),
+            ("and/or.", ["and", "/or."]),
+            ("l’amour.", ["l", "’amour."]),
+            ("你好$5世界。", ["你好", "$5", "世界。"]),
+            ("Pay €5 or £6.", ["Pay", "€5", "or", "£6."]),
+            ("Value −5.", ["Value", "−5."]),
+            ("Keep 100% now.", ["Keep", "100%", "now."]),
+            ('He said: "go!"', ["He", "said:", '"go!"']),
+            ("Ele disse: “Olá!”", ["Ele", "disse:", "Olá!"]),
+            ("「你好，世界！」", ["你好", "世界"]),
+            ("go/go—go.", ["go", "/go", "—go."]),
+            ("A\t /\u00a0B\n\u2003+C.", ["A", "/B", "+C."]),
+            ("Cafe\u0301\u00a0&\tchá.", ["Café", "chá."]),
+        ]
+        for text, tokens in samples:
+            raw_words = [
+                {"text": token, "start": index + 0.1, "end": index + 0.8}
+                for index, token in enumerate(tokens)
+            ]
+            for provider in ("whisper_local", "elevenlabs"):
+                if provider == "whisper_local":
+                    fixture = {
+                        "text": text, "language": "pt",
+                        "segments": [{"text": text, "start": 0, "end": len(tokens), "words": raw_words}],
+                    }
+                else:
+                    fixture = {"text": text, "language_code": "por", "words": [dict(word, type="word") for word in raw_words]}
+                for segmenter_type in (WordVideoSegmenter, ClusteredVideoSegmenter):
+                    with self.subTest(text=text, provider=provider, segmenter=segmenter_type.__name__):
+                        responses = ['{"0":"Tema"}', '{"0":"Tema"}']
+                        if segmenter_type is ClusteredVideoSegmenter:
+                            responses = [text, text] + responses
+                        language, generate = llm_adapter("openai", responses)
+                        speech = speech_adapter(provider, fixture)
+                        segmenter = segmenter_type(
+                            min_segment_length=1, max_subtopics=3,
+                            llm_adapter=language, stt_adapter=speech,
+                        )
+                        result = segmenter.create_video_segments(Video("synthetic", "data/raw/synthetic.mp4"))
+                        self.assertEqual(text, speech.transcribe.return_value.text)
+                        self.assertEqual(
+                            [(word["start"], word["end"]) for word in raw_words],
+                            [(word.start, word.end) for word in speech.transcribe.return_value.words],
+                        )
+                        self.assertEqual([text], [segment.content for segment in result.segments])
+                        expected = (0.1, len(tokens) - 0.2)
+                        if provider == "whisper_local" and segmenter_type is ClusteredVideoSegmenter:
+                            expected = (0, len(tokens))
+                        self.assertEqual([expected], [(segment.start, segment.end) for segment in result.segments])
+                        self.assertEqual("Tema", result.segments[0].video_topic)
+                        self.assertEqual(result.path, result.segments[0].video_path)
+                        self.assertIn(text, generate.call_args_list[0].kwargs["input"])
+
     def test_empty_transcription_stops_before_any_llm_call(self):
         language, create = llm_adapter("openai", [])
         speech = SimpleNamespace(

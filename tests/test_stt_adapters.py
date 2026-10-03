@@ -1,4 +1,5 @@
 import copy
+import itertools
 import json
 import math
 import shutil
@@ -406,9 +407,13 @@ ElevenLabsSTT(STTConfig(provider='elevenlabs', model='scribe_v2'))
         }
         with self.remote(response=response) as fake:
             result = fake.adapter.transcribe(self.audio_path)
-        self.assertEqual("Olá, mundo!", result.text)
+        self.assertEqual("Olá ,  mundo !", result.text)
         self.assertEqual(
-            (TimedWord("Olá,", 0.2, 0.5), TimedWord("mundo!", 0.8, 1.1)), result.words
+            (
+                TimedWord("Olá ,", 0.2, 0.5, separator_after="  "),
+                TimedWord("mundo !", 0.8, 1.1),
+            ),
+            result.words,
         )
 
     @staticmethod
@@ -428,6 +433,102 @@ ElevenLabsSTT(STTConfig(provider='elevenlabs', model='scribe_v2'))
             "language_code": language,
             "words": [dict(word, type="word") for word in words],
         }
+
+    def test_punctuation_roundtrips_for_every_adjacent_token_ownership(self):
+        # Each gap's punctuation can belong to either neighboring timed word,
+        # or be split between them. The source spans must be identical in all
+        # cases, including spacing and repeated lexical words.
+        layouts = [
+            ("", ["The", "price", "is", "5"], [" ", " ", " $"], "."),
+            ("", ["It", "is", "5", "degrees"], [" ", " -", " "], "."),
+            ("", ["Use", "Python", "now"], [" #", " "], "."),
+            ("", ["Hello", "world"], [" @"], "."),
+            ("", ["Score", "5"], [" +"], "."),
+            ("", ["Type", "help"], [" /"], "."),
+            ("", ["state", "of", "the", "art"], ["-", "-", "-"], "."),
+            ("", ["and", "or"], ["/"], "."),
+            ("", ["l", "amour"], ["’"], "."),
+            ("", ["你好", "5", "世界"], ["$", ""], "。"),
+            ("", ["Pay", "5", "or", "6"], [" €", " ", " £"], "."),
+            ("", ["Value", "5"], [" −"], "."),
+            ("", ["Keep", "100", "now"], [" ", "% "], "."),
+            ("", ["Olá", "mundo"], [", "], "!"),
+            ("", ["He", "said", "go", "Now"], [" ", ': "', '!" '], "."),
+            ("", ["He", "said", "go", "Now"], [" ", ": “", "!” "], "."),
+            ("「", ["你好", "世界", "再见"], ["，", "！」「"], "。」"),
+            ("", ["go", "go", "go"], [" /", "—"], "."),
+            ("", ["A", "B", "C"], ["\t /\u00a0", "\n\u2003+"], "."),
+            ("", ["Cafe\u0301", "café"], ["  &\t"], "."),
+            ("", ["A", "B"], [" (?!"], ")."),
+        ]
+        for prefix, lexical, gaps, suffix in layouts:
+            text = prefix + "".join(
+                token + gap for token, gap in zip(lexical, gaps)
+            ) + lexical[-1] + suffix
+            marks = ["".join(gap.split()) for gap in gaps]
+            for cuts in itertools.product(*(range(len(gap) + 1) for gap in marks)):
+                tokens = lexical.copy()
+                tokens[0] = prefix + tokens[0]
+                tokens[-1] += suffix
+                for index, (gap, cut) in enumerate(zip(marks, cuts)):
+                    tokens[index] += gap[:cut]
+                    tokens[index + 1] = gap[cut:] + tokens[index + 1]
+                for local in (False, True):
+                    with self.subTest(text=text, cuts=cuts, local=local):
+                        response = self.unspaced_response(text, tokens, local=local)
+                        result = (stt._local_result if local else stt._elevenlabs_result)(response)
+                        self.assertEqual(text, result.text)
+                        self.assertEqual(
+                            text,
+                            "".join(word.text + word.separator_after for word in result.words[:-1])
+                            + result.words[-1].text,
+                        )
+                        self.assertEqual(
+                            [(index + 0.1, index + 0.8) for index in range(len(tokens))],
+                            [(word.start, word.end) for word in result.words],
+                        )
+                        if local:
+                            self.assertEqual(text, result.segments[0].text)
+                            self.assertEqual((0, len(tokens)), (result.segments[0].start, result.segments[0].end))
+
+    def test_source_punctuation_superset_and_canonical_text_are_preserved(self):
+        for text, tokens in [
+            ('He said: "Olá!"', ["He", "said:", "Olá!"]),
+            ("Ele disse: “Olá!”", ["Ele", "disse", "Olá"]),
+            ("「你好，世界！」", ["你好，", "世界！"]),
+            ("Cafe\u0301\u00a0&\tchá.", ["Café", "chá."]),
+        ]:
+            for local in (False, True):
+                with self.subTest(text=text, local=local):
+                    response = self.unspaced_response(text, tokens, local=local)
+                    result = (stt._local_result if local else stt._elevenlabs_result)(response)
+                    self.assertEqual(text, result.text)
+                    self.assertEqual(len(tokens), len(result.words))
+                    self.assertEqual(
+                        [(index + 0.1, index + 0.8) for index in range(len(tokens))],
+                        [(word.start, word.end) for word in result.words],
+                    )
+
+    def test_standalone_punctuation_preserves_symbol_order_between_words(self):
+        for local in (False, True):
+            with self.subTest(local=local):
+                response = self.unspaced_response(
+                    "A (?!)B.", ["A", "(", "?", "!", ")", "B", "."], local=local
+                )
+                result = (stt._local_result if local else stt._elevenlabs_result)(response)
+                self.assertEqual("A (?!)B.", result.text)
+                self.assertEqual(
+                    [(0.1, 0.8), (5.1, 5.8)],
+                    [(word.start, word.end) for word in result.words],
+                )
+
+    def test_audio_event_labels_keep_internal_whitespace_for_matching(self):
+        response = self.unspaced_response("(soft  laugh) A\tB.", ["A", "B"])
+        response["words"].insert(0, {"type": "audio_event", "text": "(soft  laugh)"})
+        result = stt._elevenlabs_result(response)
+        self.assertEqual("A\tB.", result.text)
+        self.assertEqual("\t", result.words[0].separator_after)
+        self.assertEqual([(0.1, 0.8), (1.1, 1.8)], [(word.start, word.end) for word in result.words])
 
     def test_unspaced_scripts_preserve_source_characters_and_word_times(self):
         samples = [
@@ -544,8 +645,8 @@ ElevenLabsSTT(STTConfig(provider='elevenlabs', model='scribe_v2'))
         }
         with self.remote(response=response) as fake:
             result = fake.adapter.transcribe(self.audio_path)
-        self.assertEqual('Ele disse: "Olá!" Depois.', result.text)
-        self.assertEqual(TimedWord('"Olá!"', 0.8, 1.1), result.words[2])
+        self.assertEqual(response["text"], result.text)
+        self.assertEqual(TimedWord('" Olá ! "', 0.8, 1.1), result.words[2])
 
     def test_event_label_equal_to_spoken_text_does_not_remove_spoken_punctuation(self):
         response = {
@@ -713,6 +814,99 @@ ElevenLabsSTT(STTConfig(provider='elevenlabs', model='scribe_v2'))
                     lambda: adapter.transcribe(self.audio_path), InvalidResponseError
                 )
                 self.assertEqual(1, whisper.transcribe.call_count)
+
+    def test_failed_parsing_retains_reported_metadata_and_request_attempts(self):
+        response = copy.deepcopy(SCRIBE_RESPONSE)
+        response["text"] = "full-private-transcript"
+        response["words"][0]["start"] = -1
+        config = replace(self.config, model="requested-scribe", language="POR")
+        with self.remote(response=response, errors=[ApiFailure(429), ApiFailure(503)], config=config) as fake:
+            self.assert_safe_failure(
+                lambda: fake.adapter.transcribe(self.audio_path), InvalidResponseError
+            )
+            record = fake.adapter.records[-1]
+            self.assertEqual(3, record.attempts)
+            self.assertEqual(3, fake.client.speech_to_text.convert.call_count)
+            self.assertEqual(2, fake.sleep.call_count)
+        self.assertEqual("requested-scribe", record.requested_model)
+        self.assertEqual("scribe_v2", record.returned_model)
+        self.assertEqual("POR", record.requested_language)
+        self.assertEqual("por", record.sent_language)
+        self.assertEqual("por", record.reported_language)
+        self.assertEqual("InvalidResponseError", record.status)
+        self.assertNotIn("full-private-transcript", json.dumps(asdict(record)))
+        self.assertNotIn("synthetic-test-key", json.dumps(asdict(record)))
+
+        response = copy.deepcopy(WHISPER_RESPONSE)
+        response.update(model="reported-local-model", text="full-private-transcript")
+        response["segments"][0]["words"][0]["start"] = -1
+        with self.local(response=response) as (adapter, whisper, *_):
+            adapter.config = replace(adapter.config, language="POR")
+            self.assert_safe_failure(
+                lambda: adapter.transcribe(self.audio_path), InvalidResponseError
+            )
+            record = adapter.records[-1]
+            self.assertEqual(1, whisper.transcribe.call_count)
+        self.assertEqual("base", record.requested_model)
+        self.assertEqual("reported-local-model", record.returned_model)
+        self.assertEqual("POR", record.requested_language)
+        self.assertEqual("pt", record.sent_language)
+        self.assertEqual("pt", record.reported_language)
+        self.assertEqual(1, record.attempts)
+        self.assertEqual("InvalidResponseError", record.status)
+        self.assertNotIn("full-private-transcript", json.dumps(asdict(record)))
+
+    def test_failure_metadata_keeps_only_independently_valid_response_scalars(self):
+        missing = object()
+        invalid = [missing, None, "", " \t", 5, True, [], {"text": "full-private-transcript"}]
+        for local in (False, True):
+            for field in ("model_id", "language" if local else "language_code"):
+                for value in invalid:
+                    with self.subTest(local=local, field=field, value=value):
+                        response = copy.deepcopy(WHISPER_RESPONSE if local else SCRIBE_RESPONSE)
+                        response["model_id"] = "reported-model"
+                        if value is missing:
+                            response.pop(field, None)
+                        else:
+                            response[field] = value
+                        raw_words = response["segments"][0]["words"] if local else response["words"]
+                        raw_words[0]["start"] = -1
+                        if local:
+                            with self.local(response=response) as (adapter, *_):
+                                self.assert_safe_failure(lambda: adapter.transcribe(self.audio_path), InvalidResponseError)
+                                record = adapter.records[-1]
+                        else:
+                            with self.remote(response=response) as fake:
+                                self.assert_safe_failure(lambda: fake.adapter.transcribe(self.audio_path), InvalidResponseError)
+                                record = fake.adapter.records[-1]
+                        self.assertEqual(None if field == "model_id" else "reported-model", record.returned_model)
+                        self.assertEqual(("pt" if local else "por") if field == "model_id" else None, record.reported_language)
+                        self.assertEqual("InvalidResponseError", record.status)
+                        self.assertNotIn("full-private-transcript", json.dumps(asdict(record)))
+
+    def test_failed_response_metadata_does_not_leak_into_later_calls(self):
+        remote_response = copy.deepcopy(SCRIBE_RESPONSE)
+        remote_response["words"][0]["start"] = -1
+        with self.remote(errors=[remote_response, NetworkTimeout(), NetworkTimeout(), NetworkTimeout()]) as fake:
+            self.assert_safe_failure(lambda: fake.adapter.transcribe(self.audio_path), InvalidResponseError)
+            self.assert_safe_failure(lambda: fake.adapter.transcribe(self.audio_path), ServiceTimeoutError)
+            self.assertEqual([1, 3], [record.attempts for record in fake.adapter.records])
+            self.assertEqual(["scribe_v2", None], [record.returned_model for record in fake.adapter.records])
+            self.assertEqual(["por", None], [record.reported_language for record in fake.adapter.records])
+            self.assertEqual(["InvalidResponseError", "ServiceTimeoutError"], [record.status for record in fake.adapter.records])
+            self.assertEqual(4, fake.client.speech_to_text.convert.call_count)
+
+        local_response = copy.deepcopy(WHISPER_RESPONSE)
+        local_response["model"] = "reported-local-model"
+        local_response["segments"][0]["words"][0]["start"] = -1
+        with self.local() as (adapter, whisper, *_):
+            whisper.transcribe.side_effect = [local_response, TimeoutError()]
+            self.assert_safe_failure(lambda: adapter.transcribe(self.audio_path), InvalidResponseError)
+            self.assert_safe_failure(lambda: adapter.transcribe(self.audio_path), ServiceTimeoutError)
+            self.assertEqual([1, 1], [record.attempts for record in adapter.records])
+            self.assertEqual(["reported-local-model", None], [record.returned_model for record in adapter.records])
+            self.assertEqual(["pt", None], [record.reported_language for record in adapter.records])
+            self.assertEqual(["InvalidResponseError", "ServiceTimeoutError"], [record.status for record in adapter.records])
 
     def test_transient_failures_retry_with_fresh_uploads_and_bounded_backoff(self):
         failures = [
