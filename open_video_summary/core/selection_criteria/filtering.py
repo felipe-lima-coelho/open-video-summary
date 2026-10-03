@@ -1,14 +1,14 @@
 import io
 from PIL import Image
 from numpy import ndarray
-from ast import literal_eval
 from cv2 import cvtColor, COLOR_BGR2RGB
 
 from open_video_summary.utils import log
 from open_video_summary.entities.video import Video, VideoSegment
 from open_video_summary.utils.processing.video import VideoProcessor
 from open_video_summary.handlers.summary import SummarySegmentHandler
-from open_video_summary.adapters.llm import LLMAdapter, OllamaAdapter
+from open_video_summary.adapters.factory import create_configured_llm
+from open_video_summary.contracts import GenerationRequest, LanguageModel, OutputSpec
 from open_video_summary.core.selection_criteria.base import SelectionCriteria
 
 
@@ -101,7 +101,7 @@ class VideoQuestionBasedFiltering(SelectionCriteria):
         user_query: str = "",
         filter_questions: list[str] = [],
         keyframes_interval_seconds: int = 5,
-        llm_adapter: LLMAdapter = OllamaAdapter(model="ministral-3"),
+        llm_adapter: LanguageModel | None = None,
         min_positive_answer_ratio: float = 0.5,
         convert_to_rgb: bool = True,
         include_segments: bool = True,
@@ -120,6 +120,13 @@ class VideoQuestionBasedFiltering(SelectionCriteria):
         self.min_positive_answer_ratio = min_positive_answer_ratio
         self.convert_to_rgb = convert_to_rgb
         self.include_segments = include_segments
+
+    def _get_llm(self) -> LanguageModel:
+        if self.llm_adapter is None:
+            self.llm_adapter = create_configured_llm(
+                default_models={"ollama": "ministral-3"}
+            )
+        return self.llm_adapter
 
     def evaluate(self, handler: SummarySegmentHandler) -> SummarySegmentHandler:
         videos = [
@@ -172,14 +179,23 @@ class VideoQuestionBasedFiltering(SelectionCriteria):
             segment_keyframes=segment_keyframes
         )
 
-        response = self.llm_adapter.generate_pattern(
-            prompt=prompt,
-            pattern="(\{.*?\})",
-            options={"format": "json"},
-            images=segment_keyframes_bytes,
+        return (
+            self._get_llm()
+            .generate(
+                GenerationRequest(
+                    prompt=prompt,
+                    output=OutputSpec(
+                        kind="answers",
+                        answer_ids=tuple(
+                            str(i) for i in range(len(self.filter_questions))
+                        ),
+                    ),
+                    temperature=None,
+                    images=tuple(segment_keyframes_bytes),
+                )
+            )
+            .value
         )
-
-        return literal_eval(response)
 
     def get_segment_byte_images(self, segment_keyframes: list) -> list[bytes]:
         return [
@@ -212,12 +228,17 @@ class VideoQuestionBasedFiltering(SelectionCriteria):
         prompt = VideoQuestionBasedFiltering.USER_QUERY_PROMPT.format(
             user_query=self.user_query
         )
-        response = self.llm_adapter.generate_pattern(
-            prompt=prompt,
-            pattern="(\[.*?\])",
-            options={"format": "json"},
+        self.filter_questions = (
+            self._get_llm()
+            .generate(
+                GenerationRequest(
+                    prompt=prompt,
+                    output=OutputSpec(kind="string_list"),
+                    temperature=None,
+                )
+            )
+            .value
         )
-        self.filter_questions = literal_eval(response)
         log.info(
             f"Generated {len(self.filter_questions)} filter questions from user query."
         )

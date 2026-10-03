@@ -1,7 +1,7 @@
 [
     {
         "name": "jornal_nacional",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_nacional.mp4",
+        "path": "data/raw/bolsonaro_trump/jornal_nacional.mp4",
         "topics": [
             "US-Brazil Relations and Trade",
             "Bolsonaro's Desire for Brazil to Join OECD",
@@ -17,7 +17,7 @@
                 "order": 0,
                 "video_topic": "US-Brazil Relations and Trade",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_nacional.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_nacional.mp4"
             },
             {
                 "content": "Isso, para eu entender, é motivo de orgulho e satisfação para os nossos povos. Trump agradeceu, disse ainda se lembrar de Pelé, e ofereceu uma camisa da seleção americana de futebol ao presidente brasileiro. Bolsonaro ganhou a camisa com o número 19 e deu a Trump uma da seleção brasileira com o número que foi de Pelé, o 10.",
@@ -26,7 +26,7 @@
                 "order": 1,
                 "video_topic": "Symbolic Exchange of Football Jerseys",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_nacional.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_nacional.mp4"
             },
             {
                 "content": "Em minha pergunta ao presidente americano, eu citei que o Brasil ofereceu acesso a uma base de lançamento de foguetes e o fim da exigência de vistos para americanos indo ao Brasil e questionei a Trump sobre o que ele gostaria que Bolsonaro levasse ao Brasil como resultado da visita. Trump respondeu que os Estados Unidos têm muitas coisas que ele acha que o Brasil pode fazer. Um dos grandes elementos, disse Trump, é o comércio. Trump afirmou ainda que o Brasil faz grandes produtos e que os americanos fazem grandes produtos e o comércio bilateral poderia ter sido melhor no passado. Ele completou que acha que o comércio entre Estados Unidos e Brasil vai aumentar substancialmente nos dois sentidos.",
@@ -35,7 +35,7 @@
                 "order": 2,
                 "video_topic": "US-Brazil Relations and Trade",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_nacional.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_nacional.mp4"
             },
             {
                 "content": "A repórter Raquel Krahenbuhl, da Globo News, perguntou a Trump se ele gostaria que o Brasil se envolvesse numa ação militar na Venezuela e também se ele apoia o esforço brasileiro de integrar a organização para a cooperação e desenvolvimento econômico. Trump respondeu que apoia sim o esforço brasileiro junto a OCDE e disse eu acho que falo tanto pelos Estados Unidos quanto pelo Brasil quando afirmo que todas as opções estão sobre a mesa, no que diz respeito a Venezuela.",
@@ -44,7 +44,7 @@
                 "order": 3,
                 "video_topic": "Potential Military Action in Venezuela",
                 "global_topic": "Venezuela crisis and potential interventions",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_nacional.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_nacional.mp4"
             },
             {
                 "content": "Uma eventual entrada do Brasil na OCDE poderia facilitar o comércio internacional e baratear também o acesso do Brasil a financiamentos estrangeiros. Pouco antes de a imprensa toda ter que sair do Salão Oval, eu ainda fiz uma última pergunta ao presidente Bolsonaro. Apesar de o planejamento do Planalto ter previsto uma conversa privada entre os dois chefes de Estado, apenas com a presença de tradutores, o filho de Bolsonaro, deputado federal e presidente da Comissão de Relações Exteriores da Câmara, Eduardo Bolsonaro, permaneceu na sala com o pai e o presidente Donald Trump. Bolsonaro disse depois que foi a convite de Trump que Eduardo participou da conversa reservada.",
@@ -53,13 +53,13 @@
                 "order": 4,
                 "video_topic": "US-Brazil Relations and Trade",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_nacional.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_nacional.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_band",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4",
+        "path": "data/raw/bolsonaro_trump/jornal_da_band.mp4",
         "topics": [
             "Bolsonaro's Meeting with Trump at the White House",
             "Discussions on Trade Agreements and Venezuela Crisis",
@@ -77,7 +77,7 @@
                 "order": 0,
                 "video_topic": "Bolsonaro's Meeting with Trump at the White House",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Os dois discutiram acordos comerciais e também a crise na Venezuela. O presidente americano prometeu apoiar a entrada do Brasil na OCDE, organização que reúne os países mais ricos, e também como aliado da OTAN, que é a Aliança Militar do Atlântico Norte.",
@@ -86,7 +86,7 @@
                 "order": 1,
                 "video_topic": "Discussions on Trade Agreements and Venezuela Crisis",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Os detalhes com os enviados especiais aos Estados Unidos, Caian Messina e Claudinei Matosão. O presidente Jair Bolsonaro saiu da residência de hóspedes do governo americano sorrindo. Acenou para os brasileiros que o esperavam e foi para o ponto alto da viagem aos Estados Unidos, o encontro com Donald Trump. O comboio percorreu menos de 200 metros até entrar na Casa Branca, onde ele foi recebido na porta pelo anfitrião. É uma satisfação estar nos Estados Unidos, depois de algumas décadas de presidentes anti-americanos, temos muito a conversar, muita coisa a oferecer um para o outro, para o bem dos nossos povos. No salão oval, uma rápida troca de presentes. Bolsonaro ganhou uma camisa da seleção americana com o número deste ano. Em troca, deu a camisa com o 10 de Pelé. Trump afirmou que teve sorte de ver o brasileiro jogar, e Bolsonaro brincou.",
@@ -95,7 +95,7 @@
                 "order": 2,
                 "video_topic": "Bolsonaro's Meeting with Trump at the White House",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Eu sou um pouco mais novo, mas também lembro do Pelé. As reuniões foram cerca de 40 minutos de reunião privada.",
@@ -104,7 +104,7 @@
                 "order": 3,
                 "video_topic": "Details of the Bilateral Meeting between Bolsonaro and Trump",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Donald Trump disse que apoia os esforços dos brasileiros para entrar na OCDE, organização formada por nações ricas para cooperação e discussão de políticas públicas e econômicas. Os países membros ganham um selo de investimento, que ajuda a atrair capital internacional. Em contrapartida, os Estados Unidos querem o Brasil fora do grupo que recebe tratamento organização mundial do comércio, onde os dois governos travam disputas, principalmente no agronegócio.",
@@ -113,7 +113,7 @@
                 "order": 4,
                 "video_topic": "Trump's Support for Brazil's Entry into OCDE and NATO",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Após o encontro, ficou clara a prioridade de Washington, o restabelecimento da democracia na Venezuela.",
@@ -122,7 +122,7 @@
                 "order": 5,
                 "video_topic": "Focus on Restoring Democracy in Venezuela",
                 "global_topic": "Venezuela crisis and potential interventions",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "O presidente americano não descarta uma intervenção militar no país. Diplomacia ou intervenção militar, presidente? Diplomacia, em primeiro lugar, até as últimas consequências. Trump repetiu que todos os esforços estão na mesa, o que ele conversou comigo reservadamente, me desculpa, mas eu não poderia conversar com vocês.",
@@ -131,7 +131,7 @@
                 "order": 6,
                 "video_topic": "Bolsonaro's Meeting with Trump at the White House",
                 "global_topic": "Venezuela crisis and potential interventions",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Trump defendeu a entrada do Brasil na OTAN como um aliado fora do bloco. A Organização do Tratado do Atlântico Norte é uma das entidades mais fortes do mundo em assuntos militares, e o líder americano chegou a dizer que o país poderia ganhar o status de membro permanente.",
@@ -140,7 +140,7 @@
                 "order": 7,
                 "video_topic": "Trump's Support for Brazil's Entry into OCDE and NATO",
                 "global_topic": "Bolsonaro's foreign policy goals (OECD, NATO)",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Discutimos a possibilidade de o Brasil entrar como um grande aliado extra OTAN.",
@@ -149,7 +149,7 @@
                 "order": 8,
                 "video_topic": "Bolsonaro's Meeting with Trump at the White House",
                 "global_topic": "Bolsonaro's foreign policy goals (OECD, NATO)",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "A pouco, permitimos que alimentos fossem alocados em Boa Vista, capital de Roraima, por parte dos americanos, para que ajuda humanitária se fizesse presente na Venezuela. No momento, estamos nesse ponto. Agora, o que for possível, fazemos juntos para solucionar o problema da ditadura venezuelana.",
@@ -158,7 +158,7 @@
                 "order": 9,
                 "video_topic": "Focus on Restoring Democracy in Venezuela",
                 "global_topic": "Venezuela crisis and potential interventions",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Os dois presidentes também discutiram acordos na área da segurança. O combate ao terrorismo e ao crime organizado é questão de maior urgência para os nossos povos. Decidimos fortalecer o Fórum Bilateral de Segurança e fazermos mais contra a lavagem de dinheiro e o narcotráfico.",
@@ -167,7 +167,7 @@
                 "order": 10,
                 "video_topic": "Agreements on Security Cooperation and Combating Terrorism",
                 "global_topic": "Security cooperation and combating terrorism",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Ponto final na entrevista coletiva dos presidentes Jair Bolsonaro e Donald Trump aqui no Jardins da Casa Branca. Segundo assessores do governo dos Estados Unidos, o presidente norte-americano estava se sentindo excepcionalmente à vontade ao lado de Jair Bolsonaro, mais do que normalmente ele fica quando recebe autoridades de outros países. O filho do presidente, o deputado Eduardo Bolsonaro, participou da reunião no Salão Oval, como uma espécie de chanceler informal. Parecia um bate-papo entre velhos amigos. Estava me sentindo bem, estava tranquilo, estava relaxado. É como eu falei, o presidente Trump fez a gente se sentir em casa aqui. Certamente o presidente Bolsonaro deve convidá-la ao Brasil e vai retribuir essa gentileza, essa justiça.",
@@ -176,7 +176,7 @@
                 "order": 11,
                 "video_topic": "Bolsonaro's Meeting with Trump at the White House",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "No dia anterior, Bolsonaro foi entrevistado pela Fox News, emissora considerada conservadora e que apoia a Trump.",
@@ -185,7 +185,7 @@
                 "order": 12,
                 "video_topic": "Bolsonaro's Interview with Fox News and Controversial Statements",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Eu acreditaria. A conversa foi transmitida com tradução simultânea.",
@@ -194,7 +194,7 @@
                 "order": 13,
                 "video_topic": "Bolsonaro's Meeting with Trump at the White House",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Ele foi questionado sobre o fato do sargento reformado apontado como o assassino de Marielle Franco morar no mesmo condomínio onde ele vivia no Rio de Janeiro. Bolsonaro disse que se trata de uma coincidência e afirmou que não conhecia a vereadora antes do crime. O presidente defendeu a construção do muro entre os Estados Unidos e o México e criticou a política da França em abrir as fronteiras para receber refugiados, sem qualquer tipo de seleção ou filtro. O mais polêmico da entrevista foi quando afirmou que a maioria dos imigrantes não têm boas intenções. No final da tarde, em nova entrevista perto da Casa Branca, Bolsonaro fez um aceno ao cerca de 1 milhão de brasileiros que vivem ilegalmente e ilegalmente nos Estados Unidos. A boa parte tem boas intenções, a menor parte não. É o equívoco da minha parte, peço desculpas. Agora, tem muita gente que está ali de forma ilegal aqui. Isso é uma questão de política interna deles, não é nossa. Eu também gostaria que no Brasil só tivesse estrangeiros legalizados e não de forma ilegal como existe muita gente na situação do Brasil.",
@@ -203,7 +203,7 @@
                 "order": 14,
                 "video_topic": "Bolsonaro's Interview with Fox News and Controversial Statements",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Me desculpa mais uma vez o equívoco ato falo e cometi um dia de ontem. No geral, seis ministros da comitiva brasileira comemoraram a visita.",
@@ -212,7 +212,7 @@
                 "order": 15,
                 "video_topic": "Bolsonaro's Meeting with Trump at the White House",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "Foram fechados acordos para o uso comercial da base de Alcântara, no Maranhão, para o lançamento de foguetes.",
@@ -221,7 +221,7 @@
                 "order": 16,
                 "video_topic": "Bolsonaro's Interview with Fox News and Controversial Statements",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             },
             {
                 "content": "O fim da obrigatoriedade de vistos para americanos que viajarem para o Brasil e acertos para a cooperação nas fronteiras. Foram abertas ainda as conversas para o fim de salvaguardas a produtos em que o Brasil compete com os Estados Unidos, como carne, trigo e soja. O ministro da economia chegou a dizer a assessores que depois da viagem os investidores voltaram com força ao país.",
@@ -230,13 +230,13 @@
                 "order": 17,
                 "video_topic": "Bolsonaro's Meeting with Trump at the White House",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_band.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_band.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_record",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4",
+        "path": "data/raw/bolsonaro_trump/jornal_da_record.mp4",
         "topics": [
             "Meeting between Brazilian and American Presidents",
             "Support for Brazil's entry into the OECD",
@@ -252,7 +252,7 @@
                 "order": 0,
                 "video_topic": "Meeting between Brazilian and American Presidents",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "O presidente americano prometeu apoiar a pretensão brasileira de entrar na OCDE, Organização de Cooperação para o Desenvolvimento Econômico.",
@@ -261,7 +261,7 @@
                 "order": 1,
                 "video_topic": "Support for Brazil's entry into the OECD",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Jair Bolsonaro comemorou a principal reivindicação e retribuiu declarando apoio a Donald Trump nas eleições americanas do ano que vem.",
@@ -270,7 +270,7 @@
                 "order": 2,
                 "video_topic": "Meeting between Brazilian and American Presidents",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Eu acredito piamente na reeleição de Donald Trump. O povo que o apoiou no passado, assim como foi feito comigo no Brasil, repetirá esse voto com toda certeza.",
@@ -279,7 +279,7 @@
                 "order": 3,
                 "video_topic": "Bolsonaro's apology regarding his comments on Brazilian immigrants in the US",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Os dois também falaram na possibilidade do Brasil se tornar um aliado extra da OTAN, Organização do Tratado do Atlântico Norte, e comentaram, é claro, a situação da Venezuela.",
@@ -288,7 +288,7 @@
                 "order": 4,
                 "video_topic": "Potential for Brazil to become an ally of NATO",
                 "global_topic": "Bolsonaro's foreign policy goals (OECD, NATO)",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Que for possível, fazemos juntos para solucionar o problema da ditadura venezuelana. O Brasil estará a postos para cumprir essa missão e levar liberdade e democracia à aquele país que há pouco era um dos países mais ricos da América do Sul.",
@@ -297,7 +297,7 @@
                 "order": 5,
                 "video_topic": "Venezuela situation and possible interventions",
                 "global_topic": "Venezuela crisis and potential interventions",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "E hoje o povo passa fome, sofre violência, sofre com falta de medicamentos.",
@@ -306,7 +306,7 @@
                 "order": 6,
                 "video_topic": "Bolsonaro's apology regarding his comments on Brazilian immigrants in the US",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Uma coisa terrível que acontece lá e nós temos que somar esforço sim para botar um ponto final nessa questão que é ultrajante para o mundo todo.",
@@ -315,7 +315,7 @@
                 "order": 7,
                 "video_topic": "Meeting between Brazilian and American Presidents",
                 "global_topic": "US-Brazil relations and trade",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Donald Trump voltou a dizer que não descarta uma intervenção militar e que todas as opções estão na mesa.",
@@ -324,7 +324,7 @@
                 "order": 8,
                 "video_topic": "Venezuela situation and possible interventions",
                 "global_topic": "Venezuela crisis and potential interventions",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Em entrevista após a visita oficial, o presidente Jair Bolsonaro insistiu em outras saídas. Diplomacia ou intervenção militar? Diplomacia em primeiro lugar, até as últimas consequências.",
@@ -333,7 +333,7 @@
                 "order": 9,
                 "video_topic": "Meeting between Brazilian and American Presidents",
                 "global_topic": "Venezuela crisis and potential interventions",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Bolsonaro disse ainda que se equivocou quando declarou em entrevista à Fox News que os imigrantes brasileiros que vivem nos Estados Unidos são mal intencionados. A boa parte tem boas intenções, a menor parte não. Eu vejo o equívoco da minha parte, peço desculpas. Agora tem muita gente que está ali de forma ilegal aqui.",
@@ -342,7 +342,7 @@
                 "order": 10,
                 "video_topic": "Bolsonaro's apology regarding his comments on Brazilian immigrants in the US",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             },
             {
                 "content": "Isso é uma questão de política interna deles, não é nossa. Mas Bolsonaro garantiu que o clima da conversa com Trump foi descontraído. Dois momentos com atração, gargalhadas, temos muita coisa em comum, temos cinco filhos, por exemplo, então temos também alguns problemas em comum.",
@@ -351,7 +351,7 @@
                 "order": 11,
                 "video_topic": "Meeting between Brazilian and American Presidents",
                 "global_topic": "Bilateral relations between Bolsonaro and Trump",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bolsonaro_trump/jornal_da_record.mp4"
+                "video_path": "data/raw/bolsonaro_trump/jornal_da_record.mp4"
             }
         ]
     }

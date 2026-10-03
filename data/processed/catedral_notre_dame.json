@@ -1,7 +1,7 @@
 [
     {
         "name": "jornal_nacional",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_nacional.mp4",
+        "path": "data/raw/catedral_notre_dame/jornal_nacional.mp4",
         "topics": [
             "Notre Dame fire damage and impact on cultural heritage",
             "Firefighting efforts and challenges faced by firefighters",
@@ -17,7 +17,7 @@
                 "order": 0,
                 "video_topic": "Notre Dame fire damage and impact on cultural heritage",
                 "global_topic": "Notre Dame fire damage and impact",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_nacional.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
             },
             {
                 "content": "As imagens se espalharam pelas redes sociais. 400 bombeiros da cidade e da região vieram tentar apagar o incêndio nessa segunda-feira.",
@@ -26,7 +26,7 @@
                 "order": 1,
                 "video_topic": "Firefighting efforts and challenges faced by firefighters",
                 "global_topic": "Firefighting efforts and challenges",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_nacional.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
             },
             {
                 "content": "O local das chamas, no teto da catedral, dificultou bastante o trabalho. A destruição parcial de um símbolo da França deixou a cidade de Paris em choque.",
@@ -35,7 +35,7 @@
                 "order": 2,
                 "video_topic": "Notre Dame fire damage and impact on cultural heritage",
                 "global_topic": "Destruction of Notre Dame Cathedral",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_nacional.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
             },
             {
                 "content": "Essa francesa diz que vários amigos resolveram se encontrar perto da catedral quando souberam do incêndio. É o monumento da cidade, além de um símbolo religioso.",
@@ -44,7 +44,7 @@
                 "order": 3,
                 "video_topic": "Historical significance of Notre Dame and its reconstruction plans",
                 "global_topic": "Destruction of Notre Dame Cathedral",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_nacional.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
             },
             {
                 "content": "É muito emocionante, disse ela. O padre, que já trabalhou na catedral, disse que mais de 700 anos de história se acabaram em poucas horas.",
@@ -53,7 +53,7 @@
                 "order": 4,
                 "video_topic": "Public reaction and emotional response to the fire",
                 "global_topic": "Public reaction and emotional response",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_nacional.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
             },
             {
                 "content": "Mas que a catedral vai voltar a ficar de pé. A turista americana disse que visitou o local hoje de manhã com alguns alunos. As autoridades esvaziaram toda a ilha de la Cité, em português, ilha da cidade, que fica no rio Sena, na região central. A parte da catedral mais castigada pelas chamas foi o teto. Nesse ponto, o local estava cercado de andanhes.",
@@ -62,7 +62,7 @@
                 "order": 5,
                 "video_topic": "Notre Dame fire damage and impact on cultural heritage",
                 "global_topic": "Notre Dame fire damage and impact",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_nacional.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
             },
             {
                 "content": "O telhado gótico, construído na época medieval, passava por obras de restauração desde o ano passado. A polícia disse que a estrutura principal foi salva. As estátuas de bronze foram removidas na semana passada para as obras. O Ministério Público já abriu uma investigação sobre o caso. O presidente francês cancelou um pronunciamento que faria na TV e foi até o local conversar com os bombeiros. No fim do dia, Emmanuel Macron disse que o pior foi evitado e prometeu reconstruir Notre Dame. Ele disse que vai lançar uma campanha internacional para captar recursos. É isso que os franceses esperam. É isso que a nossa história merece, disse Macron.",
@@ -71,13 +71,13 @@
                 "order": 6,
                 "video_topic": "Historical significance of Notre Dame and its reconstruction plans",
                 "global_topic": "Historical significance and reconstruction plans",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_nacional.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_band",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4",
+        "path": "data/raw/catedral_notre_dame/jornal_da_band.mp4",
         "topics": [
             "Destruction of Notre Dame Cathedral",
             "Cause of the fire at Notre Dame",
@@ -93,7 +93,7 @@
                 "order": 0,
                 "video_topic": "Destruction of Notre Dame Cathedral",
                 "global_topic": "Destruction of Notre Dame Cathedral",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
             },
             {
                 "content": "Turistas e moradores se aglomeraram às margens do rio Sena, enquanto a polícia isolava a ilha de la Cité, pequena ilha que abriga a catedral.",
@@ -102,7 +102,7 @@
                 "order": 1,
                 "video_topic": "Impact on Tourism and Visitors",
                 "global_topic": "Public reaction and emotional response",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
             },
             {
                 "content": "A suspeita é que o incêndio esteja relacionado às obras de reparo que aconteciam em Notre Dame. A igreja estava rodeada de andames.",
@@ -111,7 +111,7 @@
                 "order": 2,
                 "video_topic": "Cause of the fire at Notre Dame",
                 "global_topic": "Investigation into the cause and international support",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
             },
             {
                 "content": "Na última quinta-feira, 16 estátuas de bronze que adornam os telhados foram retiradas para a restauração. De acordo com a tradição, as gárgulas protegem Notre Dame contra espíritos malévulos.",
@@ -120,7 +120,7 @@
                 "order": 3,
                 "video_topic": "Destruction of Notre Dame Cathedral",
                 "global_topic": "Destruction of Notre Dame Cathedral",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
             },
             {
                 "content": "A Catedral de Notre Dame é um dos monumentos mais visitados da Europa. Recebe cerca de 13 milhões de turistas todos os anos, uma média de 30 mil visitantes por dia.",
@@ -129,7 +129,7 @@
                 "order": 4,
                 "video_topic": "Impact on Tourism and Visitors",
                 "global_topic": "Destruction of Notre Dame Cathedral",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
             },
             {
                 "content": "Muitos líderes mundiais enviaram mensagens de solidariedade à França após o incêndio. O prefeito de Londres, Sadiqa, disse que estava de coração partido ao ver as imagens de Notre Dame em chamas. A chanceler alemã Angela Merkel lembrou que a catedral é um símbolo da França e da cultura europeia e disse que seus pensamentos estavam com os amigos franceses.",
@@ -138,7 +138,7 @@
                 "order": 5,
                 "video_topic": "International Response to the Notre Dame Fire",
                 "global_topic": "Public reaction and emotional response",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
             },
             {
                 "content": "O presidente americano, Donald Trump, sugeriu que aviões tanques ajudassem no combate às chamas e alertou que era preciso agir rápido. Bombeiros explicaram que não é indicado usar aviões para apagar incêndios em perímetros urbanos. As aeronaves têm capacidade para despejar até 16 toneladas de água, mas poderiam ferir pessoas que estejam dentro ou ao redor do prédio.",
@@ -147,7 +147,7 @@
                 "order": 6,
                 "video_topic": "Efforts to Combat the Fire",
                 "global_topic": "Firefighting efforts and challenges",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
             },
             {
                 "content": "Uma intervenção deste tipo também poderia destruir a estrutura remanescente da catedral. O presidente francês, Emmanuel Macron, cancelou o pronunciamento à nação que faria na noite e foi até Notre Dame supervisionar o trabalho dos bombeiros.",
@@ -156,13 +156,13 @@
                 "order": 7,
                 "video_topic": "Destruction of Notre Dame Cathedral",
                 "global_topic": "Notre Dame fire damage and impact",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_band.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_record",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4",
+        "path": "data/raw/catedral_notre_dame/jornal_da_record.mp4",
         "topics": [
             "Notre Dame fire containment and damage",
             "Historical significance of Notre Dame",
@@ -178,7 +178,7 @@
                 "order": 0,
                 "video_topic": "Notre Dame fire containment and damage",
                 "global_topic": "Notre Dame fire damage and impact",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             },
             {
                 "content": "Um bombeiro ficou gravemente ferido. Ainda não se sabe o que provocou o incêndio, que entristeceu a França e o mundo todo nessa segunda-feira.",
@@ -187,7 +187,7 @@
                 "order": 1,
                 "video_topic": "Rescue efforts and firefighter response",
                 "global_topic": "Notre Dame fire damage and impact",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             },
             {
                 "content": "Era pouco antes das sete da noite na França, duas da tarde no Brasil, quando as chamas começaram a se espalhar pela famosa Catedral de Notre Dame. Em pouco tempo começavam os registros de parisienseis e turistas incrédulos ao ver uma das igrejas mais importantes do mundo pegando fogo.",
@@ -196,7 +196,7 @@
                 "order": 2,
                 "video_topic": "Notre Dame fire containment and damage",
                 "global_topic": "Destruction of Notre Dame Cathedral",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             },
             {
                 "content": "A Catedral de Notre Dame está localizada no centro de Paris, numa ilha, do Rio Sena, o que dificultou a chegada e o trabalho das equipes de resgate. 400 bombeiros tentavam apagar as chamas. O pináculo da Catedral, uma torre de 93 metros, primeiro tombou para o lado, depois desabou em meio ao fogo.",
@@ -205,7 +205,7 @@
                 "order": 3,
                 "video_topic": "Rescue efforts and firefighter response",
                 "global_topic": "Notre Dame fire damage and impact",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             },
             {
                 "content": "A estrutura era feita de 500 toneladas de madeira e 250 de chumbo. Mesmo assim, não resistiu. Ao cair do dia, o fogo e a fumaça se misturavam com o sol no céu de Paris.",
@@ -214,7 +214,7 @@
                 "order": 4,
                 "video_topic": "Notre Dame fire containment and damage",
                 "global_topic": "Destruction of Notre Dame Cathedral",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             },
             {
                 "content": "Os franceses assistiam chocados. É o símbolo nacional do país, a França está em chamas, diz se emocionada esta parisiense.",
@@ -223,7 +223,7 @@
                 "order": 5,
                 "video_topic": "Public reaction and emotional impact",
                 "global_topic": "Public reaction and emotional response",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             },
             {
                 "content": "O presidente Emmanuel Macron foi pessoalmente acompanhar os torres dos bombeiros. Ao sair visivelmente abalado, afirmou, nós vamos reconstruir a Notre Dame.",
@@ -232,7 +232,7 @@
                 "order": 6,
                 "video_topic": "Rescue efforts and firefighter response",
                 "global_topic": "Historical significance and reconstruction plans",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             },
             {
                 "content": "O comandante da Brigada de Paris disse que muitas peças históricas foram preservadas, mas ainda era grande o medo de que os sinos das torres da Catedral caíssem.",
@@ -241,7 +241,7 @@
                 "order": 7,
                 "video_topic": "Notre Dame fire containment and damage",
                 "global_topic": "Notre Dame fire damage and impact",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             },
             {
                 "content": "Mais tarde, as cidades confirmaram que as duas torres estavam a salvo. No fim da noite, franceses e turistas se reuniram em frente à Catedral e cantaram hinos em homenagem aos 800 anos de história de uma senhora, sobrevivente da guerra, destruída em um único dia.",
@@ -250,7 +250,7 @@
                 "order": 8,
                 "video_topic": "Public reaction and emotional impact",
                 "global_topic": "Public reaction and emotional response",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/catedral_notre_dame/jornal_da_record.mp4"
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
             }
         ]
     }

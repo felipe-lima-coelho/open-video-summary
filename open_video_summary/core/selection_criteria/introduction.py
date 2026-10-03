@@ -14,7 +14,7 @@ class Introduction(SelectionCriteria):
         self,
         fps_to_compare: float = 1.0,
         compare_grayscale: bool = True,
-        frame_diff_threshold: float = 0.7,  # Semelhança, não diff
+        frame_diff_threshold: float = 0.7,  # Similarity, not difference.
         skip_frames: int = 1,
     ) -> None:
         super().__init__(read_from="source")

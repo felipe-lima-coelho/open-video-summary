@@ -1,4 +1,5 @@
 import logging
+from open_video_summary.utils.config import PROJECT_DIR
 
 
 class Logger:
@@ -16,7 +17,7 @@ class Logger:
         console_handler.setFormatter(formatter)
 
         # Create a file handler for logging to a file
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(PROJECT_DIR / log_file, encoding="utf-8")
         file_handler.setFormatter(formatter)
 
         # Add handlers to the logger

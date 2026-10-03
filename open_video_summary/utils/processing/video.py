@@ -1,4 +1,5 @@
 from typing import Optional
+from open_video_summary.utils.paths import project_path
 from cv2 import (
     cvtColor,
     VideoCapture,
@@ -17,7 +18,7 @@ class VideoProcessor:
         start_second: int | float = 0,
         end_second: Optional[int | float] = None,
     ) -> list:
-        video = VideoCapture(video_path)
+        video = VideoCapture(project_path(video_path).as_posix())
         source_fps = int(video.get(CAP_PROP_FPS))
         total_frames = int(video.get(CAP_PROP_FRAME_COUNT))
         end_second = end_second or (total_frames / source_fps)

@@ -1,40 +1,91 @@
 import itertools
-import whisper_timestamped as whisper
+import unicodedata
 from typing import Optional
-from itertools import chain
-from ast import literal_eval
-from math import floor, ceil
+from math import ceil
 from abc import abstractmethod
-from moviepy import VideoFileClip
 
-from open_video_summary.adapters.llm import LLMAdapter, OllamaAdapter
+from open_video_summary.adapters.factory import create_llm, create_stt
+from open_video_summary.contracts import (
+    GenerationRequest,
+    LanguageModel,
+    OutputSpec,
+    SpeechToText,
+    TimedWord,
+    TranscriptSegment,
+    TranscriptionResult,
+)
 from open_video_summary.core.segmenter.prompts import VideoSegmenterPrompts
 from open_video_summary.entities.video import Video, VideoSegment
+from open_video_summary.errors import NoSpeechError
 from open_video_summary.handlers.segment import SegmentsCluster
+from open_video_summary.utils.paths import project_path
+from open_video_summary.utils.providers import load_provider_config
+
+
+def _sentence_end(text: str, punctuation: str = ".!?。！？") -> bool:
+    text = text.rstrip()
+    while text and (
+        text[-1] in "\"'”’»)]}"
+        or unicodedata.category(text[-1]) in {"Pe", "Pf"}
+    ):
+        text = text[:-1].rstrip()
+    return text.endswith(tuple(punctuation))
+
+
+def _words_text(words: list[TimedWord] | tuple[TimedWord, ...]) -> str:
+    if not words:
+        return ""
+    return "".join(
+        word.text + word.separator_after for word in words[:-1]
+    ) + words[-1].text
 
 
 class BaseVideoSegmenter:
     @abstractmethod
-    def create_video_segments(self, video: Video, language: str = "pt") -> Video:
+    def create_video_segments(self, video: Video, language: str | None = None) -> Video:
         pass
 
 
 class TopicsBasedVideoSegmenter(BaseVideoSegmenter):
     def __init__(
         self,
-        whisper_model: str = "base",
+        whisper_model: str | None = None,
         min_segment_length: int = 10,
         max_segment_length: Optional[int] = None,
         max_subtopics: Optional[int] = None,
-        prompts_template: VideoSegmenterPrompts = VideoSegmenterPrompts(),
-        llm_adapter: LLMAdapter = OllamaAdapter(),
+        prompts_template: VideoSegmenterPrompts | None = None,
+        llm_adapter: LanguageModel | None = None,
+        stt_adapter: SpeechToText | None = None,
     ) -> None:
         self.whisper_model = whisper_model
         self.min_segment_length = min_segment_length
         self.max_segment_length = max_segment_length
         self.max_subtopics = max_subtopics
-        self.prompts_template = prompts_template
+        self.prompts_template = prompts_template or VideoSegmenterPrompts()
+        if llm_adapter is None or stt_adapter is None:
+            config = load_provider_config({"stt_model": whisper_model})
+            llm_adapter = llm_adapter or create_llm(config.llm)
+            stt_adapter = stt_adapter or create_stt(config.stt)
         self.llm_adapter = llm_adapter
+        self.stt_adapter = stt_adapter
+        self._providers_ready = False
+
+    def preflight(self) -> None:
+        if not self._providers_ready:
+            self.stt_adapter.preflight()
+            self.llm_adapter.preflight()
+            self._providers_ready = True
+
+    def transcribe_video(
+        self, video_path: str, language: str | None = None
+    ) -> TranscriptionResult:
+        self.preflight()
+        result = self.stt_adapter.transcribe(
+            project_path(video_path), language=language
+        )
+        if not result.words or not result.text.strip():
+            raise NoSpeechError("The input audio contains no timestamped speech.")
+        return result
 
     def calculate_max_subtopics(
         self,
@@ -49,42 +100,46 @@ class TopicsBasedVideoSegmenter(BaseVideoSegmenter):
     def get_llm_response(
         self,
         prompt: str,
-        pattern: str = "([\w \.\?!,:;ºª\-]+)",
+        pattern: str | None = None,
         temperature: float = 0.2,
     ) -> str:
-        response = self.llm_adapter.generate_pattern(
-            prompt=prompt,
-            pattern=pattern,
-            options={"format": "json", "temperature": temperature},
+        output = (
+            OutputSpec(kind="pattern", pattern=pattern) if pattern else OutputSpec()
         )
-        return response.strip()
+        return self.llm_adapter.generate(
+            GenerationRequest(prompt=prompt, output=output, temperature=temperature)
+        ).value.strip()
 
     def load_video_topics(self, full_document: str, video: Video) -> dict[str, str]:
-        clip = VideoFileClip(video.path)
-        video_duration = clip.duration
+        max_subtopics = self.max_subtopics
+        if max_subtopics is None:
+            from moviepy import VideoFileClip
 
-        max_subtopics = self.max_subtopics or self.calculate_max_subtopics(
-            video_duration_in_sec=int(video_duration)
-        )
+            with VideoFileClip(str(project_path(video.path))) as clip:
+                max_subtopics = self.calculate_max_subtopics(
+                    video_duration_in_sec=int(clip.duration)
+                )
         topics_prompt = self.prompts_template.generate_subtopics.format(
             full_video_transcript=full_document, max_subtopics=max_subtopics
         )
-        topics_str = self.get_llm_response(
-            prompt=topics_prompt,
-            pattern="(\{.*?\})",
-        )
-        return literal_eval(topics_str)
+        return self.llm_adapter.generate(
+            GenerationRequest(
+                prompt=topics_prompt,
+                output=OutputSpec(kind="topics", max_items=max_subtopics),
+            )
+        ).value
 
     def load_global_topics(self, videos: list[Video]) -> list[str]:
         all_topics = list(itertools.chain.from_iterable([v.topics for v in videos]))
         topics_prompt = self.prompts_template.get_global_topics.format(
             topics_collection=all_topics
         )
-        topics_str = self.get_llm_response(
-            prompt=topics_prompt,
-            pattern="(\[.*?\])",
-        )
-        return literal_eval(topics_str)
+        return self.llm_adapter.generate(
+            GenerationRequest(
+                prompt=topics_prompt,
+                output=OutputSpec(kind="string_list"),
+            )
+        ).value
 
     def adjust_segments_order(self, segments: list[VideoSegment]) -> list[VideoSegment]:
         adjusted_segments = []
@@ -97,13 +152,14 @@ class TopicsBasedVideoSegmenter(BaseVideoSegmenter):
 class WordVideoSegmenter(TopicsBasedVideoSegmenter):
     def __init__(
         self,
-        whisper_model: str = "medium",
+        whisper_model: str | None = None,
         min_segment_length: int = 10,
         max_segment_length: Optional[int] = None,
         max_subtopics: Optional[int] = None,
-        sentence_boundary: str = ".!?",
-        prompts_template: VideoSegmenterPrompts = VideoSegmenterPrompts(),
-        llm_adapter: LLMAdapter = OllamaAdapter(),
+        sentence_boundary: str = ".!?。！？",
+        prompts_template: VideoSegmenterPrompts | None = None,
+        llm_adapter: LanguageModel | None = None,
+        stt_adapter: SpeechToText | None = None,
     ) -> None:
         super().__init__(
             whisper_model=whisper_model,
@@ -112,34 +168,36 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
             max_subtopics=max_subtopics,
             prompts_template=prompts_template,
             llm_adapter=llm_adapter,
+            stt_adapter=stt_adapter,
         )
         self.sentence_boundary = sentence_boundary
 
-    def transcribe_video(self, video_path: str, language: str):
-        model = whisper.load_model(self.whisper_model)
-        audio = whisper.load_audio(video_path)
-        return whisper.transcribe(model, audio, language=language, verbose=True)
+    def get_words_from_segments(
+        self, segments: list[TranscriptSegment]
+    ) -> list[TimedWord]:
+        return list(
+            itertools.chain.from_iterable(segment.words for segment in segments)
+        )
 
-    def get_words_from_segments(self, segments: list[dict]) -> list[dict]:
-        return list(chain.from_iterable([seg["words"] for seg in segments]))
-
-    def get_segments_from_words(self, words: list[dict]) -> list[VideoSegment]:
+    def get_segments_from_words(
+        self, words: list[TimedWord] | tuple[TimedWord, ...]
+    ) -> list[VideoSegment]:
         segments: list[VideoSegment] = []
         curr_seg_data: dict = {"start": None, "end": None, "words": []}
 
         for word in words:
             if curr_seg_data["start"] is None:
-                curr_seg_data["start"] = word["start"]
-            curr_seg_data["end"] = word["end"]
-            curr_seg_data["words"].append(word["text"])
+                curr_seg_data["start"] = word.start
+            curr_seg_data["end"] = word.end
+            curr_seg_data["words"].append(word)
             if (
-                word["text"].endswith(tuple(self.sentence_boundary))
+                _sentence_end(word.text, self.sentence_boundary)
                 and curr_seg_data["end"] - curr_seg_data["start"]
                 >= self.min_segment_length
             ):
                 segments.append(
                     VideoSegment(
-                        content=" ".join(curr_seg_data["words"]),
+                        content=_words_text(curr_seg_data["words"]),
                         start=curr_seg_data["start"],
                         end=curr_seg_data["end"],
                     )
@@ -150,7 +208,7 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
         if curr_seg_data["words"]:
             segments.append(
                 VideoSegment(
-                    content=" ".join(curr_seg_data["words"]),
+                    content=_words_text(curr_seg_data["words"]),
                     start=curr_seg_data["start"],
                     end=curr_seg_data["end"],
                 )
@@ -170,14 +228,13 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
             prompt = self.prompts_template.classify_subtopic.format(
                 content=segment.content, topics=topics
             )
-            topics_str = self.llm_adapter.generate_pattern(
-                prompt=prompt,
-                pattern="(\{.*?\})",
-                options={"format": "json", "temperature": 0.2},
-            )
-
-            segment_topic = literal_eval(topics_str)
-            topic_id, _ = segment_topic.popitem()
+            segment_topic = self.llm_adapter.generate(
+                GenerationRequest(
+                    prompt=prompt,
+                    output=OutputSpec(kind="topic", topic_ids=tuple(topics)),
+                )
+            ).value
+            topic_id = next(iter(segment_topic))
             if local_topics:
                 segment.video_topic = topics[topic_id]
             else:
@@ -200,29 +257,28 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
 
         return classified_segments
 
-    def create_video_segments(self, video: Video, language: str = "pt") -> Video:
-        whisper_result = self.transcribe_video(video.path, language)
-        segmented_document = whisper_result.get("segments")
-        full_document = whisper_result.get("text")
-
-        video_segments = self.get_segments_from_words(
-            self.get_words_from_segments(segmented_document)
-        )
+    def create_video_segments(self, video: Video, language: str | None = None) -> Video:
+        transcription = self.transcribe_video(video.path, language)
+        video_segments = self.get_segments_from_words(transcription.words)
 
         # Adding topics to video dataclass
         if not video.topics:
-            video_topics = self.load_video_topics(full_document, video)
+            video_topics = self.load_video_topics(transcription.text, video)
             video.topics = list(video_topics.values())
+        else:
+            video_topics = {str(i): topic for i, topic in enumerate(video.topics)}
 
         video_segments = self.classify_segment_topics(video_segments, video_topics)
         video_segments = self.adjust_segments_order(video_segments)
+        for segment in video_segments:
+            segment.video_path = video.path
         video.segments = video_segments
         return video
 
     def create_videos_segments(
         self,
         videos: list[Video],
-        language: str = "pt",
+        language: str | None = None,
         global_topics: Optional[list[str] | dict[str, str]] = None,
     ) -> list[Video]:
         videos = [self.create_video_segments(video, language) for video in videos]
@@ -244,14 +300,15 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
 class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
     def __init__(
         self,
-        whisper_model: str = "base",
+        whisper_model: str | None = None,
         min_segment_length: int = 10,
         max_segment_length: int = 300,
         max_subtopics: Optional[int] = None,
         segment_overlap_ratio: float = 0.5,
         max_phrase_pause_interval: float = 0.7,
-        prompts_template: VideoSegmenterPrompts = VideoSegmenterPrompts(),
-        llm_adapter: LLMAdapter = OllamaAdapter(),
+        prompts_template: VideoSegmenterPrompts | None = None,
+        llm_adapter: LanguageModel | None = None,
+        stt_adapter: SpeechToText | None = None,
     ) -> None:
         super().__init__(
             whisper_model=whisper_model,
@@ -260,17 +317,44 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
             max_subtopics=max_subtopics,
             prompts_template=prompts_template,
             llm_adapter=llm_adapter,
+            stt_adapter=stt_adapter,
         )
         self.segment_overlap_ratio = segment_overlap_ratio
         self.max_phrase_pause_interval = max_phrase_pause_interval
 
-    def transcribe_video(self, video_path: str, language: str):
-        model = whisper.load_model(self.whisper_model)
-        audio = whisper.load_audio(video_path)
-        return whisper.transcribe(model, audio, language=language, verbose=True)
+    def transcript_segments(
+        self, result: TranscriptionResult
+    ) -> list[TranscriptSegment]:
+        """Keep native local boundaries; group words when a provider has none."""
+        if result.segments:
+            return list(result.segments)
+        segments = []
+        words = []
+        for word in result.words:
+            words.append(word)
+            if _sentence_end(word.text):
+                segments.append(
+                    TranscriptSegment(
+                        text=_words_text(words),
+                        start=words[0].start,
+                        end=words[-1].end,
+                        words=tuple(words),
+                    )
+                )
+                words = []
+        if words:
+            segments.append(
+                TranscriptSegment(
+                    text=_words_text(words),
+                    start=words[0].start,
+                    end=words[-1].end,
+                    words=tuple(words),
+                )
+            )
+        return segments
 
     def list_overlapping_clusters(
-        self, segmented_document: list[dict]
+        self, segmented_document: list[TranscriptSegment]
     ) -> list[SegmentsCluster]:
         cluster_list, cluster = [], SegmentsCluster()
         num_segments = len(segmented_document)
@@ -281,9 +365,9 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
         for i, s in enumerate(segmented_document):
             raw_segment = VideoSegment(
                 order=i,
-                start=float(s["start"]),
-                end=float(s["end"]),
-                content=s["text"].strip(),
+                start=s.start,
+                end=s.end,
+                content=s.text.strip(),
             )
             cluster.append(raw_segment)
 
@@ -294,13 +378,12 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
 
             # Checking if next segment is too close
             next_seg = segmented_document[i + 1]
-            if (next_seg["start"] - raw_segment.end) < self.max_phrase_pause_interval:
+            if (next_seg.start - raw_segment.end) < self.max_phrase_pause_interval:
                 continue
 
             # Checking if segment matches ending criteria
-            if (
-                cluster.duration >= self.min_segment_length
-                and cluster.ends_with_punctuation()
+            if cluster.duration >= self.min_segment_length and _sentence_end(
+                cluster.last.content
             ):
                 cluster_list.append(cluster)
                 cluster = cluster.next_overlaping_cluster(overlap_seconds)
@@ -316,14 +399,13 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
             prompt = self.prompts_template.classify_subtopic.format(
                 content=cluster.content, topics=topics
             )
-            topics_str = self.llm_adapter.generate_pattern(
-                prompt=prompt,
-                pattern="(\{.*?\})",
-                options={"format": "json", "temperature": 0.2},
-            )
-
-            cluster_topic = literal_eval(topics_str)
-            topic_id, _ = cluster_topic.popitem()
+            cluster_topic = self.llm_adapter.generate(
+                GenerationRequest(
+                    prompt=prompt,
+                    output=OutputSpec(kind="topic", topic_ids=tuple(topics)),
+                )
+            ).value
+            topic_id = next(iter(cluster_topic))
 
             for cluster_seg in cluster.segments:
                 if cluster_seg.order is not None and (
@@ -372,16 +454,21 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
         return video_segments
 
     def fix_segments_content(
-        self, segments: list[dict], full_video_transcription: str
-    ) -> list[dict]:
+        self, segments: list[TranscriptSegment], full_video_transcription: str
+    ) -> list[TranscriptSegment]:
         adjusted_segments = []
         for seg in segments:
-            new = seg.copy()
             prompt = self.prompts_template.fix_segment_transcription.format(
-                full_video_transcript=full_video_transcription, content=seg["text"]
+                full_video_transcript=full_video_transcription, content=seg.text
             )
-            new["text"] = self.get_llm_response(prompt)
-            adjusted_segments.append(new)
+            adjusted_segments.append(
+                TranscriptSegment(
+                    text=self.get_llm_response(prompt),
+                    start=seg.start,
+                    end=seg.end,
+                    words=seg.words,
+                )
+            )
 
         return adjusted_segments
 
@@ -389,10 +476,10 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
         prompt = self.prompts_template.fix_full_transcription.format(content=content)
         return self.get_llm_response(prompt)
 
-    def create_video_segments(self, video: Video, language: str = "pt") -> Video:
-        whisper_result = self.transcribe_video(video.path, language)
-        full_document = whisper_result.get("text")
-        segmented_document = whisper_result.get("segments")
+    def create_video_segments(self, video: Video, language: str | None = None) -> Video:
+        transcription = self.transcribe_video(video.path, language)
+        full_document = transcription.text
+        segmented_document = self.transcript_segments(transcription)
 
         # Using LLM to fix transcription errors
         fixed_full_document = self.fix_content(full_document)
@@ -404,6 +491,8 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
         if not video.topics:
             video_topics = self.load_video_topics(full_document, video)
             video.topics = list(video_topics.values())
+        else:
+            video_topics = {str(i): topic for i, topic in enumerate(video.topics)}
 
         segment_clusters = self.list_overlapping_clusters(fixed_segmented_document)
         labled_min_segments = self.classify_segment_topics(
@@ -411,6 +500,8 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
         )
         segments = self.fuse_similar_segments(labled_min_segments)
         segments = self.adjust_segments_order(segments)
+        for segment in segments:
+            segment.video_path = video.path
 
         # Adding segments to video dataclass
         video.segments = segments
