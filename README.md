@@ -77,7 +77,7 @@ videos are available in the [original dataset directory](https://drive.google.co
 To test another dataset that has already been segmented:
 
 ```powershell
-.\.venv\Scripts\python.exe -m open_video_summary summarize --dataset data/processed/meu_conjunto.json --output outputs/meu_resumo.mp4
+.\.venv\Scripts\python.exe -m open_video_summary summarize --dataset data/processed/my_dataset.json --output outputs/my_summary.mp4
 ```
 
 To run from another directory, invoke the clone's Python executable using its
@@ -99,8 +99,8 @@ After installing the Ollama server, for example:
 
 ```powershell
 ollama pull gemma2
-.\.venv\Scripts\python.exe -m open_video_summary segment --input data/raw/meu_conjunto --output outputs/meu_conjunto_segments.json --whisper-model base --llm-model gemma2
-.\.venv\Scripts\python.exe -m open_video_summary summarize --dataset outputs/meu_conjunto_segments.json --output outputs/meu_resumo.mp4
+.\.venv\Scripts\python.exe -m open_video_summary segment --input data/raw/my_dataset --output outputs/my_dataset_segments.json --whisper-model base --llm-model gemma2
+.\.venv\Scripts\python.exe -m open_video_summary summarize --dataset outputs/my_dataset_segments.json --output outputs/my_summary.mp4
 ```
 
 `gemma2` is the model used by the original adapter and requires an additional
