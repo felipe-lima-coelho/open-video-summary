@@ -193,3 +193,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Agents
+AGENTS.md
+CLAUDE.md
