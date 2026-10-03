@@ -1,4 +1,5 @@
 import itertools
+import unicodedata
 from typing import Optional
 from math import ceil
 from abc import abstractmethod
@@ -21,8 +22,22 @@ from open_video_summary.utils.paths import project_path
 from open_video_summary.utils.providers import load_provider_config
 
 
-def _sentence_end(text: str, punctuation: str = ".!?") -> bool:
-    return text.rstrip("\"'”’»)]}").endswith(tuple(punctuation))
+def _sentence_end(text: str, punctuation: str = ".!?。！？") -> bool:
+    text = text.rstrip()
+    while text and (
+        text[-1] in "\"'”’»)]}"
+        or unicodedata.category(text[-1]) in {"Pe", "Pf"}
+    ):
+        text = text[:-1].rstrip()
+    return text.endswith(tuple(punctuation))
+
+
+def _words_text(words: list[TimedWord] | tuple[TimedWord, ...]) -> str:
+    if not words:
+        return ""
+    return "".join(
+        word.text + word.separator_after for word in words[:-1]
+    ) + words[-1].text
 
 
 class BaseVideoSegmenter:
@@ -141,7 +156,7 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
         min_segment_length: int = 10,
         max_segment_length: Optional[int] = None,
         max_subtopics: Optional[int] = None,
-        sentence_boundary: str = ".!?",
+        sentence_boundary: str = ".!?。！？",
         prompts_template: VideoSegmenterPrompts | None = None,
         llm_adapter: LanguageModel | None = None,
         stt_adapter: SpeechToText | None = None,
@@ -174,7 +189,7 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
             if curr_seg_data["start"] is None:
                 curr_seg_data["start"] = word.start
             curr_seg_data["end"] = word.end
-            curr_seg_data["words"].append(word.text)
+            curr_seg_data["words"].append(word)
             if (
                 _sentence_end(word.text, self.sentence_boundary)
                 and curr_seg_data["end"] - curr_seg_data["start"]
@@ -182,7 +197,7 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
             ):
                 segments.append(
                     VideoSegment(
-                        content=" ".join(curr_seg_data["words"]),
+                        content=_words_text(curr_seg_data["words"]),
                         start=curr_seg_data["start"],
                         end=curr_seg_data["end"],
                     )
@@ -193,7 +208,7 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
         if curr_seg_data["words"]:
             segments.append(
                 VideoSegment(
-                    content=" ".join(curr_seg_data["words"]),
+                    content=_words_text(curr_seg_data["words"]),
                     start=curr_seg_data["start"],
                     end=curr_seg_data["end"],
                 )
@@ -320,7 +335,7 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
             if _sentence_end(word.text):
                 segments.append(
                     TranscriptSegment(
-                        text=" ".join(item.text for item in words),
+                        text=_words_text(words),
                         start=words[0].start,
                         end=words[-1].end,
                         words=tuple(words),
@@ -330,7 +345,7 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
         if words:
             segments.append(
                 TranscriptSegment(
-                    text=" ".join(item.text for item in words),
+                    text=_words_text(words),
                     start=words[0].start,
                     end=words[-1].end,
                     words=tuple(words),

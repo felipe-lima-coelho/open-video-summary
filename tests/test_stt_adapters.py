@@ -411,6 +411,98 @@ ElevenLabsSTT(STTConfig(provider='elevenlabs', model='scribe_v2'))
             (TimedWord("Olá,", 0.2, 0.5), TimedWord("mundo!", 0.8, 1.1)), result.words
         )
 
+    @staticmethod
+    def unspaced_response(text, tokens, *, local=False, language="zh"):
+        words = [
+            {"text": token, "start": index + 0.1, "end": index + 0.8}
+            for index, token in enumerate(tokens)
+        ]
+        if local:
+            return {
+                "text": text,
+                "language": language,
+                "segments": [{"text": text, "start": 0, "end": len(words), "words": words}],
+            }
+        return {
+            "text": text,
+            "language_code": language,
+            "words": [dict(word, type="word") for word in words],
+        }
+
+    def test_unspaced_scripts_preserve_source_characters_and_word_times(self):
+        samples = [
+            ("zh", "你好世界。", ["你好", "世界"]),
+            ("ja", "こんにちは世界。", ["こんにちは", "世界"]),
+            ("th", "สวัสดีโลก!", ["สวัสดี", "โลก"]),
+            ("lo", "ສະບາຍດີໂລກ!", ["ສະບາຍດີ", "ໂລກ"]),
+            ("my", "မင်္ဂလာပါကမ္ဘာ!", ["မင်္ဂလာပါ", "ကမ္ဘာ"]),
+            ("yue", "你好世界！", ["你好", "世界"]),
+        ]
+        for language, text, tokens in samples:
+            for local in (False, True):
+                with self.subTest(language=language, local=local):
+                    response = self.unspaced_response(text, tokens, local=local, language=language)
+                    result = (stt._local_result if local else stt._elevenlabs_result)(response)
+                    self.assertEqual(text, result.text)
+                    self.assertEqual([(0.1, 0.8), (1.1, 1.8)], [(w.start, w.end) for w in result.words])
+                    self.assertEqual("", result.words[0].separator_after)
+                    self.assertEqual(tokens[0], result.words[0].text)
+                    self.assertEqual(tokens[1] + text[-1], result.words[1].text)
+                    if local:
+                        self.assertEqual(text, result.segments[0].text)
+
+    def test_mixed_spacing_and_unicode_quotes_use_provider_boundaries(self):
+        text, tokens = "「你好，世界！」 Hello世界 again.", ["你好", "世界", "Hello", "世界", "again"]
+        for local in (False, True):
+            with self.subTest(local=local):
+                response = self.unspaced_response(text, tokens, local=local)
+                result = (stt._local_result if local else stt._elevenlabs_result)(response)
+                self.assertEqual(text, result.text)
+                self.assertEqual(["「你好，", "世界！」", "Hello", "世界", "again."], [word.text for word in result.words])
+                self.assertEqual(["", " ", "", " "], [word.separator_after for word in result.words[:-1]])
+                self.assertEqual([(i + 0.1, i + 0.8) for i in range(5)], [(word.start, word.end) for word in result.words])
+
+    def test_unspaced_audio_events_do_not_remove_spoken_equal_characters(self):
+        response = self.unspaced_response("(笑声)「你好，世界！」Hello世界。(笑声)", ["你好", "世界", "Hello", "世界"])
+        response["words"].insert(0, {"type": "audio_event", "text": "(笑声)"})
+        response["words"].append({"type": "audio_event", "text": "(笑声)"})
+        result = stt._elevenlabs_result(response)
+        self.assertEqual("「你好，世界！」Hello世界。", result.text)
+        self.assertEqual(["「你好，", "世界！」", "Hello", "世界。"], [word.text for word in result.words])
+        self.assertTrue(all(word.separator_after == "" for word in result.words[:-1]))
+
+    def test_unspaced_standalone_punctuation_retains_adjacent_intervals(self):
+        response = {
+            "text": "「你好，世界！」", "language_code": "zho",
+            "words": [
+                {"type": "word", "text": "「"},
+                {"type": "word", "text": "你好", "start": 0.1, "end": 0.8},
+                {"type": "word", "text": "，"},
+                {"type": "word", "text": "世界", "start": 1.1, "end": 1.8},
+                {"type": "word", "text": "！"},
+                {"type": "word", "text": "」"},
+            ],
+        }
+        result = stt._elevenlabs_result(response)
+        self.assertEqual(response["text"], result.text)
+        self.assertEqual(
+            (TimedWord("「你好，", 0.1, 0.8, separator_after=""), TimedWord("世界！」", 1.1, 1.8)),
+            result.words,
+        )
+
+    def test_unspaced_mismatched_characters_fail_without_retries(self):
+        remote = self.unspaced_response("你妤世界。", ["你好", "世界"])
+        with self.remote(response=remote) as fake:
+            with self.assertRaises(InvalidResponseError):
+                fake.adapter.transcribe(self.audio_path)
+            self.assertEqual(1, fake.client.speech_to_text.convert.call_count)
+            fake.sleep.assert_not_called()
+        local = self.unspaced_response("你好地球。", ["你好", "世界"], local=True)
+        with self.local(response=local) as (adapter, whisper, *_):
+            with self.assertRaises(InvalidResponseError):
+                adapter.transcribe(self.audio_path)
+            self.assertEqual(1, whisper.transcribe.call_count)
+
     def test_top_level_punctuation_is_retained_without_creating_word_times(self):
         response = copy.deepcopy(SCRIBE_RESPONSE)
         for word in response["words"]:

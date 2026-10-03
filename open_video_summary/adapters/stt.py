@@ -213,11 +213,18 @@ def _merge_punctuation(word: str, transcript_token: str) -> str:
     _, reported = split(transcript_token)
     merged = []
     for left, right in zip(original, reported):
-        if left and right and left != right:
+        left_punctuation = "".join(left.split())
+        right_punctuation = "".join(right.split())
+        if (
+            left_punctuation and right_punctuation
+            and left_punctuation != right_punctuation
+        ):
             raise InvalidResponseError(
                 "STT transcript and words have conflicting punctuation."
             )
-        merged.append(left or right)
+        merged.append(
+            right if right_punctuation or not left_punctuation else left + right
+        )
     return "".join(
         punctuation + (letters[index] if index < len(letters) else "")
         for index, punctuation in enumerate(merged)
@@ -225,7 +232,10 @@ def _merge_punctuation(word: str, transcript_token: str) -> str:
 
 
 def _punctuation_opens(token: str, quoted: set[str]) -> bool:
-    opens = token[0] in _OPEN_PUNCTUATION
+    opens = (
+        token[0] in _OPEN_PUNCTUATION
+        or unicodedata.category(token[0]) in {"Ps", "Pi"}
+    )
     if token[0] in "\"'":
         opens = token[0] not in quoted
     lexical = [
@@ -350,28 +360,45 @@ def _align_text(
     if not text:
         raise InvalidResponseError("STT returned timed speech without transcript text.")
 
-    tokens, prefix, quoted = [], "", set()
-    for token in text.split():
-        opens = _punctuation_opens(token, quoted)
-        if _lexical_key(token):
-            tokens.append(prefix + token)
-            prefix = ""
-        elif tokens and not opens:
-            tokens[-1] += token
-        else:
-            prefix += token
-    if prefix and tokens:
-        tokens[-1] += prefix
-    if len(tokens) != len(words) or any(
-        _lexical_key(token) != _lexical_key(word.text)
-        for token, word in zip(tokens, words)
-    ):
+    # Provider word boundaries are authoritative; whitespace is not a word
+    # boundary in scripts such as Chinese, Japanese, Thai, or mixed text.
+    expected = [_lexical_key(word.text) for word in words]
+    if _lexical_key(text) != "".join(expected):
         raise InvalidResponseError("STT transcript text and timed words do not align.")
+    positions = [index for index, letter in enumerate(text) if _lexical_key(letter)]
+    tokens, separators, quoted = [], [], set()
+    lexical_cursor, previous_end = 0, 0
+    for key in expected:
+        start = positions[lexical_cursor]
+        lexical_cursor += len(key)
+        end = positions[lexical_cursor - 1] + 1
+        gap, prefix = text[previous_end:start], ""
+        for mark in "".join(gap.split()):
+            opens = _punctuation_opens(mark, quoted)
+            if tokens and not opens:
+                tokens[-1] += mark
+            else:
+                prefix += mark
+        if tokens:
+            separators.append(" " if any(mark.isspace() for mark in gap) else "")
+        token = prefix + text[start:end]
+        tokens.append(token)
+        previous_end = end
+    tokens[-1] += "".join(text[previous_end:].split())
     aligned = tuple(
-        replace(word, text=_merge_punctuation(word.text, token))
-        for token, word in zip(tokens, words)
+        replace(
+            word,
+            text=_merge_punctuation(word.text, token),
+            separator_after=(
+                separators[index] if index < len(separators) else word.separator_after
+            ),
+        )
+        for index, (token, word) in enumerate(zip(tokens, words))
     )
-    return _text(" ".join(word.text for word in aligned)), aligned
+    result_text = aligned[0].text + "".join(
+        separator + word.text for separator, word in zip(separators, aligned[1:])
+    )
+    return _text(result_text), aligned
 
 
 def _reported_language(response, field: str) -> str | None:

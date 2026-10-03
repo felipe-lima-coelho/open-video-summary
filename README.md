@@ -86,6 +86,9 @@ and validates them against the installed Whisper tokenizer before loading model
 weights or audio. Native codes such as `haw` and `yue` remain available when the
 installed tokenizer supports them. Run metadata preserves the requested code,
 the translated code sent to the provider, and the language reported in its response.
+Timed words keep the source separators, so languages and mixed text without
+spaces retain their spelling and original word timestamps. The default sentence
+boundaries include `.`, `!`, `?`, `。`, `！`, and `？`; custom boundaries remain configurable.
 See the [speech-to-text API](https://elevenlabs.io/docs/api-reference/speech-to-text/convert)
 and [Scribe language and capability guide](https://elevenlabs.io/docs/overview/capabilities/speech-to-text).
 

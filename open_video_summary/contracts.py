@@ -72,6 +72,8 @@ class TimedWord:
     text: str
     start: float
     end: float
+    # The normalized source separator before the next timed word.
+    separator_after: str = " "
 
 
 @dataclass(frozen=True)

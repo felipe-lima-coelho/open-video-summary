@@ -1,4 +1,4 @@
-"""Offline segmentation on synthetic Portuguese service responses."""
+"""Offline segmentation on synthetic multilingual service responses."""
 
 import copy
 import json
@@ -102,11 +102,11 @@ def llm_adapter(provider, values):
     )
 
 
-def speech_adapter(provider):
+def speech_adapter(provider, fixture=None):
     if provider == "whisper_local":
-        result = _local_result(copy.deepcopy(LOCAL_TRANSCRIPT))
+        result = _local_result(copy.deepcopy(fixture or LOCAL_TRANSCRIPT))
     else:
-        result = _elevenlabs_result(copy.deepcopy(SCRIBE_TRANSCRIPT))
+        result = _elevenlabs_result(copy.deepcopy(fixture or SCRIBE_TRANSCRIPT))
     metadata = ServiceMetadata(
         provider=provider,
         requested_model="fixture-model",
@@ -252,6 +252,62 @@ class SegmentationIntegrationTests(unittest.TestCase):
         self.assertEqual(
             [(0, 1), (2, 3)], [(chunk.start, chunk.end) for chunk in chunks]
         )
+
+    def test_unspaced_and_mixed_text_survives_word_and_clustered_flows(self):
+        samples = [
+            ("「你好世界！」", "第二句话。", ["你好", "世界", "第二", "句话"], ""),
+            ("Hello 世界。", "第二phrase!", ["Hello", "世界", "第二", "phrase"], " "),
+        ]
+        for first, second, tokens, separator in samples:
+            full_text = first + separator + second
+            raw_words = [dict(word, text=token) for word, token in zip(WORDS, tokens)]
+            for stt_provider in ("whisper_local", "elevenlabs"):
+                if stt_provider == "whisper_local":
+                    fixture = {
+                        "text": full_text, "language": "zh",
+                        "segments": [
+                            {"text": first, "start": 0, "end": 6.1, "words": raw_words[:2]},
+                            {"text": second, "start": 7.9, "end": 14.2, "words": raw_words[2:]},
+                        ],
+                    }
+                else:
+                    fixture = {
+                        "text": full_text, "language_code": "zho",
+                        "words": [dict(word, type="word") for word in raw_words],
+                    }
+                for segmenter_type in (WordVideoSegmenter, ClusteredVideoSegmenter):
+                    with self.subTest(text=full_text, stt=stt_provider, segmenter=segmenter_type.__name__):
+                        responses = ['{"0":"Tema A","1":"Tema B"}', '{"0":"Tema A"}', '{"1":"Tema B"}']
+                        if segmenter_type is ClusteredVideoSegmenter:
+                            responses = [full_text, first, second] + responses
+                        language, generate = llm_adapter("openai", responses)
+                        speech = speech_adapter(stt_provider, fixture)
+                        segmenter = segmenter_type(
+                            min_segment_length=5, max_segment_length=120,
+                            max_subtopics=3, llm_adapter=language, stt_adapter=speech,
+                        )
+                        result = segmenter.create_video_segments(Video("synthetic", "data/raw/synthetic.mp4"))
+                        self.assertEqual(full_text, speech.transcribe.return_value.text)
+                        self.assertEqual([first, second], [segment.content for segment in result.segments])
+                        expected = [(0.1, 6), (8, 14)]
+                        if segmenter_type is ClusteredVideoSegmenter and stt_provider == "whisper_local":
+                            expected = [(0, 6.1), (7.9, 14.2)]
+                        self.assertEqual(expected, [(segment.start, segment.end) for segment in result.segments])
+                        self.assertEqual(["Tema A", "Tema B"], [segment.video_topic for segment in result.segments])
+                        self.assertTrue(all(segment.video_path == result.path for segment in result.segments))
+                        self.assertIn(full_text, generate.call_args_list[0].kwargs["input"])
+
+    def test_custom_sentence_boundaries_still_override_unicode_defaults(self):
+        language, _ = llm_adapter("ollama", [])
+        segmenter = WordVideoSegmenter(
+            min_segment_length=0.1, sentence_boundary=".!?",
+            llm_adapter=language, stt_adapter=speech_adapter("elevenlabs"),
+        )
+        segments = segmenter.get_segments_from_words(
+            (TimedWord("你好。", 0, 1, separator_after=""), TimedWord("世界。", 2, 3))
+        )
+        self.assertEqual(["你好。世界。"], [segment.content for segment in segments])
+        self.assertEqual([(0, 3)], [(segment.start, segment.end) for segment in segments])
 
     def test_empty_transcription_stops_before_any_llm_call(self):
         language, create = llm_adapter("openai", [])
