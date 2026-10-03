@@ -53,9 +53,7 @@ class ProviderConfigurationTests(unittest.TestCase):
         self.assertIsNone(absent.llm.reasoning_effort)
         explicit = self.load(environ={"OVS_LLM_REASONING_EFFORT": "none"})
         self.assertEqual("none", explicit.llm.reasoning_effort)
-        config = self.load(
-            environ={"OPENAI_API_KEY": " ", "OVS_STT_LANGUAGE": ""}
-        )
+        config = self.load(environ={"OPENAI_API_KEY": " ", "OVS_STT_LANGUAGE": ""})
         self.assertIsNone(config.llm.api_key)
         self.assertEqual("pt", config.stt.language)
         self.assertIsNone(self.load(environ={"OVS_STT_LANGUAGE": "auto"}).stt.language)
@@ -88,12 +86,23 @@ class ProviderConfigurationTests(unittest.TestCase):
 
     def test_factory_selects_independent_pairs(self):
         llm_marker, stt_marker = object(), object()
-        with patch.dict(
-            LLM_PROVIDERS,
-            {"openai": ProviderDefinition(lambda config: llm_marker, "future", "https://api.test")},
-        ), patch.dict(
-            STT_PROVIDERS,
-            {"whisper_local": ProviderDefinition(lambda config: stt_marker, "base")},
+        with (
+            patch.dict(
+                LLM_PROVIDERS,
+                {
+                    "openai": ProviderDefinition(
+                        lambda config: llm_marker, "future", "https://api.test"
+                    )
+                },
+            ),
+            patch.dict(
+                STT_PROVIDERS,
+                {
+                    "whisper_local": ProviderDefinition(
+                        lambda config: stt_marker, "base"
+                    )
+                },
+            ),
         ):
             config = self.load(environ={"OVS_LLM_PROVIDER": "openai"})
             self.assertEqual((llm_marker, stt_marker), create_providers(config))
@@ -101,7 +110,11 @@ class ProviderConfigurationTests(unittest.TestCase):
     def test_registering_provider_requires_no_algorithm_change(self):
         with patch.dict(
             LLM_PROVIDERS,
-            {"new": ProviderDefinition(lambda config: config, "next", "https://new.test")},
+            {
+                "new": ProviderDefinition(
+                    lambda config: config, "next", "https://new.test"
+                )
+            },
         ):
             config = self.load(environ={"OVS_LLM_PROVIDER": "new"})
             self.assertEqual("next", config.llm.model)
