@@ -1,14 +1,14 @@
 # Example notebooks
 notebooks/*-example.ipynb
 
-# Test directory, while no tests are built
-tests/
-
 # Test data directory
 data/datasets
 
 # Models directory
 models/
+
+# Generated local experiment outputs
+outputs/
 
 # Raw data directory
 data/raw/*

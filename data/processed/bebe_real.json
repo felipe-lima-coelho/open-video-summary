@@ -1,7 +1,7 @@
 [
     {
         "name": "jornal_nacional",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_nacional.mp4",
+        "path": "data/raw/bebe_real/jornal_nacional.mp4",
         "topics": [
             "Apresentação do bebê real",
             "Estilo discreto do casal",
@@ -16,7 +16,7 @@
                 "order": 0,
                 "video_topic": "Apresentação do bebê real",
                 "global_topic": "Apresentação do bebê real",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_nacional.mp4"
+                "video_path": "data/raw/bebe_real/jornal_nacional.mp4"
             },
             {
                 "content": "O casal também quebrou hoje outro mistério e revelou o nome do novo bebê real. Archie Harrison Manbatten-Windsor, um nome até bem mais curto do que os padrões da realeza.",
@@ -25,7 +25,7 @@
                 "order": 1,
                 "video_topic": "Nome do bebê Archie Harrison Mountbatten-Windsor",
                 "global_topic": "Nome e nacionalidade do bebê",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_nacional.mp4"
+                "video_path": "data/raw/bebe_real/jornal_nacional.mp4"
             },
             {
                 "content": "Elizabeth Alexandra Mary conheceu hoje o bisneto. A rainha apareceu ao lado do marido e da mãe de Meghan. O casal ainda não sabe com quem Archie se parece. O príncipe diz que o rosto de bebê muda muito. Só que o de pai e mãe muda ainda mais.",
@@ -34,13 +34,13 @@
                 "order": 2,
                 "video_topic": "Apresentação do bebê real",
                 "global_topic": "Apresentação do bebê real",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_nacional.mp4"
+                "video_path": "data/raw/bebe_real/jornal_nacional.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_band",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_band.mp4",
+        "path": "data/raw/bebe_real/jornal_da_band.mp4",
         "topics": [
             "Apresentação pública do bebê real Archie Harrison",
             "Detalhes sobre o temperamento e características do bebê",
@@ -54,7 +54,7 @@
                 "order": 0,
                 "video_topic": "Apresentação pública do bebê real Archie Harrison",
                 "global_topic": "Apresentação do bebê real",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_band.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_band.mp4"
             },
             {
                 "content": "O bebê real recebeu o nome de Archie Harrison. Na rápida aparição no castelo de Windsor, a duquesa de Sussex disse que o bebê é muito calmo, com temperamento doce. O príncipe brincou e disse que não sabe a quem ele puxou. Ele é muito calmo. Ele está com dor.",
@@ -63,7 +63,7 @@
                 "order": 1,
                 "video_topic": "Detalhes sobre o temperamento e características do bebê",
                 "global_topic": "Detalhes sobre o temperamento e características do bebê",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_band.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_band.mp4"
             },
             {
                 "content": "Horas depois, o casal divulgou o nome do bebê real. Archie Harrison Mutt-Batton, Windsor. O anúncio foi feito logo após a rainha Elizabeth e o príncipe Philip conhecerem o bisneto.",
@@ -72,7 +72,7 @@
                 "order": 2,
                 "video_topic": "Apresentação pública do bebê real Archie Harrison",
                 "global_topic": "Nome e nacionalidade do bebê",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_band.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_band.mp4"
             },
             {
                 "content": "O filho de Harry e Meghan é o sétimo na linha de sucessão ao trono britânico. Os pais se casaram em maio do ano passado e a gravidez foi anunciada em outubro.",
@@ -81,7 +81,7 @@
                 "order": 3,
                 "video_topic": "Linha de sucessão e histórico familiar do bebê",
                 "global_topic": "Linha de sucessão",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_band.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_band.mp4"
             },
             {
                 "content": "Meghan deu à luz em casa uma tradição da família real.",
@@ -90,13 +90,13 @@
                 "order": 4,
                 "video_topic": "Apresentação pública do bebê real Archie Harrison",
                 "global_topic": "Apresentação do bebê real",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_band.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_band.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_record",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_record.mp4",
+        "path": "data/raw/bebe_real/jornal_da_record.mp4",
         "topics": [
             "Apresentação do bebê real",
             "Nome e nacionalidade do bebê",
@@ -111,7 +111,7 @@
                 "order": 0,
                 "video_topic": "Apresentação do bebê real",
                 "global_topic": "Apresentação do bebê real",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_record.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
             },
             {
                 "content": "A Arty vai ter também nacionalidade americana por causa da mãe. Mas ainda não pode ser chamado de príncipe como os primos.",
@@ -120,7 +120,7 @@
                 "order": 1,
                 "video_topic": "Nome e nacionalidade do bebê",
                 "global_topic": "Nome e nacionalidade do bebê",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_record.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
             },
             {
                 "content": "Essa vai ser uma decisão da bisavó, a rainha Elizabeth. Hoje a monarca conheceu, enfim, o oitavo bisneto, sétimo na linha de sucessão ao trono.",
@@ -129,7 +129,7 @@
                 "order": 2,
                 "video_topic": "Apresentação do bebê real",
                 "global_topic": "Apresentação do bebê real",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_record.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
             },
             {
                 "content": "O sorriso na foto confirma o encantamento com a criança, que também conquistou turistas e britânicos. O príncipe William ainda não conheceu o sobrinho, mas fez questão de dar ao irmão as boas-vindas ao clube dos que não dormem.",
@@ -138,7 +138,7 @@
                 "order": 3,
                 "video_topic": "Reação da família real",
                 "global_topic": "Reação da família real",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_record.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
             },
             {
                 "content": "Vai ser divertido. Completa o novo tio da realeza britânica.",
@@ -147,7 +147,7 @@
                 "order": 4,
                 "video_topic": "Apresentação do bebê real",
                 "global_topic": "Apresentação do bebê real",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/bebe_real/jornal_da_record.mp4"
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
             }
         ]
     }

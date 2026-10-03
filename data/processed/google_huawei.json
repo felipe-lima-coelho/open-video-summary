@@ -1,7 +1,7 @@
 [
     {
         "name": "sbt_brasil",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/sbt_brasil.mp4",
+        "path": "data/raw/google_huawei/sbt_brasil.mp4",
         "topics": [
             "Impacto da decisão do Google sobre os usuários de Huawei",
             "Acusações dos EUA contra a Huawei e as respostas da China",
@@ -16,7 +16,7 @@
                 "order": 0,
                 "video_topic": "Impacto da decisão do Google sobre os usuários de Huawei",
                 "global_topic": "Impact of Google's decision on Huawei users",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/sbt_brasil.mp4"
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
             },
             {
                 "content": "Os americanos também temem perder o controle sobre a rede 5G. Atualmente, a Huawei é uma das empresas mais avançadas nas pesquisas dessa nova tecnologia.",
@@ -25,7 +25,7 @@
                 "order": 1,
                 "video_topic": "O papel da tecnologia 5G na disputa entre EUA e China",
                 "global_topic": "US-China tech rivalry and 5G",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/sbt_brasil.mp4"
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
             },
             {
                 "content": "Cumprindo a determinação, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca. A decisão vai afetar principalmente os novos aparelhos da Huawei, que não vão ter aplicativos como Gmail e o YouTube.",
@@ -34,7 +34,7 @@
                 "order": 2,
                 "video_topic": "Impacto da decisão do Google sobre os usuários de Huawei",
                 "global_topic": "Impact of Google's decision on Huawei users",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/sbt_brasil.mp4"
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
             },
             {
                 "content": "O porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos espalham informações falsas para conseguir vantagens comerciais e não mostram qualquer evidência que provem as acusações.",
@@ -43,7 +43,7 @@
                 "order": 3,
                 "video_topic": "Acusações dos EUA contra a Huawei e as respostas da China",
                 "global_topic": "Cybersecurity concerns related to Huawei",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/sbt_brasil.mp4"
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
             },
             {
                 "content": "A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras.",
@@ -52,7 +52,7 @@
                 "order": 4,
                 "video_topic": "Impacto da decisão do Google sobre os usuários de Huawei",
                 "global_topic": "US-China tech rivalry and 5G",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/sbt_brasil.mp4"
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
             },
             {
                 "content": "A Huawei afirma que já trabalha no desenvolvimento de uma nova plataforma para que os celulares possam operar normalmente.",
@@ -61,13 +61,13 @@
                 "order": 5,
                 "video_topic": "Desenvolvimento de uma nova plataforma por parte da Huawei",
                 "global_topic": "Huawei's alternative platform development",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/sbt_brasil.mp4"
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
             }
         ]
     },
     {
         "name": "jornal_nacional",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/jornal_nacional.mp4",
+        "path": "data/raw/google_huawei/jornal_nacional.mp4",
         "topics": [
             "Guerra comercial entre China e Estados Unidos",
             "Impacto da proibição de negócios com a Huawei para o mercado global",
@@ -82,7 +82,7 @@
                 "order": 0,
                 "video_topic": "Guerra comercial entre China e Estados Unidos",
                 "global_topic": "Impact of Google's decision on Huawei users",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/jornal_nacional.mp4"
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
             },
             {
                 "content": "Sistema operacional é o que faz o smartphone funcionar, possibilita usar os aplicativos. O Android é o sistema operacional mais usado em smartphones ao redor do planeta. A Huawei é a segunda maior fabricante de smartphones do mundo.",
@@ -91,7 +91,7 @@
                 "order": 1,
                 "video_topic": "Sistema operacional Android e sua importância para os smartphones",
                 "global_topic": "Android's role in the smartphone ecosystem",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/jornal_nacional.mp4"
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
             },
             {
                 "content": "Durante muito tempo, eles cresceram se ajudando. Mas agora, o presidente Donald Trump pode ter acabado com essa parceria. O governo proibiu empresas americanas de fazer negócios com a empresa chinesa. A Google, dona do Android, chegou a anunciar que, para cumprir a ordem, não ia mais atualizar o sistema operacional em telefones da Huawei. Mas agora, no fim do dia, o governo americano voltou atrás e baixou uma regra provisória permitindo as atualizações dos celulares por mais 90 dias. Os novos celulares da Huawei vão continuar sem poder usar o sistema e os aplicativos da Google. O detalhe é que, na China, onde a comunicação é monitorada pelo governo, ninguém tem acesso aos serviços da Google, nem mesmo nos celulares Huawei. Mas os aplicativos são indispensáveis para o comércio mundial da empresa. Os celulares da Huawei já são proibidos nos Estados Unidos. Os americanos alegam, sem mostrar provas, que eles podem ser uma porta para espionagem chinesa. Proibir empresas americanas de fazer negócios com a Huawei é mais um passo na guerra comercial entre os dois países, já de olho no mercado do 5G.",
@@ -100,7 +100,7 @@
                 "order": 2,
                 "video_topic": "Guerra comercial entre China e Estados Unidos",
                 "global_topic": "US-China tech rivalry and 5G",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/jornal_nacional.mp4"
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
             },
             {
                 "content": "A nova tecnologia 5G promete revolucionar a internet móvel e os Estados Unidos e a China lutam para definir quem vai dominar esse mercado.",
@@ -109,13 +109,13 @@
                 "order": 3,
                 "video_topic": "Tecnologia 5G e disputa entre EUA e China",
                 "global_topic": "US-China tech rivalry and 5G",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/jornal_nacional.mp4"
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_band",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/jornal_da_band.mp4",
+        "path": "data/raw/google_huawei/jornal_da_band.mp4",
         "topics": [
             "Google's decision to stop updating Huawei apps",
             "US-China trade war and its impact on technology companies",
@@ -129,7 +129,7 @@
                 "order": 0,
                 "video_topic": "Google's decision to stop updating Huawei apps",
                 "global_topic": "Impact of Google's decision on Huawei users",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/jornal_da_band.mp4"
+                "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
             },
             {
                 "content": "O alvo principal da medida era a Huawei. A empresa é acusada por Washington de espionagem cibernética em favor de Pequim.",
@@ -138,7 +138,7 @@
                 "order": 1,
                 "video_topic": "Huawei's alleged involvement in cyber espionage",
                 "global_topic": "Cybersecurity concerns related to Huawei",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/google_huawei/jornal_da_band.mp4"
+                "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
             }
         ]
     }

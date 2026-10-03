@@ -1,7 +1,7 @@
 [
     {
         "name": "jornal_nacional",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4",
+        "path": "data/raw/brumadinho/jornal_nacional.mp4",
         "topics": [
             "Barragem rompimento e destruição em Brumadinho",
             "Impacto ambiental na região de Minas Gerais",
@@ -18,7 +18,7 @@
                 "order": 0,
                 "video_topic": "Barragem rompimento e destruição em Brumadinho",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "Ela ficava numa área rural a poucos quilômetros de Brumadinho, na região metropolitana de Belo Horizonte. Faz parte de um complexo de mineração da Vale, a empresa disse que a barragem tinha rejeitos de minério de ferro e não estava ativa desde 2015.",
@@ -27,7 +27,7 @@
                 "order": 1,
                 "video_topic": "Responsabilidade da Vale e investigação das causas",
                 "global_topic": "Responsabilidade da Vale e investigação das causas",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "Muitos funcionários estavam no refeitório. Ainda não se sabe quantas pessoas estavam no local.",
@@ -36,7 +36,7 @@
                 "order": 2,
                 "video_topic": "Vítimas e buscas por sobreviventes",
                 "global_topic": "Relato dos moradores e operários sobre o acidente",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "A barragem acabou de estourar em feijão. Acabou com tudo, cara. Tudo, tudo, tudo. O restaurante, todo mundo estava almoçando. Acabou com tudo. Olha para você ver. Em pouco tempo, a lama cobriu a área administrativa da Vale e parte da comunidade da Vila Ferteco.",
@@ -45,7 +45,7 @@
                 "order": 3,
                 "video_topic": "Barragem rompimento e destruição em Brumadinho",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "Aproximadamente mil pessoas moram na região. Em Brumadinho, a polícia avisou aos moradores do rompimento e outras quatro cidades da região estão em alerta.",
@@ -54,7 +54,7 @@
                 "order": 4,
                 "video_topic": "Medidas de segurança e alerta para outras cidades",
                 "global_topic": "Medidas de segurança e alerta para outras cidades",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "Estamos aqui em Brumadinho. Eu não sei o que aconteceu, mas está com cara de que alguma barragem aqui estourou. O volume de água que está passando ali não é brincadeira. A pista já foi interditada e está descendo muito rejeito de minério ali. Sabe-se Deus o que aconteceu. Logo aqui embaixo passa o Paropeba. Provavelmente isso vai cair tudo para o Paropeba. É muita coisa que está descendo. Muita coisa. Estourou a fiação toda. Estourou os postes. Aí, ó. Deus tem de piedade nossa.",
@@ -63,7 +63,7 @@
                 "order": 5,
                 "video_topic": "Barragem rompimento e destruição em Brumadinho",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "A imagem impressionante parece a repetição de uma cena de 2015 em Mariana com o rompimento da barragem de Fundão da Samarco.",
@@ -72,7 +72,7 @@
                 "order": 6,
                 "video_topic": "Comparação com a tragédia de Mariana em 2015",
                 "global_topic": "Comparação com a tragédia de Mariana em 2015",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "Essa lama tem uma consistência diferente daquela que a gente viu lá na barragem de Mariana. Ela parece que tem menos teor de água e nesse ponto aqui ela está bem estabilizada. Mas lá no meio a gente vê que ainda tem um rio de lama descendo. Olha lá. Essa barragem que se rompeu hoje é chamada de barragem amontante, mesmo tipo da barragem de Fundão.",
@@ -81,7 +81,7 @@
                 "order": 7,
                 "video_topic": "Barragem rompimento e destruição em Brumadinho",
                 "global_topic": "Comparação com a tragédia de Mariana em 2015",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "O alteamento delas é feito com o próprio rejeito e em direção à barragem. Especialistas em mineração alertam que elas são as mais comuns e mais baratas.",
@@ -90,7 +90,7 @@
                 "order": 8,
                 "video_topic": "Responsabilidade da Vale e investigação das causas",
                 "global_topic": "Risco de barragens em Minas Gerais e no Brasil",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "No fim da tarde, o Ministério do Meio Ambiente declarou que outras duas barragens do complexo se romperam. Os bombeiros afirmaram que vazaram 13 milhões de metros cúbicos de rejeito de minério. Essa quantidade é um quarto do que vazou da barragem de Fundão, em Mariana, há três anos. As imagens de antes e depois do rompimento mostram a dimensão da destruição.",
@@ -99,7 +99,7 @@
                 "order": 9,
                 "video_topic": "Barragem rompimento e destruição em Brumadinho",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "A lama seguiu rumo ao rio Paralpeba, um dos principais afluentes do São Francisco. Parte do abastecimento da região metropolitana de Belo Horizonte é feita com a captação da água do Paralpeba.",
@@ -108,7 +108,7 @@
                 "order": 10,
                 "video_topic": "Impacto ambiental na região de Minas Gerais",
                 "global_topic": "Risco de barragens em Minas Gerais e no Brasil",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "A Copás afirmou que está suspensa a captação da água do rio Paralpeba em Brumadinho e que o abastecimento da população atendida pelo sistema Paralpeba está sendo realizado por outras represas e pelo rio das Velhas. No início da noite, o governador de Minas, Romeu Zema do Novo, chegou ao local da tragédia com o ministro do Meio Ambiente, Ricardo Salles.",
@@ -117,7 +117,7 @@
                 "order": 11,
                 "video_topic": "Barragem rompimento e destruição em Brumadinho",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "O presidente da Vale, Fábio Schwartman, disse que vai investigar as causas da tragédia, que classificou como inaceitável.",
@@ -126,7 +126,7 @@
                 "order": 12,
                 "video_topic": "Responsabilidade da Vale e investigação das causas",
                 "global_topic": "Responsabilidade da Vale e investigação das causas",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "Nós não sabemos a extensão ainda, nós não sabemos a causa, mas o que eu quero dividir com vocês é a nossa consternação, a nossa profundo pesar pelo que aconteceu. Não existem palavras que possam explicar a dor que eu estou sentindo, pelo que terá sido causado as vítimas, se elas existirem, porque nesse volume de coisas que acontecem, certamente tem.",
@@ -135,7 +135,7 @@
                 "order": 13,
                 "video_topic": "Barragem rompimento e destruição em Brumadinho",
                 "global_topic": "Vítimas e buscas por sobreviventes",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "A nossa preocupação, a minha preocupação avale como um todo, vai se preocupar profundamente com as vítimas, a resgatar as pessoas, atender as pessoas, fazer tudo o que tiver o seu alcance para tentar enfrentar essa situação inimaginável.",
@@ -144,7 +144,7 @@
                 "order": 14,
                 "video_topic": "Vítimas e buscas por sobreviventes",
                 "global_topic": "Vítimas e buscas por sobreviventes",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             },
             {
                 "content": "Não importa qual seja a causa, isso é inaceitável. Nós vamos fazer uma investigação rápida e profunda para descobrir o que aconteceu e vamos tomar as providências todas que forem necessárias.",
@@ -153,13 +153,13 @@
                 "order": 15,
                 "video_topic": "Responsabilidade da Vale e investigação das causas",
                 "global_topic": "Responsabilidade da Vale e investigação das causas",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_nacional.mp4"
+                "video_path": "data/raw/brumadinho/jornal_nacional.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_band",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4",
+        "path": "data/raw/brumadinho/jornal_da_band.mp4",
         "topics": [
             "Barragem de rejeitos da Vale se rompe em Brumadinho",
             "Desastre em Brumadinho: número de desaparecidos pode chegar a 300",
@@ -176,7 +176,7 @@
                 "order": 0,
                 "video_topic": "Barragem de rejeitos da Vale se rompe em Brumadinho",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "Bombeiros estimam em até 300 o número de desaparecidos. Segundo a mineradora, funcionários trabalhavam no local no momento do desastre.",
@@ -185,7 +185,7 @@
                 "order": 1,
                 "video_topic": "Desastre em Brumadinho: número de desaparecidos pode chegar a 300",
                 "global_topic": "Vítimas e buscas por sobreviventes",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "As imagens gravadas do alto dão a dimensão da tragédia. A lama tomou conta do entorno da mina de ferro da Vale em Brumadinho. Com o rompimento da barragem, no início da tarde de hoje, casas foram destruídas, acessos à região foram interditados e moradores tiveram que ser retirados de zonas de risco.",
@@ -194,7 +194,7 @@
                 "order": 2,
                 "video_topic": "Barragem de rejeitos da Vale se rompe em Brumadinho",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "O corpo de bombeiros e a defesa civil trabalham na região. Helicópteros da polícia sobrevoam a área atingida em busca de vítimas.",
@@ -203,7 +203,7 @@
                 "order": 3,
                 "video_topic": "Busca por vítimas e trabalho de resgate",
                 "global_topic": "Vítimas e buscas por sobreviventes",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "A mina córrego do Feijão fica em Brumadinho, a 50 quilômetros de Belo Horizonte, e tem uma barragem para rejeitos com 1 milhão de metros cúbicos. Pelas fotos, é possível ver como a região era e como ficou depois do rompimento. Moradores gravaram vídeos mostrando a área tomada pela lama. A barragem acabou de estourar em feijão, acabou com tudo, cara. Tudo, tudo, tudo. Restaurante, todo mundo estava almoçando. Acabou com tudo. Olha para você ver. Neste, dá para ver a enxurrada de lama. O volume de água que está passando ali não é brincadeira. A pista já foi interditada e está descendo muito rejeito de minério ali. Segundo a Vale, os rejeitos atingiram principalmente uma área administrativa da companhia. A empresa afirma que como havia funcionários no local, no momento em que a barragem se rompeu, existe a possibilidade de vítimas. A comunidade vizinha da Vila Ferteco também foi atingida. Eu vi o vizinho daqui de cima gritando, a barragem estourou da Vale, corre gente, corre gente. Aí todo mundo saiu correndo. E eu vim nesse desespero, vim nessa direção aqui, porque aqui é mais alto. E a onda? E a onda vindo ali quebrando tudo, os matos quebrando tudo. Não teve alarme. A senhora não ouviu nada? Não, não, não, não, não, não. Nada, não gritou nada. Neste ponto onde eu estou, havia uma rua e dezenas de casas dos dois lados. A lama levou quase tudo. Sobraram apenas aqueles imóveis lá na frente.",
@@ -212,7 +212,7 @@
                 "order": 4,
                 "video_topic": "Barragem de rejeitos da Vale se rompe em Brumadinho",
                 "global_topic": "Relato dos moradores e operários sobre o acidente",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "O mar de lama arrastou uma estrutura de concreto desta ponte e destruiu os trilhos da linha férrea.",
@@ -221,7 +221,7 @@
                 "order": 5,
                 "video_topic": "Impacto da tragédia na comunidade e infraestrutura local",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "O centro de Brumadinho foi esvaziado e cidades vizinhas estão em estado de alerta. O Instituto em Iotim, que fica a cerca de 6 quilômetros de onde a barragem se rompeu, não foi atingido pela lama.",
@@ -230,7 +230,7 @@
                 "order": 6,
                 "video_topic": "Barragem de rejeitos da Vale se rompe em Brumadinho",
                 "global_topic": "Medidas de segurança e alerta para outras cidades",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "Mas funcionários e visitantes foram retirados do local por precaução. As causas do acidente ainda serão investigadas.",
@@ -239,7 +239,7 @@
                 "order": 7,
                 "video_topic": "Investigação das causas do rompimento da barragem",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "Não há chuva significativa na região há quase três semanas. Um relatório da Agência Nacional das Águas divulgado no fim de 2018 apontou 45 barragens com risco de rompimento no país.",
@@ -248,7 +248,7 @@
                 "order": 8,
                 "video_topic": "Risco de barragens em Minas Gerais e no Brasil",
                 "global_topic": "Risco de barragens em Minas Gerais e no Brasil",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             },
             {
                 "content": "Cinco delas em Minas. Mas a de córrego do feijão, que se rompeu nesta sexta-feira, não estava na lista.",
@@ -257,13 +257,13 @@
                 "order": 9,
                 "video_topic": "Barragem de rejeitos da Vale se rompe em Brumadinho",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_band.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_band.mp4"
             }
         ]
     },
     {
         "name": "jornal_da_record",
-        "path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4",
+        "path": "data/raw/brumadinho/jornal_da_record.mp4",
         "topics": [
             "Relato dos moradores e operários sobre o acidente",
             "Busca por sobreviventes durante a noite",
@@ -281,7 +281,7 @@
                 "order": 0,
                 "video_topic": "Relato dos moradores e operários sobre o acidente",
                 "global_topic": "Relato dos moradores e operários sobre o acidente",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "Não é isso, Eduardo? Boa noite para você. Quais as informações sobre as buscas? É possível que haja buscas durante a noite?",
@@ -290,7 +290,7 @@
                 "order": 1,
                 "video_topic": "Busca por sobreviventes durante a noite",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "Sem dúvida, é possível e as buscas estão acontecendo, por isso uma equipe técnica específica com mais iluminação tem chegado aqui à área da mineradora. Eu falo de Brumadinho, que é uma cidade com cerca de 30 mil habitantes, mas territorialmente muito maior que isso. Caberiam três belos horizontes no território da cidade de Brumadinho e na beira de uma das estradas que dão acesso à mineradora. O entre-sai é bastante grande, eu cruzei no caminho de Belo Horizonte até aqui com muitos carros da defesa civil, ambulâncias ainda fazendo resgates e sobretudo socorrendo pessoas que estão sem assistência nesse instante ainda contando apenas com ajuda de voluntários.",
@@ -299,7 +299,7 @@
                 "order": 2,
                 "video_topic": "Relato dos moradores e operários sobre o acidente",
                 "global_topic": "Vítimas e buscas por sobreviventes",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "O governador de Minas Gerais, Romeu Zema, deixou aqui a área afetada pelo vazamento da barragem e voltou a Belo Horizonte onde se reúne nesse instante com promotores de justiça. É uma reunião no Ministério Público Estadual, o governo do estado acaba de assinar uma multa contra a mineradora Vale. Já um auto de infração que acaba de ser assinado pelo secretário do meio ambiente em conjunto com o governador está sendo arbitrado um valor de multa com uma lista de exigências, mas a decisão nesse instante é pela interrupção de todo o trabalho da mineradora em várias barragens desta região.",
@@ -308,7 +308,7 @@
                 "order": 3,
                 "video_topic": "Reação do governo de Minas Gerais e multa à Vale",
                 "global_topic": "Reação do governo de Minas Gerais e multa à Vale",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "A menos de dois quilômetros de onde eu falo nesse instante existe uma outra barragem se ela também tivesse transbordado como as outras duas depois do rompimento da primeira também aqui haveria repercussão muito séria.",
@@ -317,7 +317,7 @@
                 "order": 4,
                 "video_topic": "Número de barragens em Minas Gerais e preocupação dos engenheiros",
                 "global_topic": "Risco de barragens em Minas Gerais e no Brasil",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "É um cenário bastante triste e o caminho de Belo Horizonte até aqui foi um caminho de rememorar, de lembrar a tragédia de Mariana de apenas três anos e dois meses atrás com muito parecido roteiro na verdade.",
@@ -326,7 +326,7 @@
                 "order": 5,
                 "video_topic": "Comparação com a tragédia de Mariana",
                 "global_topic": "Comparação com a tragédia de Mariana em 2015",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "O rompimento de uma barragem com muito pouco aviso aqueles que estavam em volta e sobretudo uma barragem da década de 70 que ainda que bem conservada ficava logo acima da área de um refeitório e também de um escritório onde havia cerca de 500 pessoas no momento do estouro da barragem muitos funcionários terceirizados.",
@@ -335,7 +335,7 @@
                 "order": 6,
                 "video_topic": "Relato dos moradores e operários sobre o acidente",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "Eu conversei agora pouco com engenheiros de Minas que trabalharam nesta em outras barragens aqui de Minas Gerais um número para que nosso telespectador tem ideia existem catalogadas 736 barragens tanto de hidrelétricas quanto de minério de ferro aqui nessa região de Minas. Então os engenheiros de Minas estão muito preocupados agora primeiro obviamente há que se procurar sobreviventes o tempo que passa é a verdade que foge nesse instante para todas as equipes de resgate.",
@@ -344,7 +344,7 @@
                 "order": 7,
                 "video_topic": "Número de barragens em Minas Gerais e preocupação dos engenheiros",
                 "global_topic": "Vítimas e buscas por sobreviventes",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "Há uma lista de que já passa de 200 nomes divulgados pelo governo do estado de pessoas resgatadas com vida e que estão procurando por outros parentes.",
@@ -353,7 +353,7 @@
                 "order": 8,
                 "video_topic": "Lista de pessoas resgatadas e desaparecidas",
                 "global_topic": "Vítimas e buscas por sobreviventes",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "Havia muitas famílias inteiras que trabalhavam ou prestavam serviços indiretos à mineradora.",
@@ -362,7 +362,7 @@
                 "order": 9,
                 "video_topic": "Situação das famílias aguardando informações sobre parentes",
                 "global_topic": "Relato dos moradores e operários sobre o acidente",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "Então nesse instante os técnicos se debruçam sobre o que é que sobrou da barragem. Será possível chegar até pontos concretos que levem a entender qual é a causa que nem mesmo o presidente da Vale conseguiu descrever. Não houve o soo o alarme foi foi possível avisar as pessoas com alguma antecedência todos os moradores com quem eu conversei aqui na entrada desse abrigo de voluntários me disseram que não então eles estão na expectativa de respostas concretas e sobretudo por nomes sinais de vida que surgem durante a madrugada aqui na cidade de Brumadinho numa das regiões bastante ricas do estado geradoras de exportação de minério de ferro mas numa mina que já estava praticamente sendo encerrada ou você faz o beneficiamento do minério aúmido com muita água que é o que acontecia aqui ou então a seco o que ainda é em comum nessa região do estado. Portanto agora é uma é um momento de busca por informações ainda desencontradas é verdade Adriana.",
@@ -371,7 +371,7 @@
                 "order": 10,
                 "video_topic": "Relato dos moradores e operários sobre o acidente",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             },
             {
                 "content": "Eduardo eu já sigo falando com você só aproveitando que você citou a lembrança claro inesquecível desastre de mariana só para que as pessoas possam entender essa barragem de feijão que arrebentou hoje na região de brumadinho ela tinha estava inativa desde 2015 e tinha o equivalente a 12 milhões de metros cúbicos de lama de rejeitos da mineração e a barragem de mariana tinha 50 milhões de metros cúbicos ou seja a barragem que rompeu hoje Eduardo tinha um quarto digamos assim do tamanho do volume de rejeitos da barragem de mariana ainda é cedo para a gente falar da dimensão do desastre ambiental o de mariana foi o maior desastre já registrado sem precedentes mas esse é sim um desastre que representa em volume de rejeitos um quarto do que foi mariana e em vítimas pode ser inclusive maior em mariana foram 19 mortos nós temos sete mortes confirmadas mas 150 desaparecidos justamente porque aconteceu na hora do almoço quando muitos operários estavam no refeitório que foi atingido pela lama e portanto temos 150 desaparecidos ao longo da tarde eduardo havia toda uma aflição das famílias que queriam a lista dos nomes de quem estava dentro da mineradora próxima barragem no momento do rompimento e a vale não divulgou essa lista se diz que teve acesso a pessoas que estão aí próximas ansiosas por informações qual é a situação dessas famílias nesse momento bom nesse abrigo coordenado basicamente por voluntários numa escola municipal o que a gente tem é um trabalho de formiguinha de todas as pessoas muito por aplicativos de mensagem pelo celular onde ainda pega internet essa é uma região rural de difícil acesso e as informações que são sempre estão chegando até aqui é justamente a divulgação oficial de uma lista que tinha 182 nomes até meia hora de pessoas que foram resgatadas com vida ainda assim nós temos pelo menos 150 desaparecidos pelas informações da própria mineradora o que há de se dizer aqui também é que apesar da mineradora da mina da barragem estar sem uso desde 2015 estar em caminho de desativação que eles chamam de descomissionamento quando você está prestes a fechar uma barragem ainda assim trata-se de uma obra de engenharia enorme colossal imagine um paredão de 70 metros equivalente a um prédio de 20 andares com em contato permanente com milhões e milhões de toneladas de rejeito que é basicamente o que resta do beneficiamento do minério de ferro a barragem nada mais é do que o vaso sanitário da mineradora é para lá que vai tudo que não tem importância comercial isso tudo pesa e pesa muito apesar da vale ter divulgado que em janeiro deste ano recebeu um laudo completo de que havia condições técnicas para manutenção desse peso a estabilidade da barragem ainda há muito que se investigar e essa investigação está nesse instante sendo discutida em belo horizonte em conjunto pelo governador mineiro e o ministério público estadual adriana",
@@ -380,7 +380,7 @@
                 "order": 11,
                 "video_topic": "Comparação com a tragédia de Mariana",
                 "global_topic": "Barragem rompimento e destruição em Brumadinho",
-                "video_path": "/home/leo/phd/repos/open-video-summary/data/raw/brumadinho/jornal_da_record.mp4"
+                "video_path": "data/raw/brumadinho/jornal_da_record.mp4"
             }
         ]
     }

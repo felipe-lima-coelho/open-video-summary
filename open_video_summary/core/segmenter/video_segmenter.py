@@ -11,6 +11,7 @@ from open_video_summary.adapters.llm import LLMAdapter, OllamaAdapter
 from open_video_summary.core.segmenter.prompts import VideoSegmenterPrompts
 from open_video_summary.entities.video import Video, VideoSegment
 from open_video_summary.handlers.segment import SegmentsCluster
+from open_video_summary.utils.config import PROJECT_DIR
 
 
 class BaseVideoSegmenter:
@@ -116,7 +117,9 @@ class WordVideoSegmenter(TopicsBasedVideoSegmenter):
         self.sentence_boundary = sentence_boundary
 
     def transcribe_video(self, video_path: str, language: str):
-        model = whisper.load_model(self.whisper_model)
+        model = whisper.load_model(
+            self.whisper_model, download_root=str(PROJECT_DIR / ".cache/whisper")
+        )
         audio = whisper.load_audio(video_path)
         return whisper.transcribe(model, audio, language=language, verbose=True)
 
@@ -265,7 +268,9 @@ class ClusteredVideoSegmenter(TopicsBasedVideoSegmenter):
         self.max_phrase_pause_interval = max_phrase_pause_interval
 
     def transcribe_video(self, video_path: str, language: str):
-        model = whisper.load_model(self.whisper_model)
+        model = whisper.load_model(
+            self.whisper_model, download_root=str(PROJECT_DIR / ".cache/whisper")
+        )
         audio = whisper.load_audio(video_path)
         return whisper.transcribe(model, audio, language=language, verbose=True)
 

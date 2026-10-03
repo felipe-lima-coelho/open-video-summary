@@ -1,10 +1,11 @@
 from json import dump, load
-from dacite import from_dict
-from dataclasses import dataclass, field, asdict, is_dataclass
+from dacite import Config, from_dict
+from dataclasses import dataclass, field, asdict
 
 from open_video_summary.utils import log
 from open_video_summary.entities.summary import SummaryLog
 from open_video_summary.entities.video import Video, VideoSegment
+from open_video_summary.utils.paths import project_path, video_paths
 
 
 @dataclass
@@ -107,24 +108,17 @@ class SummarySegmentHandlerIO:
     def save(handler: SummarySegmentHandler, filepath: str) -> None:
         log.info("Saving SummarySegmentHandler to disk file.")
 
-        def custom_encoder(obj):
-            if isinstance(obj, set):
-                return list(obj)
-            if is_dataclass(obj):
-                return asdict(obj)
-            raise TypeError(
-                f"Object of type {obj.__class__.__name__} is not JSON serializable"
-            )
-
-        dump(
-            asdict(handler),
-            open(filepath, "w", encoding="utf-8"),
-            default=custom_encoder,
-            ensure_ascii=False,
-            indent=4,
-        )
+        output_path = project_path(filepath)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8") as file:
+            dump(video_paths(asdict(handler)), file, ensure_ascii=False, indent=4)
 
     @staticmethod
     def load(filepath: str) -> SummarySegmentHandler:
         log.info("Loading SummarySegmentHandler from disk file.")
-        return from_dict(SummarySegmentHandler, load(open(filepath, "r")))
+        with project_path(filepath).open(encoding="utf-8") as file:
+            return from_dict(
+                SummarySegmentHandler,
+                video_paths(load(file), resolve=True),
+                config=Config(cast=[set]),
+            )

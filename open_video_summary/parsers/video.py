@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from json import load, dump
+from contextlib import ExitStack
 from dacite import from_dict
 from dataclasses import asdict
 from moviepy.video.fx import FadeIn, FadeOut
 from moviepy import VideoFileClip, concatenate_videoclips
 
 from open_video_summary.entities.video import Video
-from open_video_summary.utils.config import PROJECT_DIR
+from open_video_summary.utils.paths import project_path, video_paths
 
 
 class VideoLoader:
@@ -18,25 +19,18 @@ class VideoLoader:
     ) -> list[Video]:
         return [
             VideoLoader.video_from_file(path.as_posix())
-            for path in Path(directory).rglob(f"*.{video_file_format}")
+            for path in sorted(project_path(directory).rglob(f"*.{video_file_format}"))
         ]
 
     @staticmethod
     def load_videos_from_json(json_file: str) -> list[Video]:
-        videos_data = load(open(json_file))
-
-        for item in videos_data:
-            item["path"] = (
-                item["path"]
-                if Path(item["path"]).is_absolute()
-                else f"{PROJECT_DIR}/{item['path']}"
-            )
-
+        with project_path(json_file).open(encoding="utf-8") as file:
+            videos_data = load(file)
         return list(map(VideoLoader.video_from_dict, videos_data))
 
     @staticmethod
     def video_from_file(video_file: str) -> Video:
-        video_path = Path(video_file)
+        video_path = project_path(video_file)
 
         # Check if the file exists
         if not video_path.exists():
@@ -55,13 +49,15 @@ class VideoLoader:
 
     @staticmethod
     def video_from_dict(video_data: dict) -> Video:
-        return from_dict(data_class=Video, data=video_data)
+        return from_dict(data_class=Video, data=video_paths(video_data, resolve=True))
 
 
 class VideoDumper:
     @staticmethod
     def dump_videos_to_json(videos: list[Video], json_file: str) -> None:
-        with open(json_file, "w") as file:
+        output_path = project_path(json_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8") as file:
             dump(
                 list(map(VideoDumper.video_to_dict, videos)),
                 file,
@@ -71,7 +67,7 @@ class VideoDumper:
 
     @staticmethod
     def video_to_dict(video: Video) -> dict:
-        return asdict(video)
+        return video_paths(asdict(video))
 
 
 class SummaryWriter:
@@ -82,14 +78,28 @@ class SummaryWriter:
         fadein_fx = FadeIn(duration=fadein_seconds)
         fadeout_fx = FadeOut(duration=fadeout_seconds)
 
-        clips_list = []
-        for segment in video.segments:
-            clip = VideoFileClip(segment.video_path).subclipped(
-                segment.start, segment.end
-            )
-            clip = fadein_fx.apply(clip)
-            clip = fadeout_fx.apply(clip)
-            clips_list.append(clip)
+        if not video.segments:
+            raise ValueError("The summary has no segments to render.")
+        output_path = project_path(video.path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        final_clip = concatenate_videoclips(clips_list)
-        final_clip.write_videofile(video.path)
+        # Reuse each reader and close it after encoding, including on errors.
+        with ExitStack() as stack:
+            sources = {}
+            clips_list = []
+            for segment in video.segments:
+                source_path = project_path(segment.video_path).as_posix()
+                if source_path not in sources:
+                    sources[source_path] = stack.enter_context(
+                        VideoFileClip(source_path)
+                    )
+                clip = sources[source_path].subclipped(segment.start, segment.end)
+                clip = fadein_fx.apply(clip)
+                clip = fadeout_fx.apply(clip)
+                clips_list.append(clip)
+
+            final_clip = concatenate_videoclips(clips_list, method="compose")
+            stack.callback(final_clip.close)
+            final_clip.write_videofile(
+                output_path.as_posix(), codec="libx264", audio_codec="aac", threads=2
+            )
