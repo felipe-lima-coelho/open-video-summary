@@ -1,131 +1,262 @@
 # Open Video Summary
 
-Research project on video and multi-video summarization. The library combines
-transcript and topic segmentation with selection criteria such as introduction,
+Research code for video and multi-video summarization. HSMVideoSumm combines
+transcript and topic segments with selection criteria for introductions,
 subjectivity, redundancy, visual quality, and chronology.
 
-## Local test on Windows
+## Windows setup
 
 Use **Python 3.11 x64**. Python 3.13 is not compatible with the TensorFlow 2.17
-used by this project. The setup below uses the CPU and works with an integrated
-AMD GPU. You do not need to activate the virtual environment or install Poetry
-for this test.
-
-From the repository root, run these commands in PowerShell:
+used by this project. The setup uses CPU PyTorch and works without a GPU. From
+the repository root, run these commands in PowerShell:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
+.\.venv\Scripts\python.exe -m open_video_summary doctor
+```
+
+The script creates `.venv`, installs the pinned versions in
+`requirements-windows.lock`, installs the project in editable mode, and prepares
+the sample assets. It can be run again; existing videos and model files are
+reused. `-ExecutionPolicy Bypass` applies only to that PowerShell process.
+
+The first setup downloads about 662 MB for the original subjectivity classifier,
+207 MB for CPU PyTorch, and 382 MB for Windows TensorFlow. Allow a few GB of disk
+space. The classifier ZIP's SHA256 is checked before extraction. The three sample
+videos are in the tracked `data/raw/bebe_real.zip` file (35 MB).
+
+## Run the bundled summary
+
+```powershell
 .\.venv\Scripts\python.exe -m open_video_summary summarize
 ```
 
-The first command creates `.venv`, installs the versions pinned in
-`requirements-windows.lock`, installs the project in editable mode, and prepares
-the notebook's original assets. It can be run again: existing videos and the
-model are reused. `-ExecutionPolicy Bypass` applies only to that PowerShell
-process.
+This runs the original HSMVideoSumm on the three videos and 13 pre-segmented
+clips in `data/processed/bebe_real.json`. The transcripts and topics are already
+in that versioned dataset, so the command does not need Ollama, OpenAI, Whisper,
+ElevenLabs, or an API key. HSMVideoSumm, video processing, and rendering run
+locally on the CPU, using two threads by default.
 
-The first setup downloads approximately 662 MB for the original subjectivity
-classifier, in addition to the Python dependencies. The PyTorch CPU package
-download is about 207 MB, and the Windows TensorFlow download is about 382 MB.
-Allow a few GB of disk space. The model ZIP's SHA256 is checked before
-extraction. The three sample videos are already in the clone at
-`data/raw/bebe_real.zip` (35 MB).
+The command writes:
 
-The `summarize` command runs the **original HSMVideoSumm** on the three videos and
-the 13 segments in `data/processed/bebe_real.json`. It uses the trained
-classifier and the existing research criteria. The example's transcripts and
-topics have already been calculated, so this test does not need an Ollama
-server, an API key, or a Whisper download. Processing and encoding use the CPU,
-with two threads by default. During testing, consider closing applications that
-use a lot of memory.
-
-The results are:
-
-- `outputs/bebe_real_summary.mp4`: summary video with audio;
-- `outputs/bebe_real_summary.json`: selected segments and their timestamps;
-- `outputs/bebe_real_summary_handler.json`: selection criteria decisions;
+- `outputs/bebe_real_summary.mp4`: the summary video with audio;
+- `outputs/bebe_real_summary.json`: selected clips and timestamps;
+- `outputs/bebe_real_summary_handler.json`: selection decisions;
 - `app.log`: execution log.
 
-The duration and selected segments depend on the algorithm's choices. Running
-the example checks that the pipeline works; scientific quality requires
-evaluation with the research metrics and data.
+Selected clips and duration depend on the algorithm. Running the bundled example
+checks that the pipeline works; it is not a scientific evaluation.
 
-To check the environment or repeat only the setup:
+## Choose transcription and topic models
+
+Raw videos can use a local or hosted provider for each stage:
+
+| Stage | Local default | Hosted option | Data sent to a hosted service |
+| --- | --- | --- | --- |
+| Transcription (STT) | Whisper `base` on this computer | ElevenLabs `scribe_v2` | Audio extracted from each video |
+| Topic classification (LLM) | Ollama `gemma2` on this computer | OpenAI `gpt-6-luna` using Responses | Transcript text and the topic-classification prompt |
+
+Video reading, audio extraction, segmentation, HSMVideoSumm selection, and
+rendering stay local. OpenAI receives transcript text for topic classification;
+ElevenLabs receives audio for transcription. The hosted options need internet
+access, the matching API key, and an account with access to the selected model.
+Provider use can incur charges. The project does not send the full video file to
+either provider.
+
+The OpenAI adapter uses the Responses API and structured output. GPT-6 Luna
+supports the Responses API, structured output, and reasoning effort values
+`none`, `low`, `medium`, `high`, `xhigh`, and `max`. The adapter omits temperature
+when reasoning is enabled. A blank `OVS_LLM_REASONING_EFFORT` leaves the setting
+to the model (GPT-6 Luna currently defaults to `medium`); `none` is an explicit
+request to disable reasoning. See the
+[GPT-6 Luna model page](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[reasoning guide](https://developers.openai.com/api/docs/guides/reasoning), and
+[structured outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+ElevenLabs uses Scribe v2 for hosted transcription. `pt` selects Portuguese; set
+`OVS_STT_LANGUAGE=auto` to let the service detect the language. The local Whisper
+adapter also accepts `auto`. See the [speech-to-text API](https://elevenlabs.io/docs/api-reference/speech-to-text/convert)
+and [Scribe language and capability guide](https://elevenlabs.io/docs/overview/capabilities/speech-to-text).
+
+## Configure providers
+
+Copy the example to a root `.env` file, then edit the provider and model values
+you want to use:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+The example selects the local defaults and leaves both API keys blank. Set only
+the key for each hosted provider you choose. Do not commit `.env` or put real
+keys in `.env.example`.
+
+Settings follow this priority: explicit CLI option, process environment, root
+`.env`, then provider default. Blank optional values are treated as absent;
+`OVS_STT_LANGUAGE=auto` explicitly requests language detection. If you choose a
+different provider in `.env`, update its model too. Leaving the model unset uses
+`gemma2` for Ollama, `gpt-6-luna` for OpenAI, `base` for local Whisper, or
+`scribe_v2` for ElevenLabs. A blank `OVS_LLM_BASE_URL` uses the selected provider's
+default endpoint (`http://localhost:11434` for Ollama,
+`https://api.openai.com/v1` for OpenAI).
+
+The supported settings and defaults are:
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | empty | OpenAI credential |
+| `ELEVENLABS_API_KEY` | empty | ElevenLabs credential |
+| `OVS_LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
+| `OVS_LLM_MODEL` | provider default | `gemma2` or `gpt-6-luna` |
+| `OVS_LLM_REASONING_EFFORT` | model default | OpenAI effort; `none`, `low`, `medium`, `high`, `xhigh`, or `max` |
+| `OVS_LLM_BASE_URL` | provider default | Ollama/OpenAI API endpoint or a compatible gateway |
+| `OVS_LLM_TIMEOUT_SECONDS` | `120` | LLM request timeout |
+| `OVS_STT_PROVIDER` | `whisper_local` | `whisper_local` or `elevenlabs` |
+| `OVS_STT_MODEL` | provider default | Whisper model or `scribe_v2` |
+| `OVS_STT_LANGUAGE` | `pt` | Language code; `auto` enables detection |
+| `OVS_STT_TIMEOUT_SECONDS` | `120` | ElevenLabs HTTP and FFmpeg audio-extraction timeout; it does not interrupt synchronous local Whisper inference |
+| `OVS_MAX_ATTEMPTS` | `3` | Maximum total attempts for LLM generation and transient hosted STT failures |
+
+For example, use OpenAI with a compatible endpoint by setting
+`OVS_LLM_BASE_URL=https://gateway.example/v1`. That endpoint must implement the
+Responses API and structured output used by this adapter. A Chat Completions-only
+endpoint is not sufficient. Authentication errors, unsupported model names,
+missing Responses routes, and rejected structured-output parameters need a
+credential, model, or endpoint correction; retries will not fix them. Only
+transient remote network, timeout, or rate-limit failures are retried, within
+the configured attempt count. Local Whisper inference errors do not retry.
+Check a 401/403 for credentials or access, a 404 for the model or route,
+a 400 for unsupported request features, and a 429 for rate limits or quota.
+`OVS_MAX_ATTEMPTS` caps LLM generation requests, including retries for malformed
+or schema-invalid output. SDK-level automatic retries are disabled so this cap
+stays predictable. ElevenLabs retries only transient HTTP failures; local
+Whisper model-loading and inference errors do not retry.
+
+## Segment raw videos
+
+`segment` accepts either local or hosted providers for each stage. These
+PowerShell examples show all four pairings. Set the needed key in `.env` or in
+the current PowerShell session before running a hosted provider.
+
+**Ollama and local Whisper** (the defaults):
+
+```powershell
+ollama pull gemma2
+.\.venv\Scripts\python.exe -m open_video_summary segment `
+  --input data/raw/my_dataset `
+  --output outputs/my_dataset_segments.json `
+  --llm-provider ollama --llm-model gemma2 `
+  --stt-provider whisper_local --stt-model base --stt-language pt
+```
+
+Install and start the [Ollama server](https://ollama.com/download); the Python
+package installs only its client. Whisper downloads its selected model the first
+time it transcribes. `tiny` is a smaller local option; `medium` and `large` need
+more memory and time.
+
+**OpenAI and local Whisper:**
+
+```powershell
+$env:OPENAI_API_KEY = "your-key"
+.\.venv\Scripts\python.exe -m open_video_summary segment `
+  --input data/raw/my_dataset `
+  --output outputs/my_dataset_segments.json `
+  --llm-provider openai --llm-model gpt-6-luna --llm-reasoning-effort low `
+  --stt-provider whisper_local --stt-model base --stt-language pt
+```
+
+**Ollama and ElevenLabs:**
+
+```powershell
+$env:ELEVENLABS_API_KEY = "your-key"
+.\.venv\Scripts\python.exe -m open_video_summary segment `
+  --input data/raw/my_dataset `
+  --output outputs/my_dataset_segments.json `
+  --llm-provider ollama --llm-model gemma2 `
+  --stt-provider elevenlabs --stt-model scribe_v2 --stt-language pt
+```
+
+**OpenAI and ElevenLabs:**
+
+```powershell
+$env:OPENAI_API_KEY = "your-key"
+$env:ELEVENLABS_API_KEY = "your-key"
+.\.venv\Scripts\python.exe -m open_video_summary segment `
+  --input data/raw/my_dataset `
+  --output outputs/my_dataset_segments.json `
+  --llm-provider openai --llm-model gpt-6-luna --llm-reasoning-effort low `
+  --stt-provider elevenlabs --stt-model scribe_v2 --stt-language pt
+```
+
+You can set a provider endpoint and request limits on the command line. Explicit
+CLI options override environment settings:
+
+```powershell
+.\.venv\Scripts\python.exe -m open_video_summary segment `
+  --input data/raw/my_dataset --output outputs/my_dataset_segments.json `
+  --llm-provider openai --llm-model gpt-6-luna `
+  --llm-base-url https://gateway.example/v1 `
+  --stt-provider elevenlabs --stt-model scribe_v2 --stt-language auto `
+  --llm-timeout 120 --stt-timeout 180 --max-attempts 3
+```
+
+The legacy `--whisper-model` option aliases `--stt-model`, and `--language`
+aliases `--stt-language`. Existing local commands such as
+`--whisper-model base --llm-model gemma2 --language pt` continue to work.
+
+Each segment run writes a `<output_stem>_run.json` file next to its output. For
+example, `outputs/my_dataset_segments.json` gets
+`outputs/my_dataset_segments_run.json`. The run record captures requested,
+sent, and service-reported provider/model/reasoning/language settings, elapsed
+time, SDK and adapter versions, attempt status, and audio duration when known.
+It does not include API keys, transcript text, prompts, or audio bytes.
+
+`segment` also requires the FFmpeg executable on `PATH`, regardless of provider
+choice. The Python `ffmpeg` package does not install that executable. Check it
+with `ffmpeg -version`; on Windows, install it with
+`winget install -e --id Gyan.FFmpeg` and open a new PowerShell window.
+
+## More commands
+
+Check the environment, prepare the sample assets, and run the bundled example:
 
 ```powershell
 .\.venv\Scripts\python.exe -m open_video_summary doctor
 .\.venv\Scripts\python.exe -m open_video_summary prepare-demo
-.\.venv\Scripts\python.exe -m pip check
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m open_video_summary summarize
 ```
 
-## Paths and reproducibility in another clone
-
-All relative paths in the API, CLI, and JSON files are interpreted from the
-repository root, which the package code locates. For example,
-`data/raw/bebe_real/jornal_nacional.mp4` does not depend on the user, the drive
-letter, or the working directory. The loader resolves both the video's `path`
-and the segments' `video_path`. Exporters write paths inside the project as
-root-relative paths in UTF-8. Absolute paths outside the repository are also
-supported.
-
-Do not check in `.venv`, downloaded models, caches, or results. Copy the videos
-needed for an experiment into `data/raw/<dataset>/` when sharing it. The clone
-includes metadata for five datasets, but only `bebe_real` includes MP4s. Other
-videos are available in the [original dataset directory](https://drive.google.com/drive/folders/1y19ih3j36UqXlWFcgyxNXsNWluE3lky6?usp=drive_link).
-
-To test another dataset that has already been segmented:
+`prepare-demo` extracts the tracked videos and downloads the original trained
+subjectivity classifier. Use `--without-model` to extract only the videos.
+`summarize` accepts another already segmented dataset:
 
 ```powershell
-.\.venv\Scripts\python.exe -m open_video_summary summarize --dataset data/processed/my_dataset.json --output outputs/my_summary.mp4
+.\.venv\Scripts\python.exe -m open_video_summary summarize `
+  --dataset data/processed/my_dataset.json `
+  --output outputs/my_summary.mp4
 ```
 
-To run from another directory, invoke the clone's Python executable using its
-path. Arguments remain relative to the project root. Repeat the editable install
-if you move the folder or create another clone.
+To run from another directory, invoke the clone's Python executable by its path.
+Paths passed to the API and CLI are interpreted from the repository root. Video
+paths inside JSON files are saved as portable, root-relative paths.
 
-## New videos: Whisper and Ollama
+## Data and notebooks
 
-Creating segments from raw MP4s is an additional step. It requires the `ffmpeg`
-executable on PATH, a running [Ollama](https://ollama.com/download) server, and a
-model available on that server. The Python `ollama` package installed by the
-project is an API client; it does not install the server. The Python `ffmpeg`
-package also does not replace the executable.
+Do not check in `.venv`, downloaded models, caches, generated summaries, or
+extracted raw videos. Keep generated results under `outputs/`. The clone has
+metadata for five datasets, but only `bebe_real` includes MP4 files. Other videos
+are available from the [original dataset directory](https://drive.google.com/drive/folders/1y19ih3j36UqXlWFcgyxNXsNWluE3lky6?usp=drive_link).
 
-Check FFmpeg with `ffmpeg -version`. To install it on Windows, run
-`winget install -e --id Gyan.FFmpeg` and open a new PowerShell window.
+Open notebooks with the `.venv/Scripts/python.exe` kernel.
+`notebooks/hsmvideosumm.ipynb` prepares the same sample assets and runs the
+summary. `notebooks/video-segmenter.ipynb` uses local Whisper and Ollama and
+writes new results to `outputs`. `notebooks/llm-evaluations.ipynb` needs its own
+evaluation datasets, Ollama models, and, where applicable, Kaggle access.
 
-After installing the Ollama server, for example:
-
-```powershell
-ollama pull gemma2
-.\.venv\Scripts\python.exe -m open_video_summary segment --input data/raw/my_dataset --output outputs/my_dataset_segments.json --whisper-model base --llm-model gemma2
-.\.venv\Scripts\python.exe -m open_video_summary summarize --dataset outputs/my_dataset_segments.json --output outputs/my_summary.mp4
-```
-
-`gemma2` is the model used by the original adapter and requires an additional
-download of several GB; the setup does not download it. The CLI checks the
-server and model before loading Whisper. Whisper `base` is a lighter starting
-option for the CPU and downloads its weights during the first transcription.
-`tiny` is also available. The original notebook used `medium`; choose
-`--whisper-model medium` to use that larger model. The model choice can change
-the transcripts and results. The Whisper cache is stored in `.cache/whisper` at
-the project root.
-
-## Notebooks and versions
-
-Open the notebooks in your Jupyter editor with the `.venv/Scripts/python.exe`
-kernel. `notebooks/hsmvideosumm.ipynb` prepares the same assets and runs the
-summary. `notebooks/video-segmenter.ipynb` uses `base` and only the video dataset
-included in the clone; it requires Whisper and Ollama and writes new results to
-`outputs`. `notebooks/llm-evaluations.ipynb` requires its own evaluation
-datasets, Ollama models, and, where applicable, Kaggle access. These additional
-resources are not needed for the local HSMVideoSumm test.
-
-`requirements-windows.lock` was derived from `poetry.lock` for Windows x64 and
-Python 3.11. It preserves the project's versions, uses PyTorch `2.6.0+cpu`, adds
-`tensorflow-intel==2.17.1`, which is required by the Windows TensorFlow wheel,
-and uses `tensorflow-io-gcs-filesystem==0.31.0`, which has a wheel for this
-platform. The original lock file contains `0.37.1`, which has no Windows wheel.
-For other environments, the original workflow remains `poetry install` with a
+`requirements-windows.lock` pins the Windows x64 / Python 3.11 CPU environment.
+It includes `tensorflow-intel==2.17.1`, required by the Windows TensorFlow wheel,
+and `tensorflow-io-gcs-filesystem==0.31.0`, which has a compatible Windows
+wheel. The setup script installs `torch==2.6.0+cpu` from the PyTorch CPU index
+before installing that lock file. For other environments, use Poetry with a
 compatible Python version.
