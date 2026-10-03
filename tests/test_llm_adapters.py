@@ -107,6 +107,13 @@ class LLMAdapterTests(unittest.TestCase):
             ("gpt-4o", "high"),
             ("gpt-6-luna", "minimal"),
             ("gpt-6-astra", "none"),
+            ("gpt-6-astra", "minimal"),
+            ("gpt-6.1-sol", "minimal"),
+            ("gpt-6.1-sol", "none"),
+            ("gpt-5", "none"),
+            ("gpt-5", "xhigh"),
+            ("gpt-5", "max"),
+            ("gpt-5-2025-08-07", "none"),
             ("o3", "none"),
             ("gpt-6-luna", "invalid"),
         ):
@@ -115,6 +122,41 @@ class LLMAdapterTests(unittest.TestCase):
                     self.openai([], model=model, effort=effort)
         with self.assertRaises(ConfigurationError):
             OllamaAdapter(config=LLMConfig(reasoning_effort="none"))
+
+    def test_known_valid_efforts_and_unknown_variants_are_preserved(self):
+        for model, effort in (
+            ("gpt-6-astra", "max"),
+            ("gpt-6.1-sol", "low"),
+            ("gpt-5", "minimal"),
+            ("gpt-5-2025-08-07", "high"),
+            ("gpt-5-future-variant", "none"),
+            ("gpt-6-astra-future-variant", "none"),
+            ("o10-future-model", "max"),
+        ):
+            with self.subTest(model=model, effort=effort):
+                adapter, create = self.openai(
+                    [response("text")], model=model, effort=effort
+                )
+                adapter.generate(GenerationRequest("synthetic request"))
+                self.assertEqual(
+                    {"effort": effort}, create.call_args.kwargs["reasoning"]
+                )
+
+    def test_duplicate_literal_identifiers_consume_finite_attempts(self):
+        adapter, create = self.openai(
+            [
+                response("{'0':'first','0':'second'}"),
+                response("{'0':'first','\\u0030':'second'}"),
+                response("{'0':'valid'}"),
+            ]
+        )
+        result = adapter.generate(GenerationRequest("topics", OutputSpec("topics")))
+        self.assertEqual({"0": "valid"}, result.value)
+        self.assertEqual(3, create.call_count)
+        self.assertEqual(
+            ["InvalidResponseError", "InvalidResponseError", "completed"],
+            [record.status for record in adapter.records],
+        )
 
     def test_openai_json_envelopes_translate_to_existing_domain_shapes(self):
         adapter, create = self.openai(
@@ -343,6 +385,20 @@ class ResponseInterpreterTests(unittest.TestCase):
         for text in ('{"0":true}', '{"0":"true","1":false}', '{"9":true,"1":false}'):
             with self.assertRaises(InvalidResponseError):
                 parser.interpret(text, spec)
+
+    def test_literal_dictionary_keys_are_checked_before_evaluation(self):
+        parser = DomainResponseInterpreter()
+        for text in (
+            "{'0':'a','0':'b'}",
+            "{'0':'a','\\u0030':'b'}",
+            "{'topics':[{'id':'0','id':'1','label':'a'}]}",
+            "{True:'a',1:'b'}",
+            "{[0]:'a'}",
+            "{{'0':'a'}:'b'}",
+        ):
+            with self.subTest(text=text):
+                with self.assertRaises(InvalidResponseError):
+                    parser.interpret(text, OutputSpec("topics"))
 
 
 @unittest.skipUnless(

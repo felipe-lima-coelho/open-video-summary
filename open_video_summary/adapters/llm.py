@@ -1,6 +1,7 @@
 """LLM adapters translate vendor APIs and validate results inside the ACL."""
 
 import base64
+import ast
 import json
 import math
 import re
@@ -125,8 +126,22 @@ class DomainResponseInterpreter:
         except (TypeError, ValueError):
             # Existing local notebooks also accept Python literal dictionaries.
             try:
-                value = literal_eval(text)
-            except (ValueError, SyntaxError):
+                expression = ast.parse(text, mode="eval")
+                for node in ast.walk(expression):
+                    if not isinstance(node, ast.Dict):
+                        continue
+                    keys = set()
+                    for key_node in node.keys:
+                        if key_node is None:
+                            raise ValueError("Dictionary expansion is unsupported")
+                        key = literal_eval(key_node)
+                        if key in keys:
+                            raise InvalidResponseError(
+                                "The language model returned duplicate literal identifiers."
+                            )
+                        keys.add(key)
+                value = literal_eval(expression)
+            except (ValueError, SyntaxError, TypeError, RecursionError):
                 raise InvalidResponseError(
                     "The language model returned malformed structured text."
                 ) from None
@@ -447,6 +462,21 @@ class OpenAIAdapter(LLMAdapter):
     """Responses API details and envelopes are contained in this adapter."""
 
     _known_efforts = {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+    # Official model pages document these exact aliases. Date snapshots inherit
+    # their alias capabilities; other/future variants are checked by the API.
+    _model_efforts = {
+        "gpt-6-luna": {"none", "low", "medium", "high", "xhigh", "max"},
+        "gpt-6-astra": {"low", "medium", "high", "xhigh", "max"},
+        "gpt-6.1-sol": {"low", "medium", "high", "xhigh", "max"},
+        "gpt-5": {"minimal", "low", "medium", "high"},
+    }
+
+    @staticmethod
+    def _known_alias(model: str, alias: str) -> bool:
+        return (
+            re.fullmatch(re.escape(alias) + r"(?:-\d{4}-\d{2}-\d{2})?", model)
+            is not None
+        )
 
     def __init__(
         self, *, config: LLMConfig | None = None, client=None, sleep=time.sleep
@@ -471,17 +501,20 @@ class OpenAIAdapter(LLMAdapter):
             raise ConfigurationError(
                 f"Model '{model}' does not support reasoning effort."
             )
-        if model == "gpt-6-luna" or model.startswith("gpt-6-luna-"):
-            if effort == "minimal":
+        for alias, supported in self._model_efforts.items():
+            if (
+                self._known_alias(model, alias)
+                and effort is not None
+                and effort not in supported
+            ):
                 raise ConfigurationError(
-                    "gpt-6-luna does not support minimal reasoning effort."
+                    f"Model '{model}' does not support {effort} reasoning effort."
                 )
-        if model.startswith(("gpt-6-astra", "gpt-6.1-sol")) and effort == "none":
-            raise ConfigurationError(
-                f"Model '{model}' does not support none reasoning effort."
-            )
         if (
-            model.startswith(("o1", "o3", "o4-mini"))
+            any(
+                self._known_alias(model, alias)
+                for alias in ("o1", "o1-mini", "o1-preview", "o3", "o3-mini", "o4-mini")
+            )
             and effort is not None
             and effort not in {"low", "medium", "high"}
         ):
