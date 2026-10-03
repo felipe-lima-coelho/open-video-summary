@@ -105,6 +105,19 @@ class LLMAdapterTests(unittest.TestCase):
     def test_known_incompatible_efforts_fail_before_requests(self):
         for model, effort in (
             ("gpt-4o", "high"),
+            ("gpt-4o-2024-08-06", "high"),
+            ("gpt-4o-mini", "high"),
+            ("gpt-4o-mini-2024-07-18", "high"),
+            ("gpt-4.1", "high"),
+            ("gpt-4.1-2025-04-14", "high"),
+            ("gpt-4.1-mini", "high"),
+            ("gpt-4.1-mini-2025-04-14", "high"),
+            ("gpt-4.1-nano", "high"),
+            ("gpt-4.1-nano-2025-04-14", "high"),
+            ("gpt-3.5-turbo", "high"),
+            ("gpt-3.5-turbo-0125", "high"),
+            ("gpt-3.5-turbo-1106", "high"),
+            ("gpt-3.5-turbo-instruct", "high"),
             ("gpt-6-luna", "minimal"),
             ("gpt-6-astra", "none"),
             ("gpt-6-astra", "minimal"),
@@ -129,6 +142,9 @@ class LLMAdapterTests(unittest.TestCase):
             ("gpt-6.1-sol", "low"),
             ("gpt-5", "minimal"),
             ("gpt-5-2025-08-07", "high"),
+            ("gpt-4.10", "high"),
+            ("gpt-4o-future-variant", "high"),
+            ("gpt-3.5-future-variant", "high"),
             ("gpt-5-future-variant", "none"),
             ("gpt-6-astra-future-variant", "none"),
             ("o10-future-model", "max"),
@@ -138,6 +154,7 @@ class LLMAdapterTests(unittest.TestCase):
                     [response("text")], model=model, effort=effort
                 )
                 adapter.generate(GenerationRequest("synthetic request"))
+                self.assertEqual(model, create.call_args.kwargs["model"])
                 self.assertEqual(
                     {"effort": effort}, create.call_args.kwargs["reasoning"]
                 )

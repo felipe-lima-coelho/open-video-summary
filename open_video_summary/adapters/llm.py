@@ -470,6 +470,19 @@ class OpenAIAdapter(LLMAdapter):
         "gpt-6.1-sol": {"low", "medium", "high", "xhigh", "max"},
         "gpt-5": {"minimal", "low", "medium", "high"},
     }
+    _nonreasoning_aliases = (
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4.1-nano",
+    )
+    _nonreasoning_model_ids = {
+        "gpt-3.5-turbo",
+        "gpt-3.5-turbo-0125",
+        "gpt-3.5-turbo-1106",
+        "gpt-3.5-turbo-instruct",
+    }
 
     @staticmethod
     def _known_alias(model: str, alias: str) -> bool:
@@ -497,7 +510,13 @@ class OpenAIAdapter(LLMAdapter):
         effort, model = self.config.reasoning_effort, self.model
         if effort is not None and effort not in self._known_efforts:
             raise ConfigurationError(f"Unknown reasoning effort '{effort}'.")
-        if effort is not None and model.startswith(("gpt-4o", "gpt-4.1", "gpt-3.5")):
+        if effort is not None and (
+            model in self._nonreasoning_model_ids
+            or any(
+                self._known_alias(model, alias)
+                for alias in self._nonreasoning_aliases
+            )
+        ):
             raise ConfigurationError(
                 f"Model '{model}' does not support reasoning effort."
             )
