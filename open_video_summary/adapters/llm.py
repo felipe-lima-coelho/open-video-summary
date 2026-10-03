@@ -168,6 +168,26 @@ class DomainResponseInterpreter:
             and set(value) == {"items"}
         ):
             value = value["items"]
+        elif (
+            spec.kind == "answers"
+            and isinstance(value, dict)
+            and set(value) == {"answers"}
+        ):
+            pairs = value["answers"]
+            if not isinstance(pairs, list) or any(
+                not isinstance(item, dict)
+                or set(item) != {"id", "answer"}
+                or not isinstance(item["id"], str)
+                for item in pairs
+            ):
+                raise InvalidResponseError(
+                    "The language model returned invalid question answers."
+                )
+            if len({item["id"] for item in pairs}) != len(pairs):
+                raise InvalidResponseError(
+                    "The language model returned duplicate answer identifiers."
+                )
+            value = {item["id"]: item["answer"] for item in pairs}
 
         if spec.kind in {"topics", "topic"}:
             if (
@@ -197,6 +217,18 @@ class DomainResponseInterpreter:
                 or any(not isinstance(item, str) or not item.strip() for item in value)
             ):
                 raise InvalidResponseError("Expected a nonempty list of strings.")
+        elif spec.kind == "answers":
+            if (
+                not isinstance(value, dict)
+                or set(value) != set(spec.answer_ids)
+                or any(
+                    answer is not None and not isinstance(answer, bool)
+                    for answer in value.values()
+                )
+            ):
+                raise InvalidResponseError(
+                    "Expected one boolean or null answer for every question identifier."
+                )
         else:
             raise ConfigurationError(f"Unknown output kind '{spec.kind}'.")
         if spec.max_items is not None and len(value) > spec.max_items:
@@ -504,6 +536,22 @@ class OpenAIAdapter(LLMAdapter):
                 "type": "object",
                 "properties": {"items": {"type": "array", "items": {"type": "string"}}},
                 "required": ["items"],
+                "additionalProperties": False,
+            }
+        elif spec.kind == "answers":
+            answer = {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "enum": list(spec.answer_ids)},
+                    "answer": {"type": ["boolean", "null"]},
+                },
+                "required": ["id", "answer"],
+                "additionalProperties": False,
+            }
+            schema = {
+                "type": "object",
+                "properties": {"answers": {"type": "array", "items": answer}},
+                "required": ["answers"],
                 "additionalProperties": False,
             }
         else:

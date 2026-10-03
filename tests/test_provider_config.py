@@ -1,4 +1,5 @@
 import tempfile
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -119,6 +120,33 @@ class ProviderConfigurationTests(unittest.TestCase):
             config = self.load(environ={"OVS_LLM_PROVIDER": "new"})
             self.assertEqual("next", config.llm.model)
             self.assertEqual("https://new.test", config.llm.base_url)
+
+    def test_root_dotenv_is_used_from_another_working_directory(self):
+        self.env.write_text("OVS_LLM_MODEL=root-model\n", encoding="utf-8")
+        original = Path.cwd()
+        with tempfile.TemporaryDirectory() as elsewhere:
+            try:
+                os.chdir(elsewhere)
+                with patch(
+                    "open_video_summary.utils.providers.PROJECT_DIR", self.env.parent
+                ):
+                    config = load_provider_config(environ={})
+                self.assertEqual("root-model", config.llm.model)
+            finally:
+                os.chdir(original)
+
+    def test_filter_model_default_never_overrides_explicit_environment(self):
+        defaults = {"ollama": "ministral-3"}
+        config = load_provider_config(
+            environ={}, env_file=self.env, default_llm_models=defaults
+        )
+        self.assertEqual("ministral-3", config.llm.model)
+        explicit = load_provider_config(
+            environ={"OVS_LLM_MODEL": "configured"},
+            env_file=self.env,
+            default_llm_models=defaults,
+        )
+        self.assertEqual("configured", explicit.llm.model)
 
 
 if __name__ == "__main__":

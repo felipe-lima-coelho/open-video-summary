@@ -1,4 +1,6 @@
 import sys
+import json
+import importlib.util
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -324,6 +326,118 @@ class ResponseInterpreterTests(unittest.TestCase):
         self.assertEqual(
             {"0": "Tema"}, parser.interpret("{'0': 'Tema'}", OutputSpec("topics"))
         )
+
+    def test_boolean_answers_are_normalized_and_validated(self):
+        parser = DomainResponseInterpreter()
+        spec = OutputSpec(kind="answers", answer_ids=("0", "1"))
+        self.assertEqual(
+            {"0": True, "1": None}, parser.interpret("{'0': True, '1': None}", spec)
+        )
+        self.assertEqual(
+            {"0": False, "1": True},
+            parser.interpret(
+                '{"answers":[{"id":"0","answer":false},{"id":"1","answer":true}]}',
+                spec,
+            ),
+        )
+        for text in ('{"0":true}', '{"0":"true","1":false}', '{"9":true,"1":false}'):
+            with self.assertRaises(InvalidResponseError):
+                parser.interpret(text, spec)
+
+
+@unittest.skipUnless(
+    importlib.util.find_spec("httpx2"), "Pinned OpenAI SDK transport is not installed."
+)
+class InstalledOpenAISDKTests(unittest.TestCase):
+    def test_actual_sdk_serializes_responses_request_on_offline_transport(self):
+        import httpx2
+        from openai import OpenAI
+
+        sent = []
+
+        def handle(request):
+            sent.append(json.loads(request.content))
+            fixture = response('{"topics":[{"id":"0","label":"Tema"}]}', effort="high")
+            fixture.update(
+                {"id": "resp_offline", "object": "response", "created_at": 0}
+            )
+            return httpx2.Response(200, json=fixture)
+
+        with httpx2.Client(transport=httpx2.MockTransport(handle)) as transport:
+            with OpenAI(
+                api_key="synthetic-offline-key",
+                base_url="https://offline.example/v1",
+                max_retries=0,
+                timeout=2,
+                http_client=transport,
+            ) as client:
+                config = LLMConfig(
+                    provider="openai", model="gpt-6-luna", reasoning_effort="high"
+                )
+                adapter = OpenAIAdapter(config=config, client=client)
+                result = adapter.generate(
+                    GenerationRequest("synthetic topics", OutputSpec("topics"))
+                )
+        self.assertEqual({"0": "Tema"}, result.value)
+        self.assertEqual("high", result.metadata.reported_reasoning_effort)
+        self.assertEqual({"effort": "high"}, sent[0]["reasoning"])
+        self.assertEqual("json_schema", sent[0]["text"]["format"]["type"])
+        self.assertNotIn("temperature", sent[0])
+
+    def test_actual_sdk_status_error_obeys_only_application_budget(self):
+        import httpx2
+        from openai import OpenAI
+
+        sent = []
+
+        def handle(request):
+            sent.append(request)
+            return httpx2.Response(
+                429,
+                json={
+                    "error": {
+                        "message": "synthetic limit",
+                        "type": "rate_limit_error",
+                        "code": "rate_limit",
+                    }
+                },
+            )
+
+        with httpx2.Client(transport=httpx2.MockTransport(handle)) as transport:
+            with OpenAI(
+                api_key="synthetic-offline-key", max_retries=0, http_client=transport
+            ) as client:
+                adapter = OpenAIAdapter(
+                    config=LLMConfig(
+                        provider="openai", model="future-model", max_attempts=2
+                    ),
+                    client=client,
+                    sleep=Mock(),
+                )
+                with self.assertRaises(RateLimitError):
+                    adapter.generate(GenerationRequest("synthetic prompt"))
+        self.assertEqual(2, len(sent))
+
+    def test_actual_sdk_timeout_is_translated(self):
+        import httpx2
+        from openai import OpenAI
+
+        def handle(request):
+            raise httpx2.ReadTimeout("synthetic timeout", request=request)
+
+        with httpx2.Client(transport=httpx2.MockTransport(handle)) as transport:
+            with OpenAI(
+                api_key="synthetic-offline-key", max_retries=0, http_client=transport
+            ) as client:
+                adapter = OpenAIAdapter(
+                    config=LLMConfig(
+                        provider="openai", model="future-model", max_attempts=1
+                    ),
+                    client=client,
+                    sleep=Mock(),
+                )
+                with self.assertRaises(ServiceTimeoutError):
+                    adapter.generate(GenerationRequest("synthetic prompt"))
 
 
 if __name__ == "__main__":

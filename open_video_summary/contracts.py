@@ -30,10 +30,13 @@ class ServiceMetadata:
 class OutputSpec:
     """The domain's expected output, independent of vendor response formats."""
 
-    kind: Literal["text", "topics", "topic", "string_list", "pattern"] = "text"
+    kind: Literal["text", "topics", "topic", "string_list", "answers", "pattern"] = (
+        "text"
+    )
     topic_ids: tuple[str, ...] = ()
     max_items: int | None = None
     pattern: str | None = None
+    answer_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

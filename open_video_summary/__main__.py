@@ -1,9 +1,12 @@
-"""Local CPU entry points for the existing research pipeline."""
+"""CPU research pipeline entry points with independently selected providers."""
 
 import argparse
 import json
 import os
 import sys
+import time
+from dataclasses import asdict
+from datetime import datetime, timezone
 
 from open_video_summary.utils.config import PROJECT_DIR, ModelPaths
 from open_video_summary.utils.paths import project_path, portable_path
@@ -110,48 +113,85 @@ def _doctor(args) -> None:
 
 
 def _segment(args) -> None:
-    from open_video_summary.adapters.llm import OllamaAdapter
-    from open_video_summary.core.segmenter.video_segmenter import WordVideoSegmenter
-    from open_video_summary.parsers.video import VideoLoader, VideoDumper
+    import shutil
+    from open_video_summary.adapters.factory import create_llm, create_stt
+    from open_video_summary.errors import ConfigurationError
+    from open_video_summary.utils.providers import load_provider_config
 
-    # Check the optional service before Whisper downloads a model.
-    import ollama
-
-    client = ollama.Client()
-    import httpx
-
+    output = project_path(args.output)
+    run_path = output.with_name(f"{output.stem}_run.json")
+    started = time.monotonic()
+    report = {
+        "schema_version": 1,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "status": "failed",
+        "input": portable_path(args.input),
+        "output": portable_path(output),
+    }
+    llm, stt = None, None
     try:
-        available = client.list().get("models", [])
-    except (httpx.HTTPError, ollama.ResponseError) as exc:
-        raise RuntimeError(
-            "Ollama is not available. Start its server and install the chosen model "
-            "before segmenting raw videos."
-        ) from exc
-    model_names = {item.get("name") for item in available}
-    if (
-        args.llm_model not in model_names
-        and f"{args.llm_model}:latest" not in model_names
-    ):
-        raise RuntimeError(
-            f"Ollama model '{args.llm_model}' is missing; install it in Ollama first."
+        config = load_provider_config(vars(args))
+        report["settings"] = {
+            "llm": {
+                "provider": config.llm.provider,
+                "model": config.llm.model,
+                "reasoning_effort": config.llm.reasoning_effort,
+                "timeout_seconds": config.llm.timeout_seconds,
+            },
+            "stt": {
+                "provider": config.stt.provider,
+                "model": config.stt.model,
+                "language": config.stt.language,
+                "timeout_seconds": config.stt.timeout_seconds,
+            },
+            "max_attempts": config.llm.max_attempts,
+        }
+        llm = create_llm(config.llm)
+        stt = create_stt(config.stt)
+        # Validate selected credentials and dependencies before any model loads.
+        stt.preflight()
+        if shutil.which("ffmpeg") is None:
+            raise ConfigurationError(
+                "FFmpeg must be on PATH to segment raw MP4 videos."
+            )
+        from open_video_summary.core.segmenter.video_segmenter import WordVideoSegmenter
+        from open_video_summary.parsers.video import VideoLoader, VideoDumper
+
+        segmenter = WordVideoSegmenter(
+            min_segment_length=5,
+            max_segment_length=120,
+            llm_adapter=llm,
+            stt_adapter=stt,
         )
-
-    videos = VideoLoader.load_videos_from_directory(args.input)
-    if not videos:
-        raise ValueError("The input directory contains no MP4 videos.")
-    segmenter = WordVideoSegmenter(
-        whisper_model=args.whisper_model,
-        min_segment_length=5,
-        max_segment_length=120,
-        llm_adapter=OllamaAdapter(model=args.llm_model),
-    )
-    videos = segmenter.create_videos_segments(videos, language=args.language)
-    VideoDumper.dump_videos_to_json(videos, args.output)
+        segmenter.preflight()
+        videos = VideoLoader.load_videos_from_directory(args.input)
+        if not videos:
+            raise ValueError("The input directory contains no MP4 videos.")
+        report["input_video_count"] = len(videos)
+        videos = segmenter.create_videos_segments(videos, language=config.stt.language)
+        VideoDumper.dump_videos_to_json(videos, args.output)
+        report["status"] = "completed"
+    except Exception as exc:
+        report["error_type"] = type(exc).__name__
+        raise
+    finally:
+        report["duration_seconds"] = time.monotonic() - started
+        report["llm_calls"] = [asdict(item) for item in llm.records] if llm else []
+        report["stt_calls"] = [asdict(item) for item in stt.records] if stt else []
+        for adapter in (llm, stt):
+            close = getattr(adapter, "close", None)
+            if close is not None:
+                close()
+        run_path.parent.mkdir(parents=True, exist_ok=True)
+        run_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     print(f"Segment metadata: {portable_path(args.output)}")
+    print(f"Run metadata: {portable_path(run_path)}")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Open Video Summary local CPU runner.")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Open Video Summary CPU runner.")
     parser.add_argument("--threads", type=int, default=2)
     subparsers = parser.add_subparsers(dest="command", required=True)
     prepare = subparsers.add_parser(
@@ -169,18 +209,30 @@ def main() -> None:
         "doctor", help="Check the environment and required demo assets."
     )
     segment = subparsers.add_parser(
-        "segment", help="Transcribe/topic-segment raw MP4s using Whisper and Ollama."
+        "segment", help="Transcribe/topic-segment raw MP4s with configured providers."
     )
     segment.add_argument("--input", required=True)
     segment.add_argument("--output", default="outputs/segments.json")
+    segment.add_argument("--llm-provider", default=None)
+    segment.add_argument("--llm-model", default=None)
     segment.add_argument(
-        "--whisper-model",
-        default="base",
-        choices=["tiny", "base", "small", "medium", "large"],
+        "--llm-reasoning-effort", dest="reasoning_effort", default=None
     )
-    segment.add_argument("--llm-model", default="gemma2")
-    segment.add_argument("--language", default="pt")
-    args = parser.parse_args()
+    segment.add_argument("--llm-base-url", default=None)
+    segment.add_argument("--stt-provider", default=None)
+    segment.add_argument(
+        "--stt-model", "--whisper-model", dest="stt_model", default=None
+    )
+    segment.add_argument("--stt-language", "--language", dest="language", default=None)
+    segment.add_argument("--llm-timeout", type=float, default=None)
+    segment.add_argument("--stt-timeout", type=float, default=None)
+    segment.add_argument("--max-attempts", type=int, default=None)
+    return parser
+
+
+def main(argv=None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
     if args.threads < 1:
         parser.error("--threads must be positive.")
     _cpu_settings(args.threads)

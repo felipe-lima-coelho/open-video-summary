@@ -62,6 +62,7 @@ def load_provider_config(
     *,
     environ: Mapping[str, str] | None = None,
     env_file: str | Path | None = None,
+    default_llm_models: Mapping[str, str] | None = None,
 ) -> ProviderConfig:
     """Read the root .env without modifying the process or exposing its values.
 
@@ -95,7 +96,11 @@ def load_provider_config(
     )
     llm = LLMConfig(
         provider=llm_provider,
-        model=get("llm_model", "OVS_LLM_MODEL", llm_definition.default_model),
+        model=get(
+            "llm_model",
+            "OVS_LLM_MODEL",
+            (default_llm_models or {}).get(llm_provider, llm_definition.default_model),
+        ),
         reasoning_effort=get("reasoning_effort", "OVS_LLM_REASONING_EFFORT"),
         base_url=get("llm_base_url", "OVS_LLM_BASE_URL", llm_definition.base_url),
         api_key=_optional(values.get(llm_definition.key_variable)),

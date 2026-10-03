@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Callable
+from collections.abc import Mapping
 
 from open_video_summary.contracts import LanguageModel, SpeechToText
 from open_video_summary.errors import ConfigurationError
@@ -73,3 +74,12 @@ def create_stt(config: STTConfig) -> SpeechToText:
 def create_providers(config: ProviderConfig) -> tuple[LanguageModel, SpeechToText]:
     """Construct only the selected pair; constructors must not load models."""
     return create_llm(config.llm), create_stt(config.stt)
+
+
+def create_configured_llm(
+    *, default_models: Mapping[str, str] | None = None
+) -> LanguageModel:
+    """Preserve a caller's local model default while honoring explicit settings."""
+    from open_video_summary.utils.providers import load_provider_config
+
+    return create_llm(load_provider_config(default_llm_models=default_models).llm)
