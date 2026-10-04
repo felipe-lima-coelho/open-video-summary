@@ -1,0 +1,338 @@
+[
+    {
+        "name": "jornal_da_band",
+        "path": "data/raw/catedral_notre_dame/jornal_da_band.mp4",
+        "topics": [
+            "Incêndio na Catedral de Notre-Dame",
+            "Danos à estrutura e combate às chamas",
+            "Possível relação com obras de restauração",
+            "Importância histórica e turística da catedral",
+            "Reações e manifestações de solidariedade internacional"
+        ],
+        "segments": [
+            {
+                "content": "O mundo inteiro parou pra acompanhar estarrecido as imagens de um incêndio em Paris. As chamas consumiram a Catedral de Notre-Dame, um dos patrimônios culturais mais conhecidos e visitados do planeta.",
+                "start": 0.08,
+                "end": 11.68,
+                "order": 0,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Incêndio na Catedral de Notre-Dame",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            },
+            {
+                "content": "A torre central e dois terços do telhado da igreja construída há mais de oitocentos anos, não resistiram ao fogo e desabaram.",
+                "start": 12.12,
+                "end": 18.72,
+                "order": 1,
+                "video_topic": "Danos à estrutura e combate às chamas",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            },
+            {
+                "content": "Um bombeiro ficou gravemente ferido. O fogo começou apenas cinquenta minutos depois da catedral fechar as portas para visitação. Eram dez para as sete da noite, no horário local, quando os bombeiros receberam o primeiro chamado. O fogo se espalhou rapidamente pelo teto da catedral, entre as duas torres dos sinos.",
+                "start": 19.08,
+                "end": 77.54,
+                "order": 2,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Incêndio na Catedral de Notre-Dame",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            },
+            {
+                "content": "O pináculo, o ponto mais alto da igreja, não resistiu e tombou. O crepitar das chamas podia ser ouvido de longe e se misturava ao barulho das sirenes.",
+                "start": 77.58,
+                "end": 94.14,
+                "order": 3,
+                "video_topic": "Danos à estrutura e combate às chamas",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            },
+            {
+                "content": "Turistas e moradores se aglomeraram às margens do rio Sena, enquanto a polícia isolava a Île de la Cité, pequena ilha que abriga a catedral.",
+                "start": 96.54,
+                "end": 104.3,
+                "order": 4,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Reações de franceses e turistas e manifestações de solidariedade internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            },
+            {
+                "content": "A suspeita é que o incêndio esteja relacionado às obras de reparo que aconteciam em Notre-Dame. A igreja estava rodeada de andaimes. Na última quinta-feira, dezesseis estátuas de bronze que adornam os telhados, foram retiradas para restauração.",
+                "start": 104.64,
+                "end": 119.78,
+                "order": 5,
+                "video_topic": "Possível relação com obras de restauração",
+                "global_topic": "Possível relação com as obras de restauração e investigação das causas",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            },
+            {
+                "content": "De acordo com a tradição, as gárgulas protegem Notre-Dame contra espíritos malévolos. A Catedral de Notre-Dame é um dos monumentos mais visitados da Europa. Recebe cerca de treze milhões de turistas todos os anos, uma média de trinta mil visitantes por dia.",
+                "start": 120.28,
+                "end": 135.04,
+                "order": 6,
+                "video_topic": "Importância histórica e turística da catedral",
+                "global_topic": "Importância histórica, arquitetônica e turística da catedral",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            },
+            {
+                "content": "Vários líderes mundiais enviaram mensagens de solidariedade à França após o incêndio. O prefeito de Londres, Sadiq Khan, disse que estava de coração partido ao ver as imagens de Notre-Dame em chamas. A chanceler alemã, Angela Merkel, lembrou que a catedral é um símbolo da França e da cultura europeia, e disse que seus pensamentos estavam com os amigos franceses.",
+                "start": 135.44,
+                "end": 155.98,
+                "order": 7,
+                "video_topic": "Reações e manifestações de solidariedade internacional",
+                "global_topic": "Reações de franceses e turistas e manifestações de solidariedade internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            },
+            {
+                "content": "O presidente americano, Donald Trump, sugeriu que aviões-tanque ajudassem no combate às chamas e alertou que era preciso agir rápido. Bombeiros explicaram que não é indicado usar aviões para apagar incêndios em perímetros urbanos. As aeronaves têm capacidade para despejar até dezesseis toneladas de água, mas poderiam ferir pessoas que estejam dentro ou ao redor do prédio. Uma intervenção deste tipo também poderia destruir a estrutura remanescente da catedral. O presidente francês, Emmanuel Macron, cancelou um pronunciamento à nação que faria na noite de hoje, e foi até Notre-Dame supervisionar o trabalho dos bombeiros.",
+                "start": 156.4,
+                "end": 193.42,
+                "order": 8,
+                "video_topic": "Danos à estrutura e combate às chamas",
+                "global_topic": "Atuação dos bombeiros e controle das chamas",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_band.mp4"
+            }
+        ]
+    },
+    {
+        "name": "jornal_da_record",
+        "path": "data/raw/catedral_notre_dame/jornal_da_record.mp4",
+        "topics": [
+            "Incêndio na Catedral de Notre-Dame",
+            "Danos à estrutura e ao patrimônio histórico",
+            "Atuação dos bombeiros e controle das chamas",
+            "Reação de Emmanuel Macron e promessa de reconstrução",
+            "Comoção de franceses e turistas"
+        ],
+        "segments": [
+            {
+                "content": "Olá, boa noite pra você. Oitocentos e cinquenta e seis anos de história em chamas.",
+                "start": 0.7,
+                "end": 7.46,
+                "order": 0,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Incêndio na Catedral de Notre-Dame",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Depois de mais de sete horas, está finalmente contido o fogo que queimou a Catedral de Notre-Dame, em Paris.",
+                "start": 7.92,
+                "end": 15.46,
+                "order": 1,
+                "video_topic": "Atuação dos bombeiros e controle das chamas",
+                "global_topic": "Atuação dos bombeiros e controle das chamas",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Dois terços de todo o telhado ficaram destruídos, mas a estrutura principal está a salvo.",
+                "start": 15.92,
+                "end": 21.84,
+                "order": 2,
+                "video_topic": "Danos à estrutura e ao patrimônio histórico",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Um bombeiro ficou gravemente ferido. Ainda não se sabe o que provocou o incêndio, que entristeceu a França e o mundo todo nesta segunda-feira. Era pouco antes das sete da noite na França, duas da tarde no Brasil, quando as chamas começaram a se espalhar pela famosa Catedral de Notre-Dame.",
+                "start": 22.0,
+                "end": 40.08,
+                "order": 3,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Incêndio na Catedral de Notre-Dame",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Em pouco tempo, começavam os registros de parisienses e turistas incrédulos ao ver uma das igrejas mais importantes do mundo pegando fogo.",
+                "start": 40.5,
+                "end": 48.94,
+                "order": 4,
+                "video_topic": "Comoção de franceses e turistas",
+                "global_topic": "Reações de franceses e turistas e manifestações de solidariedade internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "A Catedral de Notre-Dame está localizada no centro de Paris, numa ilha no meio do rio Sena, o que dificultou a chegada e o trabalho das equipes de resgate.",
+                "start": 51.08,
+                "end": 59.66,
+                "order": 5,
+                "video_topic": "Atuação dos bombeiros e controle das chamas",
+                "global_topic": "Atuação dos bombeiros e controle das chamas",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Quatrocentos bombeiros tentavam apagar as chamas. O pináculo da catedral, uma torre de noventa e três metros, primeiro tombou para o lado, depois desabou em meio ao fogo. Oh là là là là! A estrutura era feita de quinhentas toneladas de madeira e duzentas e cinquenta de chumbo.",
+                "start": 60.08,
+                "end": 79.48,
+                "order": 6,
+                "video_topic": "Danos à estrutura e ao patrimônio histórico",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Mesmo assim, não resistiu. Ao cair do dia, o fogo e a fumaça se misturavam com o sol no céu de Paris.",
+                "start": 80.06,
+                "end": 89.18,
+                "order": 7,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Incêndio na Catedral de Notre-Dame",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Os franceses assistiam chocados. \"É o símbolo nacional do país.",
+                "start": 89.9,
+                "end": 95.56,
+                "order": 8,
+                "video_topic": "Comoção de franceses e turistas",
+                "global_topic": "Reações de franceses e turistas e manifestações de solidariedade internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "A França está em chamas\", disse emocionada esta parisiense. O presidente Emmanuel Macron foi pessoalmente acompanhar os trabalhos dos bombeiros.",
+                "start": 95.88,
+                "end": 106.52,
+                "order": 9,
+                "video_topic": "Atuação dos bombeiros e controle das chamas",
+                "global_topic": "Atuação dos bombeiros e controle das chamas",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Ao sair visivelmente abalado, afirmou: \"Nós vamos reconstruir a Notre-Dame\".",
+                "start": 107.24,
+                "end": 115.7,
+                "order": 10,
+                "video_topic": "Reação de Emmanuel Macron e promessa de reconstrução",
+                "global_topic": "Promessa de reconstrução de Emmanuel Macron e campanha internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "O comandante da brigada de Paris disse que muitas peças históricas foram preservadas, mas ainda era grande o medo de que os sinos das torres da catedral caíssem.",
+                "start": 115.76,
+                "end": 126.02,
+                "order": 11,
+                "video_topic": "Danos à estrutura e ao patrimônio histórico",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            },
+            {
+                "content": "Mais tarde, as autoridades confirmaram que as duas torres estavam a salvo. No fim da noite, franceses e turistas se reuniram em frente à catedral e cantaram hinos em homenagem aos oitocentos anos de história de uma senhora sobrevivente da guerra, destruída em um único dia.",
+                "start": 126.6,
+                "end": 148.06,
+                "order": 12,
+                "video_topic": "Comoção de franceses e turistas",
+                "global_topic": "Reações de franceses e turistas e manifestações de solidariedade internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_da_record.mp4"
+            }
+        ]
+    },
+    {
+        "name": "jornal_nacional",
+        "path": "data/raw/catedral_notre_dame/jornal_nacional.mp4",
+        "topics": [
+            "Incêndio na Catedral de Notre-Dame",
+            "Danos ao patrimônio cultural e arquitetônico",
+            "Ação dos bombeiros e salvamento da estrutura",
+            "Investigação das causas do incêndio",
+            "Promessa de reconstrução e campanha internacional"
+        ],
+        "segments": [
+            {
+                "content": "Os bombeiros já controlaram quase todo o fogo na catedral mais conhecida e visitada de todo o planeta, mas os danos na Notre-Dame, em Paris, são incalculáveis.",
+                "start": 0.46,
+                "end": 11.54,
+                "order": 0,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Atuação dos bombeiros e controle das chamas",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "Um desastre de proporções gigantescas para o patrimônio cultural e arquitetônico da humanidade.",
+                "start": 11.84,
+                "end": 17.9,
+                "order": 1,
+                "video_topic": "Danos ao patrimônio cultural e arquitetônico",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "Os parisienses e turistas testemunharam atônitos a queda do ponto mais alto da catedral, conhecido como Flecha. O incêndio começou uma hora antes, perto das sete da noite, no horário local, duas da tarde no Brasil. Fiéis que participavam de uma missa abandonaram a catedral. Rapidamente, as chamas no prédio de mais de oitocentos e cinquenta anos podiam ser vistas de quase toda a capital francesa.",
+                "start": 23.38,
+                "end": 51.16,
+                "order": 2,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Incêndio na Catedral de Notre-Dame",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "As imagens se espalharam pelas redes sociais. Quatrocentos bombeiros da cidade e da região vieram tentar apagar o incêndio nessa segunda-feira.",
+                "start": 51.82,
+                "end": 63.86,
+                "order": 3,
+                "video_topic": "Ação dos bombeiros e salvamento da estrutura",
+                "global_topic": "Atuação dos bombeiros e controle das chamas",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "O local das chamas, no teto da catedral, dificultou bastante o trabalho. A destruição parcial de um símbolo da França deixou a cidade de Paris em choque. Essa francesa disse que vários amigos resolveram se encontrar perto da catedral quando souberam do incêndio. \"É o monumento da cidade, além de um símbolo religioso. É muito emocionante\", disse ela.",
+                "start": 64.22,
+                "end": 86.2,
+                "order": 4,
+                "video_topic": "Incêndio na Catedral de Notre-Dame",
+                "global_topic": "Reações de franceses e turistas e manifestações de solidariedade internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "O padre, que já trabalhou na catedral, disse que mais de setecentos anos de história se acabaram em poucas horas, mas que a catedral vai voltar a ficar de pé.",
+                "start": 86.82,
+                "end": 95.54,
+                "order": 5,
+                "video_topic": "Promessa de reconstrução e campanha internacional",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "A turista americana disse que visitou o local hoje de manhã com alguns alunos. As autoridades esvaziaram toda a Île de la Cité, em português, Ilha da Cidade, que fica no rio Sena, na região central de Paris.",
+                "start": 97.24,
+                "end": 110.78,
+                "order": 6,
+                "video_topic": "Ação dos bombeiros e salvamento da estrutura",
+                "global_topic": "Reações de franceses e turistas e manifestações de solidariedade internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "A parte da catedral mais castigada pelas chamas foi o teto. Nesse ponto, o local estava cercado de andaimes. O telhado gótico, construído na época medieval, passava por obras de restauração desde o ano passado.",
+                "start": 111.34,
+                "end": 123.76,
+                "order": 7,
+                "video_topic": "Danos ao patrimônio cultural e arquitetônico",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "A polícia disse que a estrutura principal foi salva. As estátuas de bronze foram removidas na semana passada para as obras.",
+                "start": 124.88,
+                "end": 133.26,
+                "order": 8,
+                "video_topic": "Ação dos bombeiros e salvamento da estrutura",
+                "global_topic": "Danos à estrutura e ao patrimônio histórico e cultural",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "O Ministério Público já abriu uma investigação para apurar as causas do incêndio. O presidente francês cancelou um pronunciamento que faria na TV e foi até o local conversar com os bombeiros.",
+                "start": 133.88,
+                "end": 145.2,
+                "order": 9,
+                "video_topic": "Investigação das causas do incêndio",
+                "global_topic": "Possível relação com as obras de restauração e investigação das causas",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            },
+            {
+                "content": "No fim do dia, Emmanuel Macron disse que o pior foi evitado e prometeu reconstruir Notre-Dame. Ele disse que vai lançar uma campanha internacional pra captar recursos. \"É isso que os franceses esperam. É isso que a nossa história merece\", disse Macron. Porque c'est ce que notre histoire mérite",
+                "start": 145.66,
+                "end": 162.74,
+                "order": 10,
+                "video_topic": "Promessa de reconstrução e campanha internacional",
+                "global_topic": "Promessa de reconstrução de Emmanuel Macron e campanha internacional",
+                "video_path": "data/raw/catedral_notre_dame/jornal_nacional.mp4"
+            }
+        ]
+    }
+]
