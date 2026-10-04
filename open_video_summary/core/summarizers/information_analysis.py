@@ -663,8 +663,9 @@ class _AnalysisRun:
 
     def _occurrences(self, unit_id, group, first_index):
         buckets = []
-        # Narrow evidence is aligned first. A broad quote may cover several
-        # repeated assertions; it must never bridge those into one occurrence.
+        # Narrow evidence is aligned first. Retain each candidate's assertion
+        # anchors separately: accumulated export evidence cannot expand an
+        # occurrence's identity and bridge disjoint repetitions transitively.
         ordered = sorted(
             group,
             key=lambda record: (
@@ -689,20 +690,31 @@ class _AnalysisRun:
             contexts = tuple(
                 item for item in record.candidate.evidence if item.role == "context"
             )
-            matches = [
+
+            def overlaps(anchor):
+                return any(
+                    max(a.start_char, b.start_char) < min(a.end_char, b.end_char)
+                    for a in assertions
+                    for b in anchor
+                )
+
+            overlapping = [
                 bucket
                 for bucket in buckets
                 if bucket["segment_id"] == record.target_segment_id
-                and any(
-                    max(a.start_char, b.start_char) < min(a.end_char, b.end_char)
-                    for a in assertions
-                    for b in bucket["assertions"]
-                )
+                and any(overlaps(anchor) for anchor in bucket["anchors"])
             ]
-            if len(matches) > 1:
+            matches = [
+                bucket
+                for bucket in overlapping
+                if all(overlaps(anchor) for anchor in bucket["anchors"])
+            ]
+            if len(overlapping) > 1 or any(
+                bucket not in matches for bucket in overlapping
+            ):
                 self.issue(
                     "occurrence_alignment_uncertain",
-                    "A broad evidence span overlaps multiple repeated occurrences; existing repetitions were preserved.",
+                    "Evidence overlaps incompatible occurrence anchors; separate repetitions were preserved and their alignment remains pending.",
                     (record.target_segment_id,),
                     (record.id,),
                 )
@@ -711,6 +723,7 @@ class _AnalysisRun:
             else:
                 bucket = {
                     "segment_id": record.target_segment_id,
+                    "anchors": [],
                     "candidates": [],
                     "assertions": [],
                     "contexts": [],
@@ -718,6 +731,7 @@ class _AnalysisRun:
                 }
                 buckets.append(bucket)
             bucket["candidates"].append(record.id)
+            bucket["anchors"].append(assertions)
             for destination, additions in (
                 ("assertions", assertions),
                 ("contexts", contexts),

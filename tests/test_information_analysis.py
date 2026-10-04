@@ -448,6 +448,84 @@ class InformationProtocolTests(unittest.TestCase):
             "occurrence_alignment_uncertain", [issue.kind for issue in report.issues]
         )
 
+    def test_intermediate_qa_span_cannot_expand_occurrence_identity(self):
+        text = "Backup is daily. To make the schedule completely clear, the backup is performed daily."
+        unit_text = "Backup is daily."
+        direct = [
+            candidate(
+                "v0:s0", text, text=unit_text, quote=text[start:end], offset=start
+            )
+            for start, end in ((0, 16), (17, 86))
+        ]
+        qa = candidate(
+            "v0:s0", text, text=unit_text, quote=text[0:37], offset=0, qa=True
+        )
+        report = analyze(
+            videos([text]),
+            ScriptedGenerator({("v0:s0", "direct"): direct, ("v0:s0", "qa"): [qa]}),
+        )
+        self.assertEqual(3, report.counts.accepted_candidates)
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual(2, report.counts.occurrences)
+        self.assertEqual(2, report.counts.by_segment[0].occurrences)
+        self.assertEqual(2, report.counts.by_video[0].occurrences)
+        self.assertEqual("partial", report.status)
+        self.assertIn(
+            "occurrence_alignment_uncertain", [issue.kind for issue in report.issues]
+        )
+        containing = {
+            identifier: occurrence.id
+            for occurrence in report.occurrences
+            for identifier in occurrence.candidate_ids
+        }
+        self.assertNotEqual(containing["c0"], containing["c1"])
+        self.assertEqual(containing["c0"], containing["c2"])
+
+    def test_occurrence_members_remain_pairwise_compatible_across_span_chains(self):
+        text = "Backup is daily. To make the schedule completely clear, the backup is performed daily."
+        for spans in (
+            ((0, 16), (0, 37), (17, 86)),
+            ((70, 86), (49, 86), (0, 69)),
+            ((0, 16), (10, 47), (37, 86)),
+        ):
+            with self.subTest(spans=spans):
+                raw = [
+                    candidate(
+                        "v0:s0",
+                        text,
+                        text="Backup is daily.",
+                        quote=text[start:end],
+                        offset=start,
+                    )
+                    for start, end in spans
+                ]
+                report = analyze(
+                    videos([text]),
+                    ScriptedGenerator({("v0:s0", "direct"): raw}),
+                    qa_enabled=False,
+                )
+                self.assertEqual(2, report.counts.occurrences)
+                self.assertEqual(
+                    3,
+                    sum(
+                        len(occurrence.candidate_ids)
+                        for occurrence in report.occurrences
+                    ),
+                )
+                self.assertEqual("partial", report.status)
+                by_id = {
+                    record.id: record.candidate.evidence[0]
+                    for record in report.candidates
+                }
+                for occurrence in report.occurrences:
+                    for index, left_id in enumerate(occurrence.candidate_ids):
+                        for right_id in occurrence.candidate_ids[index + 1 :]:
+                            left, right = by_id[left_id], by_id[right_id]
+                            self.assertLess(
+                                max(left.start_char, right.start_char),
+                                min(left.end_char, right.end_char),
+                            )
+
     def test_identical_text_in_different_context_still_receives_pair_evaluation(self):
         source = videos(["O limite do Alfa é fixo.", "O limite do Beta é fixo."])
         items = {
