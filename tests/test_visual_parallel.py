@@ -246,55 +246,69 @@ class RealSpawnTests(unittest.TestCase):
                     path = directory / f"source_{source}.avi"
                     writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 1, (128, 96))
                     assert writer.isOpened()
-                    for _ in range(5):
+                    for _ in range(12):
                         writer.write(rng.integers(0, 256, (96, 128, 3), dtype=np.uint8))
                     writer.release()
                     sources.append(path)
-                for group in range(2):
-                    groups.append({VideoSegment(f"item{source}/{group}", group, group + 1,
+                for group in range(3):
+                    start = (group % 2) * 4
+                    groups.append({VideoSegment(f"item{source}/{group}", start, start + 5,
                         order=group, video_path=str(path)) for source, path in enumerate(sources)})
 
-                outputs = []
+                profiles = {}
                 cv2.setNumThreads(1)
                 with threadpool_limits(limits=1):
-                    for budget in (1, 2):
-                        handler = SummarySegmentHandler()
-                        for group in groups:
-                            handler.add_segments_to_pick(group, "fixture")
-                        criterion = QualityPick("fixture", bovw_dict_size=3, visual_threads=budget)
-                        extract = criterion.extract_segments_visual_features
-                        records = []
-                        def capture(segments):
-                            result = extract(segments)
-                            records.extend((segment, array.copy()) for segment, array in result.items())
-                            return result
-                        criterion.extract_segments_visual_features = capture
-                        random.seed(7319)
-                        np.random.seed(7319)
-                        criterion.evaluate(handler)
-                        outputs.append((handler, records, np.random.get_state(), criterion.last_profile))
-                serial, parallel = outputs
-                assert serial[0].include == parallel[0].include
-                assert len(serial[1]) == len(parallel[1]) == 6
-                for (left_segment, left), (right_segment, right) in zip(serial[1], parallel[1]):
-                    assert left_segment == right_segment
-                    np.testing.assert_array_equal(left, right)
-                assert serial[2][0] == parallel[2][0]
-                np.testing.assert_array_equal(serial[2][1], parallel[2][1])
-                assert serial[2][2:] == parallel[2][2:]
-                profile = parallel[3]
-                assert profile["counters"]["video_reads"] == 3
-                assert profile["counters"]["cache_hits"] == 3
-                assert profile["counters"]["parallel_workers"] == 2
-                assert profile["counters"]["worker_pending_limit"] == 3
-                assert profile["counters"]["worker_pending_peak"] == 3
-                assert len(profile["workers"]) == 3
-                assert len({worker["pid"] for worker in profile["workers"]}) <= 2
-                for worker in profile["workers"]:
-                    assert worker["pid"] != os.getpid()
-                    assert worker["opencv_threads"] == 1
-                    assert all(pool["num_threads"] == 1 for pool in worker["native_pools"])
-                Path(sys.argv[2]).write_text(json.dumps(profile), encoding="utf-8")
+                    for scope in ("video", "segment"):
+                        outputs = []
+                        for budget in (1, 2):
+                            handler = SummarySegmentHandler()
+                            for group in groups:
+                                handler.add_segments_to_pick(group, "fixture")
+                            criterion = QualityPick("fixture", bovw_dict_size=3,
+                                visual_threads=budget, visual_scope=scope)
+                            extract = criterion.extract_segments_visual_features
+                            records = []
+                            def capture(segments):
+                                result = extract(segments)
+                                records.extend((segment, array.copy()) for segment, array in result.items())
+                                return result
+                            criterion.extract_segments_visual_features = capture
+                            random.seed(7319)
+                            np.random.seed(7319)
+                            criterion.evaluate(handler)
+                            outputs.append((handler, records, np.random.get_state(),
+                                criterion.last_profile, criterion.last_audit))
+                        serial, parallel = outputs
+                        assert serial[0].include == parallel[0].include
+                        assert serial[4] == parallel[4]
+                        assert len(serial[1]) == len(parallel[1]) == 9
+                        for (left_segment, left), (right_segment, right) in zip(serial[1], parallel[1]):
+                            assert left_segment == right_segment
+                            np.testing.assert_array_equal(left, right)
+                        assert serial[2][0] == parallel[2][0]
+                        np.testing.assert_array_equal(serial[2][1], parallel[2][1])
+                        assert serial[2][2:] == parallel[2][2:]
+                        if scope == "segment":
+                            arrays = {(segment.video_path, segment.order): array for segment, array in serial[1]}
+                            for path in sources:
+                                assert not np.array_equal(arrays[(str(path), 0)], arrays[(str(path), 1)])
+                                np.testing.assert_array_equal(arrays[(str(path), 0)], arrays[(str(path), 2)])
+                        profile = parallel[3]
+                        unique = 6 if scope == "segment" else 3
+                        assert profile["counters"]["video_reads"] == unique
+                        assert profile["counters"]["cache_hits"] == 9 - unique
+                        assert profile["counters"]["parallel_workers"] == 2
+                        assert profile["counters"]["worker_pending_limit"] == 3
+                        assert profile["counters"]["worker_pending_peak"] == 3
+                        assert len(profile["workers"]) == unique
+                        assert len({worker["pid"] for worker in profile["workers"]}) <= 2
+                        assert profile["settings"]["scope"] == scope
+                        for worker in profile["workers"]:
+                            assert worker["pid"] != os.getpid()
+                            assert worker["opencv_threads"] == 1
+                            assert all(pool["num_threads"] == 1 for pool in worker["native_pools"])
+                        profiles[scope] = profile
+                Path(sys.argv[2]).write_text(json.dumps(profiles), encoding="utf-8")
 
             if __name__ == "__main__":
                 main()
@@ -318,7 +332,9 @@ class RealSpawnTests(unittest.TestCase):
                 timeout=90,
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            self.assertEqual("completed", json.loads(report.read_text())["status"])
+            saved = json.loads(report.read_text())
+            self.assertEqual("completed", saved["video"]["status"])
+            self.assertEqual("completed", saved["segment"]["status"])
 
 
 if __name__ == "__main__":

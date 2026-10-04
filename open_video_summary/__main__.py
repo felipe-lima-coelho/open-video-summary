@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from open_video_summary.errors import ConfigurationError
 from open_video_summary.utils.config import PROJECT_DIR, ModelPaths
 from open_video_summary.utils.paths import project_path, portable_path
-from open_video_summary.utils.providers import load_thread_count
+from open_video_summary.utils.providers import load_thread_count, load_visual_scope
 
 
 def _cpu_settings(threads: int) -> None:
@@ -53,13 +53,16 @@ def _summarize(args) -> None:
     for criterion in HSMVideoSumm.selection_criteria:
         if criterion.name == "QualityPick":
             criterion.visual_threads = args.threads
+            criterion.visual_scope = getattr(args, "visual_scope", "segment")
 
     output = project_path(args.output)
     handler_path = output.with_name(f"{output.stem}_handler.json")
     metadata_path = output.with_suffix(".json")
+    audit_path = output.with_name(f"{output.stem}_audit.json")
     print(
         f"HSMVideoSumm on CPU: {len(videos)} source videos, "
-        f"{sum(len(v.segments) for v in videos)} input segments.",
+        f"{sum(len(v.segments) for v in videos)} input segments; "
+        f"visual scope {getattr(args, 'visual_scope', 'segment')}.",
         flush=True,
     )
     summary = HSMVideoSumm.summarize(
@@ -67,6 +70,7 @@ def _summarize(args) -> None:
         title=args.title,
         video_output_path=output.as_posix(),
         handler_output_path=handler_path.as_posix(),
+        audit_output_path=audit_path.as_posix(),
     )
     visual_profile_path = output.with_name(f"{output.stem}_visual_profile.json")
     visual_profile = next(
@@ -89,6 +93,7 @@ def _summarize(args) -> None:
     )
     print(f"Summary metadata: {portable_path(metadata_path)}")
     print(f"Selection log: {portable_path(handler_path)}")
+    print(f"Selection audit: {portable_path(audit_path)}")
     print(f"Visual timings: {portable_path(visual_profile_path)}")
     if not args.no_render:
         print(f"Video summary: {portable_path(output)}")
@@ -230,6 +235,10 @@ def build_parser() -> argparse.ArgumentParser:
     summarize.add_argument("--output", default="outputs/bebe_real_summary.mp4")
     summarize.add_argument("--title", default="Bebe Real Summary")
     summarize.add_argument("--no-render", action="store_true")
+    summarize.add_argument(
+        "--visual-scope", choices=("segment", "video"), default=None,
+        help="Visual features from segment intervals or full source videos (default: OVS_VISUAL_SCOPE or segment).",
+    )
     subparsers.add_parser(
         "doctor", help="Check the environment and required demo assets."
     )
@@ -262,6 +271,8 @@ def main(argv=None) -> None:
         parser.error("--threads must be positive.")
     try:
         args.threads = load_thread_count(args.threads)
+        if args.command == "summarize":
+            args.visual_scope = load_visual_scope(args.visual_scope)
     except ConfigurationError as exc:
         parser.error(str(exc))
     _cpu_settings(args.threads)

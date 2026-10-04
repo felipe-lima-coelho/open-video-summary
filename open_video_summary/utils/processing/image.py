@@ -2,7 +2,7 @@ from math import log10
 from pandas import DataFrame
 from collections import Counter
 from sklearn.cluster import KMeans  # type: ignore
-from numpy import concatenate
+from numpy import concatenate, empty, float32
 from cv2 import (
     calcHist,
     normalize,
@@ -48,7 +48,9 @@ class BagOfVisualWords:
             )
 
         with visual_stage("kmeans_predict"):
-            predictions = self.__bovw_df.features.apply(self.__kmeans.predict)
+            predictions = self.__bovw_df.features.apply(
+                lambda features: self.__kmeans.predict(features) if len(features) else []
+            )
         visual_count("kmeans_predictions", len(self.__items))
 
         with visual_stage("bovw_dataframe"):
@@ -71,7 +73,7 @@ class BagOfVisualWords:
 
 class ImageProcessor:
     @staticmethod
-    def ks_sift(frames: list):
+    def ks_sift(frames: list, *, allow_empty: bool = False):
         segment_keyframes: list[Keyframe] = []
         detector = None
         for frame in frames[1:-1]:
@@ -91,7 +93,11 @@ class ImageProcessor:
                 segment_keyframes.append(keyframe)
 
         with visual_stage("descriptor_assembly"):
-            descriptors = concatenate([kf.descriptor for kf in segment_keyframes])
+            descriptors = (
+                concatenate([kf.descriptor for kf in segment_keyframes])
+                if segment_keyframes or not allow_empty
+                else empty((0, 128), dtype=float32)
+            )
         visual_count("keyframes_retained", len(segment_keyframes))
         visual_count("descriptors_retained", len(descriptors))
         return descriptors
