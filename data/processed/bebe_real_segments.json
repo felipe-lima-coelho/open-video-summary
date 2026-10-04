@@ -1,0 +1,163 @@
+[
+    {
+        "name": "jornal_da_band",
+        "path": "data/raw/bebe_real/jornal_da_band.mp4",
+        "topics": [
+            "Primeira aparição pública de Archie Harrison",
+            "Nome e apresentação do bebê real",
+            "Nascimento e posição na linha de sucessão britânica"
+        ],
+        "segments": [
+            {
+                "content": "Príncipe Harry e a Duquesa Meghan Markle apareceram em público pela primeira vez com o filho, que nasceu há dois dias.",
+                "start": 0.08,
+                "end": 6.04,
+                "order": 0,
+                "video_topic": "Primeira aparição pública de Archie Harrison",
+                "global_topic": "Nome, nacionalidade e apresentação pública de Archie",
+                "video_path": "data/raw/bebe_real/jornal_da_band.mp4"
+            },
+            {
+                "content": "O bebê real recebeu o nome de Archie Harrison. Na rápida aparição no Castelo de Windsor, a Duquesa de Sussex disse que o bebê é muito calmo, com temperamento doce. O príncipe brincou e disse que não sabe a quem ele puxou. Horas depois, o casal divulgou o nome do bebê real: Archie Harrison Mountbatten-Windsor.",
+                "start": 6.42,
+                "end": 32.0,
+                "order": 1,
+                "video_topic": "Nome e apresentação do bebê real",
+                "global_topic": "Nome, nacionalidade e apresentação pública de Archie",
+                "video_path": "data/raw/bebe_real/jornal_da_band.mp4"
+            },
+            {
+                "content": "O anúncio foi feito logo após a rainha Elizabeth e o príncipe Philip conhecerem o bisneto. O filho de Harry e Meghan é o sétimo na linha de sucessão ao trono britânico. Os pais se casaram em maio do ano passado e a gravidez foi anunciada em outubro. Meghan deu à luz em casa, uma tradição da família real.",
+                "start": 32.439,
+                "end": 51.32,
+                "order": 2,
+                "video_topic": "Nascimento e posição na linha de sucessão britânica",
+                "global_topic": "Nascimento de Archie Harrison e sua posição na linha de sucessão britânica",
+                "video_path": "data/raw/bebe_real/jornal_da_band.mp4"
+            }
+        ]
+    },
+    {
+        "name": "jornal_da_record",
+        "path": "data/raw/bebe_real/jornal_da_record.mp4",
+        "topics": [
+            "Apresentação do bebê Archie ao público",
+            "Nome, nacionalidade e posição de Archie na linha de sucessão",
+            "Meghan e Harry celebram a chegada do filho",
+            "Reações da rainha Elizabeth e do príncipe William"
+        ],
+        "segments": [
+            {
+                "content": "A duquesa Meghan Markle e o príncipe Harry apresentaram hoje o mais novo integrante da família real. Foi no colo do pai, sorridente, que o mais novo bebê real foi apresentado ao mundo.",
+                "start": 0.66,
+                "end": 13.96,
+                "order": 0,
+                "video_topic": "Apresentação do bebê Archie ao público",
+                "global_topic": "Nome, nacionalidade e apresentação pública de Archie",
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
+            },
+            {
+                "content": "E depois de se derreter em elogios à mulher, foi a vez do príncipe Harry ganhar palavras carinhosas da esposa. \"Tem os dois melhores caras do mundo, estou muito feliz\", completa Meghan.",
+                "start": 14.34,
+                "end": 26.76,
+                "order": 1,
+                "video_topic": "Meghan e Harry celebram a chegada do filho",
+                "global_topic": "Harry e Meghan celebram a chegada do filho; Meghan comenta a maternidade e o temperamento do bebê",
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
+            },
+            {
+                "content": "Best guys in the world, so I'm really happy. O bebê ganhou o nome de Archie Harrison, contrariando os principais palpites das bolsas de apostas britânicas. Archie vai ter também nacionalidade americana por causa da mãe, mas ainda não pode ser chamado de príncipe como os primos.",
+                "start": 27.14,
+                "end": 45.76,
+                "order": 2,
+                "video_topic": "Nome, nacionalidade e posição de Archie na linha de sucessão",
+                "global_topic": "Nome, nacionalidade e apresentação pública de Archie",
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
+            },
+            {
+                "content": "Essa vai ser uma decisão da bisavó, a rainha Elizabeth. Hoje, a monarca conheceu enfim o oitavo bisneto, sétimo na linha de sucessão ao trono.",
+                "start": 46.26,
+                "end": 56.82,
+                "order": 3,
+                "video_topic": "Reações da rainha Elizabeth e do príncipe William",
+                "global_topic": "Reações da rainha Elizabeth e do príncipe William; encontro da rainha com o bisneto",
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
+            },
+            {
+                "content": "O sorriso na foto confirma o encantamento com a criança, que também conquistou turistas e britânicos.",
+                "start": 57.24,
+                "end": 64.58,
+                "order": 4,
+                "video_topic": "Apresentação do bebê Archie ao público",
+                "global_topic": "Reações da rainha Elizabeth e do príncipe William; encontro da rainha com o bisneto",
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
+            },
+            {
+                "content": "What a nice family. O príncipe William ainda não conheceu o sobrinho, mas fez questão de dar ao irmão as boas-vindas ao clube dos que não dormem. \"Vai ser divertido\", completa o novo tio da realeza britânica.",
+                "start": 64.98,
+                "end": 82.16,
+                "order": 5,
+                "video_topic": "Reações da rainha Elizabeth e do príncipe William",
+                "global_topic": "Reações da rainha Elizabeth e do príncipe William; encontro da rainha com o bisneto",
+                "video_path": "data/raw/bebe_real/jornal_da_record.mp4"
+            }
+        ]
+    },
+    {
+        "name": "jornal_nacional",
+        "path": "data/raw/bebe_real/jornal_nacional.mp4",
+        "topics": [
+            "Apresentação do filho recém-nascido de Harry e Meghan",
+            "Meghan fala sobre a maternidade e o temperamento do bebê",
+            "Nome do bebê: Archie Harrison Mountbatten-Windsor",
+            "Rainha Elizabeth conhece o bisneto"
+        ],
+        "segments": [
+            {
+                "content": "O príncipe Harry e a duquesa Meghan Markle apresentaram hoje o filho recém-nascido. A primeira aparição de Harry foi aos olhos de todos. Uma multidão se acotovelou em frente ao hospital. O primeiro vislumbre do filho do príncipe foi só prum seleto grupo da imprensa. Thank you. E junto com o novo bebê real, o casal apresentou um estilo discreto. Parenting is amazing, isn't it? O menino tava embrulhado em carinhos.",
+                "start": 0.72,
+                "end": 25.52,
+                "order": 0,
+                "video_topic": "Apresentação do filho recém-nascido de Harry e Meghan",
+                "global_topic": "Harry e Meghan celebram a chegada do filho; Meghan comenta a maternidade e o temperamento do bebê",
+                "video_path": "data/raw/bebe_real/jornal_nacional.mp4"
+            },
+            {
+                "content": "Been all day. And it's magic. Meghan Markle falou da magia que é virar mãe, sobretudo por ter dois dos melhores caras do mundo. Best guys in the world. O bebê vem fazendo por merecer. He's really calm. Temperamento calmo e doce.",
+                "start": 25.54,
+                "end": 39.6,
+                "order": 1,
+                "video_topic": "Meghan fala sobre a maternidade e o temperamento do bebê",
+                "global_topic": "Harry e Meghan celebram a chegada do filho; Meghan comenta a maternidade e o temperamento do bebê",
+                "video_path": "data/raw/bebe_real/jornal_nacional.mp4"
+            },
+            {
+                "content": "Harry disse que nem sabe a quem ele puxou. O casal também quebrou hoje outro mistério e revelou o nome do novo bebê real: Archie Harrison Mountbatten-Windsor.",
+                "start": 39.9,
+                "end": 49.8,
+                "order": 2,
+                "video_topic": "Nome do bebê: Archie Harrison Mountbatten-Windsor",
+                "global_topic": "Nome, nacionalidade e apresentação pública de Archie",
+                "video_path": "data/raw/bebe_real/jornal_nacional.mp4"
+            },
+            {
+                "content": "O nome até é bem mais curto do que os padrões da realeza. Elizabeth Alexandra Mary conheceu hoje o bisneto. A Rainha apareceu ao lado do marido e da mãe de Meghan. Babies change so much. O casal ainda não sabe com quem Archie se parece.",
+                "start": 49.86,
+                "end": 62.48,
+                "order": 3,
+                "video_topic": "Rainha Elizabeth conhece o bisneto",
+                "global_topic": "Reações da rainha Elizabeth e do príncipe William; encontro da rainha com o bisneto",
+                "video_path": "data/raw/bebe_real/jornal_nacional.mp4"
+            },
+            {
+                "content": "O príncipe diz que o rosto de bebê muda muito. Só que o de pai e mãe muda ainda mais.",
+                "start": 62.88,
+                "end": 67.68,
+                "order": 4,
+                "video_topic": "Meghan fala sobre a maternidade e o temperamento do bebê",
+                "global_topic": "Harry e Meghan celebram a chegada do filho; Meghan comenta a maternidade e o temperamento do bebê",
+                "video_path": "data/raw/bebe_real/jornal_nacional.mp4"
+            }
+        ]
+    }
+]
