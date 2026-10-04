@@ -65,13 +65,26 @@ def _summarize(args) -> None:
         f"visual scope {getattr(args, 'visual_scope', 'segment')}.",
         flush=True,
     )
+    information_kwargs = {}
+    if getattr(args, "analyze_information", False) or getattr(args, "information_report", None):
+        from open_video_summary.core.summarizers.information_config import configured_information_analyzer
+
+        information_kwargs = {
+            "information_analyzer": configured_information_analyzer(vars(args)),
+            "information_output_path": args.information_report,
+            "information_csv_path": getattr(args, "information_csv", None),
+            "information_input_path": args.dataset,
+        }
     summary = HSMVideoSumm.summarize(
         videos=videos,
         title=args.title,
         video_output_path=output.as_posix(),
         handler_output_path=handler_path.as_posix(),
         audit_output_path=audit_path.as_posix(),
+        **information_kwargs,
     )
+    if information_kwargs:
+        _print_information_report(HSMVideoSumm.last_information_report, HSMVideoSumm.last_information_path)
     visual_profile_path = output.with_name(f"{output.stem}_visual_profile.json")
     visual_profile = next(
         criterion.last_profile
@@ -97,6 +110,35 @@ def _summarize(args) -> None:
     print(f"Visual timings: {portable_path(visual_profile_path)}")
     if not args.no_render:
         print(f"Video summary: {portable_path(output)}")
+
+
+def _print_information_report(report, path):
+    if report is None:
+        print("Information analysis: failed before a snapshot report could be built.")
+        return
+    print(f"Information analysis: {report.status}; {report.counts.unique_units} identified units, {report.counts.occurrences} occurrences; {len(report.issues)} issues.")
+    if path:
+        print(f"Information report: {portable_path(path)}")
+
+
+def _analyze_information(args):
+    from open_video_summary.core.summarizers.information_config import configured_information_analyzer
+    from open_video_summary.core.summarizers.information_contracts import capture_snapshot
+    from open_video_summary.core.summarizers.information_io import save_information_report
+    from open_video_summary.parsers.video import VideoLoader
+
+    # This text-only path needs neither video files nor an HSM classifier.
+    videos = VideoLoader.load_videos_from_json(args.dataset)
+    snapshot = capture_snapshot(videos, stage_id="source_inventory")
+    report = configured_information_analyzer(vars(args)).analyze(snapshot)
+    reserved = [args.dataset]
+    reserved.extend(video.path for video in videos)
+    reserved.extend(segment.video_path for video in videos for segment in video.segments)
+    destination = args.output or f"outputs/information/{report.run_id}.json"
+    path = save_information_report(report, destination, reserved=reserved, csv_path=args.information_csv)
+    _print_information_report(report, path)
+    if report.status != "completed":
+        raise RuntimeError(f"Information analysis is {report.status}; inspect the saved report's issues.")
 
 
 def _doctor(args) -> None:
@@ -239,6 +281,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--visual-scope", choices=("segment", "video"), default=None,
         help="Visual features from segment intervals or full source videos (default: OVS_VISUAL_SCOPE or segment).",
     )
+    summarize.add_argument("--analyze-information", action="store_true", help="Run a passive transcript inventory before Introduction; save a separate report.")
+    summarize.add_argument("--information-report", default=None, help="Enable inventory and save a new JSON file under outputs/.")
+    _information_arguments(summarize)
+    information = subparsers.add_parser("analyze-information", help="Inventory segmented transcript text without rendering or classifier assets.")
+    information.add_argument("--dataset", default="data/processed/bebe_real.json")
+    information.add_argument("--output", default=None, help="New JSON under outputs/ (default: unique outputs/information/ file).")
+    _information_arguments(information)
     subparsers.add_parser(
         "doctor", help="Check the environment and required demo assets."
     )
@@ -264,6 +313,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _information_arguments(parser):
+    parser.add_argument("--information-csv", default=None, help="Optional occurrence table in a new CSV under outputs/.")
+    parser.add_argument("--no-information-qa", dest="information_qa", action="store_false", default=None)
+    parser.add_argument("--information-max-calls", type=int, default=None)
+    parser.add_argument("--information-rounds", type=int, default=None)
+    parser.add_argument("--information-max-pairs", type=int, default=None)
+    parser.add_argument("--information-max-candidates", type=int, default=None)
+    parser.add_argument("--information-context-chars", type=int, default=None)
+    parser.add_argument("--information-context-segments", type=int, default=None)
+    parser.add_argument("--information-acceptance", type=float, default=None)
+    parser.add_argument("--information-gap-threshold", type=float, default=None)
+    parser.add_argument("--information-equivalence", type=float, default=None)
+    parser.add_argument("--jev-model", default=None)
+    parser.add_argument("--jev-base-url", default=None)
+    parser.add_argument("--jev-timeout", type=float, default=None)
+    parser.add_argument("--jev-max-attempts", type=int, default=None)
+    parser.add_argument("--llm-provider", default=None)
+    parser.add_argument("--llm-model", default=None)
+    parser.add_argument("--llm-reasoning-effort", dest="reasoning_effort", default=None)
+    parser.add_argument("--llm-base-url", default=None)
+    parser.add_argument("--llm-timeout", type=float, default=None)
+    parser.add_argument("--max-attempts", type=int, default=None)
+
+
 def main(argv=None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -282,7 +355,7 @@ def main(argv=None) -> None:
 
             prepare_demo(download_model=not args.without_model)
         else:
-            {"summarize": _summarize, "doctor": _doctor, "segment": _segment}[
+            {"summarize": _summarize, "analyze-information": _analyze_information, "doctor": _doctor, "segment": _segment}[
                 args.command
             ](args)
     except (FileNotFoundError, ValueError, RuntimeError, ConnectionError) as exc:

@@ -230,6 +230,173 @@ report through `criterion.last_audit` and `handler.audit`. Old handler JSON file
 remain readable. Audit capture adds no model run and does not change selection or
 consume random state.
 
+## Inventory information before summary selection
+
+Information analysis is opt-in. It runs **once before Introduction** in the
+existing HSM pipeline, using all source transcript segments while the selection
+handler's output is still empty. It returns a separate information report and
+adds no include, discard, pick, or output decisions. The original `summarize`
+command continues to work without provider credentials when this option is absent.
+
+The generator uses the existing Ollama/OpenAI adapters. A separate TypeSafe Jev
+evaluator checks support, qualifiers and granularity, audits the original text
+for possible omissions, and compares candidate meanings. Set the evaluator key
+in the process environment or root `.env`, then use a **new report path**:
+
+```powershell
+$env:TYPESAFE_API_KEY = "your-typesafe-key"
+.\.venv\Scripts\python.exe -m open_video_summary summarize `
+  --dataset data/processed/bebe_real.json `
+  --output outputs/bebe_real_summary.mp4 `
+  --information-report outputs/bebe_real_information_run01.json `
+  --information-csv outputs/bebe_real_information_run01.csv `
+  --llm-provider ollama --llm-model gemma2
+```
+
+The summary still needs its normal video and classifier assets. Ollama must have
+the configured generator model available. Alternatively, set `OPENAI_API_KEY`
+and replace the last line with `--llm-provider openai --llm-model gpt-6-luna
+--llm-reasoning-effort high`. With either generator, Jev receives the selected
+transcript context, candidates and evaluation questions through HTTPS. OpenAI
+also receives extraction prompts and transcript context when selected; an Ollama
+server receives them at its configured endpoint. No source video or audio is sent
+by the inventory analyzer. API services can incur usage charges.
+
+`summarize --analyze-information` enables the same hook and automatically chooses
+`outputs/information/<run-id>.json`. `--information-report` also enables it.
+Explicit report files are never overwritten, including when the HSM singleton is
+used twice. Reports and optional CSV tables must live under `outputs/`; resolved
+aliases of the input dataset, source videos and summary artifacts are refused.
+Writes publish a complete UTF-8 file atomically. If analysis fails or reaches a
+limit, summary selection proceeds and the CLI prints the analysis status. A
+report destination failure is visible in `last_information_error` and triggers a
+separate failure report under `outputs/information/` when that directory is writable.
+
+For text-only inspection, use the additional command below. It reads a segmented
+dataset without checking MP4 existence, loading the subjectivity classifier,
+running Whisper, or requiring FFmpeg:
+
+```powershell
+.\.venv\Scripts\python.exe -m open_video_summary analyze-information `
+  --dataset data/processed/bebe_real.json `
+  --output outputs/bebe_real_information_text_run01.json `
+  --llm-provider ollama --llm-model gemma2
+```
+
+This command exits nonzero for a partial or failed analysis after saving its
+report. Missing `TYPESAFE_API_KEY` creates a failed report before contacting the
+generator; it is never interpreted as a successful inventory of zero units.
+
+### Protocol and report interpretation
+
+`contextual-propositions-v1` inventories verbal content **as communicated**, not
+the external truth of a claim. A unit preserves entity context, attribution,
+negation, modality, numbers, conditions and exceptions. Independent properties
+become separate units; a condition remains with its consequent. Compound
+candidates flagged by the evaluator are excluded and offered to the bounded
+recovery route, so their parts cannot silently add to an already counted compound.
+
+Direct extraction and optional anchored question/answer extraction initially
+receive the same source context without seeing each other's output. Questions
+and answers are discovery aids; they are not units to add to the count. Every
+candidate must carry literal quote offsets, with assertion evidence in its target
+segment. Code checks Unicode character slices and existing IDs; timestamps are
+copied from source segments, with segment-level resolution, never estimated by a
+model. Context citations can resolve a reference but create no occurrence.
+
+Coverage checks read the original target and accepted propositions, including
+markers for quantities, negations, conditions and references. These markers are
+hints, not an alternative word-count measure or a content filter. A full sentence
+appearing as evidence does not mark all its propositions as represented. Possible
+gaps trigger additional extraction and validation; an uncertain audit, no progress
+or an exhausted budget remains visible.
+
+Pair comparisons preserve complement, specificity, contradiction and correction
+relations. Only sufficiently strong equivalence decisions merge meanings, and
+every member of a merged group must be pairwise compatible. Equal text in different
+contexts still needs evaluation. Exact validated duplicates with identical
+evidence can be deduplicated in code. Repetitions retain distinct positional source
+identities and assertion spans; overlapping evidence from two routes does not add
+another occurrence. Ambiguous broad quotes cannot join two known repetitions and
+are marked for review.
+
+JSON is the canonical report. It includes the frozen source snapshot, source and
+current-input fingerprints, source/current order, selection stage order,
+`stage_id="before_introduction"`, candidate validation and reasons, contextual
+units, assertion occurrences, context evidence, pair relations, coverage records,
+counts by segment/video/whole input and unresolved issues. Calls record requested
+and returned models, input/output hashes, usage when available, latency and retry
+attempts. Prompt hashes, protocol version and settings are retained without keys.
+The optional CSV is an occurrence table; the JSON contains the full evidence.
+
+`completed` means the configured operations finished without recorded pending
+issues. It is **not proof of complete extraction or calibrated semantic accuracy**.
+`partial` retains accepted units alongside pending work and provisional counts;
+`failed` distinguishes unusable analysis from a valid empty result. Only a
+completed empty inventory has `counts.valid_zero=true`. Jev's Noul value is a
+probability of a yes answer; Choice's selected-option probability and its separate
+confidence metric are recorded distinctly. Neither is a measured accuracy rate in
+this application. The defaults below need validation on Portuguese annotations.
+
+### Analysis bounds and library contract
+
+CLI settings override the process environment, then root `.env`, then defaults.
+The generator keeps the existing `OVS_LLM_*` settings. Jev defaults to the pinned
+`jev-1.13.0`, not a moving latest alias; `OVS_JEV_MODEL` or `--jev-model` can
+explicitly select another model. The stdlib HTTP adapter implements the official
+[TypeSafe API](https://docs.typesafe.ai/api); model version and confidence semantics
+are described in [models](https://docs.typesafe.ai/models) and
+[confidence](https://docs.typesafe.ai/confidence).
+
+| CLI option | Environment setting | Default |
+| --- | --- | --- |
+| `--no-information-qa` | `OVS_INFORMATION_QA` (`true`/`false`) | QA enabled |
+| `--information-max-calls` | `OVS_INFORMATION_MAX_CALLS` | 256 logical calls |
+| `--information-rounds` | `OVS_INFORMATION_ROUNDS` | 2 recovery rounds per target |
+| `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | 160 semantic pair comparisons |
+| `--information-max-candidates` | `OVS_INFORMATION_MAX_CANDIDATES` | 16 per target and extraction route |
+| `--information-context-chars` | `OVS_INFORMATION_CONTEXT_CHARS` | 24000 characters per prompt, or evaluation context plus questions |
+| `--information-context-segments` | `OVS_INFORMATION_CONTEXT_SEGMENTS` | Up to 4 additional current segments from the same video |
+| `--information-acceptance` | `OVS_INFORMATION_ACCEPTANCE` | 0.85 for each support/qualifier signal and atomicity |
+| `--information-gap-threshold` | `OVS_INFORMATION_GAP_THRESHOLD` | 0.65 yes signals a gap; at most 0.35 means no gap signaled |
+| `--information-equivalence` | `OVS_INFORMATION_EQUIVALENCE` | 0.90 selected relation probability |
+| `--jev-model` | `OVS_JEV_MODEL` | `jev-1.13.0` |
+| `--jev-base-url` | `OVS_JEV_BASE_URL` | `https://api.typesafe.ai` |
+| `--jev-timeout` | `OVS_JEV_TIMEOUT_SECONDS` | 30 seconds per HTTP attempt |
+| `--jev-max-attempts` | `OVS_JEV_MAX_ATTEMPTS` | 2 attempts, at most 5 |
+
+The call budget counts logical generation/evaluation invocations. Bounded provider
+retries add physical requests: the generator uses `--max-attempts` /
+`OVS_MAX_ATTEMPTS` (default 3), while Jev uses its separate attempt limit. Provider
+preflight/model discovery is separate from that budget. Retry records and token
+usage, when supplied by the service, allow operational cost accounting; no fixed
+currency cost is inferred. Large original targets are not truncated to fit a
+request: they become pending work. Pair-budget exhaustion prevents further
+automatic merges and marks unique-unit counts provisional.
+
+Library callers can pass `information_analyzer=InformationAnalyzer(generator,
+evaluator, config)` to the existing `Summarizer.summarize(...)`. Optional
+`information_output_path`, `information_csv_path` and `information_input_path`
+control exports and protected dataset identity. With `save_output=False` and no
+explicit report path, inspect the immutable `last_information_report` in memory.
+The return type remains `Video`, and report state is reset for every invocation.
+
+The neutral `AnalysisSnapshot -> InformationReport` contract lives alongside the
+analyzer in `core/summarizers/`. Original source provenance and allowed current
+stage context are distinct: removed source content cannot be reintroduced solely
+through provenance. A future plugin that consumes another module's stage result
+is **not implemented**; there is no generic multi-hook framework or stage delta
+tracking in this change.
+
+Offline tests use synthetic Portuguese fixtures, mocked generators and evaluators,
+and real adapter serializers with fake HTTP transport. They check integration and
+invariants, not scientific fidelity, coverage or superiority. Run them with:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_information*.py" -v
+.\.venv\Scripts\python.exe -m unittest tests.test_typesafe_adapter -v
+```
+
 ## Choose transcription and topic models
 
 Raw videos can use a local or hosted provider for each stage:

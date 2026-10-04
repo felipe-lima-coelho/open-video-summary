@@ -124,6 +124,8 @@ class DomainResponseInterpreter:
         try:
             value = json.loads(text, object_pairs_hook=unique_keys)
         except (TypeError, ValueError):
+            if spec.kind in {"information_units", "information_qa"}:
+                raise InvalidResponseError("Information candidates require valid JSON.") from None
             # Existing local notebooks also accept Python literal dictionaries.
             try:
                 expression = ast.parse(text, mode="eval")
@@ -145,6 +147,11 @@ class DomainResponseInterpreter:
                 raise InvalidResponseError(
                     "The language model returned malformed structured text."
                 ) from None
+
+        if spec.kind in {"information_units", "information_qa"}:
+            from open_video_summary.adapters.information_schema import validate_information
+
+            return validate_information(value, spec)
 
         if (
             spec.kind == "topics"
@@ -299,6 +306,7 @@ class LLMAdapter(ABC):
             self._request_sent = False
             self._reported_model = None
             self._reported_effort = None
+            self._usage = (None, None)
             metadata = ServiceMetadata(
                 provider=self.config.provider,
                 requested_model=self.model,
@@ -320,6 +328,7 @@ class LLMAdapter(ABC):
                         if self._request_sent and self.config.provider == "ollama"
                         else None
                     ),
+                    input_tokens=self._usage[0], output_tokens=self._usage[1],
                 )
                 value = self.interpreter.interpret(text, request.output)
                 metadata = replace(
@@ -346,6 +355,7 @@ class LLMAdapter(ABC):
                             if self._request_sent and self.config.provider == "ollama"
                             else None
                         ),
+                        input_tokens=self._usage[0], output_tokens=self._usage[1],
                     )
                 )
                 if not error.retryable or attempt == self.max_attempts:
@@ -454,6 +464,7 @@ class OllamaAdapter(LLMAdapter):
         client = self._get_client()
         self._request_sent = True
         response = client.generate(**kwargs)
+        self._usage = (_value(response, "prompt_eval_count"), _value(response, "eval_count"))
         self._reported_model = _value(response, "model")
         return _value(response, "response"), self._reported_model, None
 
@@ -606,6 +617,10 @@ class OpenAIAdapter(LLMAdapter):
                 "required": ["answers"],
                 "additionalProperties": False,
             }
+        elif spec.kind in {"information_units", "information_qa"}:
+            from open_video_summary.adapters.information_schema import information_schema
+
+            schema = information_schema(spec)
         else:
             return None
         return {
@@ -644,6 +659,8 @@ class OpenAIAdapter(LLMAdapter):
         client = self._get_client()
         self._request_sent = True
         response = client.responses.create(**kwargs)
+        usage = _value(response, "usage")
+        self._usage = (_value(usage, "input_tokens"), _value(usage, "output_tokens"))
         self._reported_model = _value(response, "model")
         self._reported_effort = _value(_value(response, "reasoning"), "effort")
         if _value(response, "status") != "completed":

@@ -25,19 +25,25 @@ class ServiceMetadata:
     attempts: int = 1
     status: str = "completed"
     temperature_sent: float | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 @dataclass(frozen=True)
 class OutputSpec:
     """The domain's expected output, independent of vendor response formats."""
 
-    kind: Literal["text", "topics", "topic", "string_list", "answers", "pattern"] = (
+    kind: Literal[
+        "text", "topics", "topic", "string_list", "answers", "pattern",
+        "information_units", "information_qa",
+    ] = (
         "text"
     )
     topic_ids: tuple[str, ...] = ()
     max_items: int | None = None
     pattern: str | None = None
     answer_ids: tuple[str, ...] = ()
+    segment_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
