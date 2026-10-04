@@ -261,6 +261,7 @@ class InformationOccurrence:
     assertion_evidence: tuple[Evidence, ...]
     context_evidence: tuple[Evidence, ...]
     routes: tuple[str, ...]
+    alignment_state: str = "source_anchor_group"
 
 
 @dataclass(frozen=True)
@@ -297,6 +298,7 @@ class ScopeCount:
     id: str
     occurrences: int
     unique_units: int
+    occurrences_provisional: bool = False
 
 
 @dataclass(frozen=True)
@@ -308,6 +310,7 @@ class InformationCounts:
     by_segment: tuple[ScopeCount, ...]
     by_video: tuple[ScopeCount, ...]
     valid_zero: bool
+    occurrences_provisional: bool = False
 
 
 @dataclass(frozen=True)

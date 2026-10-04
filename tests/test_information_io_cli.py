@@ -1,6 +1,7 @@
 """Report persistence, opt-in configuration and actual CLI integration offline."""
 
 import contextlib
+import csv
 import io
 import json
 import os
@@ -66,11 +67,57 @@ class InformationIOTests(unittest.TestCase):
             "data/raw/absent.mp4", exported["snapshot"]["source"][0]["path"]
         )
         self.assertIn("O prazo é", csv_path.read_text(encoding="utf-8"))
+        self.assertFalse(exported["counts"]["occurrences_provisional"])
+        self.assertEqual(
+            "source_anchor_group", exported["occurrences"][0]["alignment_state"]
+        )
         self.assertFalse(any(self.root.glob("*.tmp")))
         before = path.read_bytes()
         with self.assertRaises(ConfigurationError):
             save_information_report(self.report, path)
         self.assertEqual(before, path.read_bytes())
+
+    def test_overlapping_occurrence_groups_export_provisional_state_and_cli_label(self):
+        text = "Backup is daily. I repeat: backup is daily."
+        raw = [
+            candidate(
+                "v0:s0",
+                text,
+                text="Backup is daily.",
+                quote=text[start:end],
+                offset=start,
+            )
+            for start, end in ((0, 26), (17, 43))
+        ]
+        report = InformationAnalyzer(
+            ScriptedGenerator({("v0:s0", "direct"): raw}),
+            SyntheticEvaluator(),
+            InformationAnalysisConfig(qa_enabled=False),
+        ).analyze(capture_snapshot(videos([text])))
+        path, csv_path = self.root / "pending.json", self.root / "pending.csv"
+        save_information_report(report, path, csv_path=csv_path)
+        exported = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual("partial", exported["status"])
+        self.assertEqual(1, exported["counts"]["unique_units"])
+        self.assertEqual(2, exported["counts"]["occurrences"])
+        self.assertTrue(exported["counts"]["occurrences_provisional"])
+        self.assertTrue(exported["counts"]["by_segment"][0]["occurrences_provisional"])
+        self.assertTrue(exported["counts"]["by_video"][0]["occurrences_provisional"])
+        self.assertEqual(
+            ["unresolved_overlap", "unresolved_overlap"],
+            [item["alignment_state"] for item in exported["occurrences"]],
+        )
+        rows = list(csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8"))))
+        self.assertEqual(2, len(rows))
+        self.assertTrue(all(row["status"] == "partial" for row in rows))
+        self.assertTrue(
+            all(row["alignment_state"] == "unresolved_overlap" for row in rows)
+        )
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            cli._print_information_report(report, path)
+        self.assertIn("1 identified units", output.getvalue())
+        self.assertIn("2 provisional occurrence evidence groups", output.getvalue())
+        self.assertIn("alignment pending", output.getvalue())
 
     def test_aliases_to_dataset_audit_video_and_handler_are_protected(self):
         path = self.root / "dataset.json"

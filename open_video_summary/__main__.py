@@ -116,7 +116,16 @@ def _print_information_report(report, path):
     if report is None:
         print("Information analysis: failed before a snapshot report could be built.")
         return
-    print(f"Information analysis: {report.status}; {report.counts.unique_units} identified units, {report.counts.occurrences} occurrences; {len(report.issues)} issues.")
+    occurrence_label = (
+        "provisional occurrence evidence groups (alignment pending)"
+        if report.counts.occurrences_provisional
+        else "identified occurrences"
+    )
+    print(
+        f"Information analysis: {report.status}; "
+        f"{report.counts.unique_units} identified units, "
+        f"{report.counts.occurrences} {occurrence_label}; {len(report.issues)} issues."
+    )
     if path:
         print(f"Information report: {portable_path(path)}")
 

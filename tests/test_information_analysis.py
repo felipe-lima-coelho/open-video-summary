@@ -403,6 +403,10 @@ class InformationProtocolTests(unittest.TestCase):
         self.assertEqual(4, report.counts.accepted_candidates)
         self.assertEqual(1, report.counts.unique_units)
         self.assertEqual(2, report.counts.occurrences)
+        self.assertFalse(report.counts.occurrences_provisional)
+        self.assertTrue(
+            all(not count.occurrences_provisional for count in report.counts.by_segment)
+        )
         self.assertEqual(
             [1, 1], [count.occurrences for count in report.counts.by_segment]
         )
@@ -425,6 +429,8 @@ class InformationProtocolTests(unittest.TestCase):
         )
         self.assertEqual(1, report.counts.unique_units)
         self.assertEqual(2, report.counts.occurrences)
+        self.assertEqual("completed", report.status)
+        self.assertFalse(report.counts.occurrences_provisional)
         self.assertEqual(
             [0, len(phrase) + 1],
             [item.assertion_evidence[0].start_char for item in report.occurrences],
@@ -442,7 +448,9 @@ class InformationProtocolTests(unittest.TestCase):
             videos([text]),
             ScriptedGenerator({("v0:s0", "direct"): [broad], ("v0:s0", "qa"): precise}),
         )
-        self.assertEqual(2, report.counts.occurrences)
+        self.assertEqual(3, report.counts.occurrences)
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertTrue(report.counts.occurrences_provisional)
         self.assertEqual("partial", report.status)
         self.assertIn(
             "occurrence_alignment_uncertain", [issue.kind for issue in report.issues]
@@ -466,9 +474,12 @@ class InformationProtocolTests(unittest.TestCase):
         )
         self.assertEqual(3, report.counts.accepted_candidates)
         self.assertEqual(1, report.counts.unique_units)
-        self.assertEqual(2, report.counts.occurrences)
-        self.assertEqual(2, report.counts.by_segment[0].occurrences)
-        self.assertEqual(2, report.counts.by_video[0].occurrences)
+        self.assertEqual(3, report.counts.occurrences)
+        self.assertEqual(3, report.counts.by_segment[0].occurrences)
+        self.assertEqual(3, report.counts.by_video[0].occurrences)
+        self.assertTrue(report.counts.occurrences_provisional)
+        self.assertTrue(report.counts.by_segment[0].occurrences_provisional)
+        self.assertTrue(report.counts.by_video[0].occurrences_provisional)
         self.assertEqual("partial", report.status)
         self.assertIn(
             "occurrence_alignment_uncertain", [issue.kind for issue in report.issues]
@@ -479,9 +490,10 @@ class InformationProtocolTests(unittest.TestCase):
             for identifier in occurrence.candidate_ids
         }
         self.assertNotEqual(containing["c0"], containing["c1"])
-        self.assertEqual(containing["c0"], containing["c2"])
+        self.assertNotEqual(containing["c0"], containing["c2"])
+        self.assertNotEqual(containing["c1"], containing["c2"])
 
-    def test_occurrence_members_remain_pairwise_compatible_across_span_chains(self):
+    def test_occurrence_members_require_identical_anchors_across_span_chains(self):
         text = "Backup is daily. To make the schedule completely clear, the backup is performed daily."
         for spans in (
             ((0, 16), (0, 37), (17, 86)),
@@ -499,20 +511,22 @@ class InformationProtocolTests(unittest.TestCase):
                     )
                     for start, end in spans
                 ]
+                raw.append(copy.deepcopy(raw[0]))
                 report = analyze(
                     videos([text]),
                     ScriptedGenerator({("v0:s0", "direct"): raw}),
                     qa_enabled=False,
                 )
-                self.assertEqual(2, report.counts.occurrences)
+                self.assertEqual(3, report.counts.occurrences)
                 self.assertEqual(
-                    3,
+                    4,
                     sum(
                         len(occurrence.candidate_ids)
                         for occurrence in report.occurrences
                     ),
                 )
                 self.assertEqual("partial", report.status)
+                self.assertTrue(report.counts.occurrences_provisional)
                 by_id = {
                     record.id: record.candidate.evidence[0]
                     for record in report.candidates
@@ -521,10 +535,124 @@ class InformationProtocolTests(unittest.TestCase):
                     for index, left_id in enumerate(occurrence.candidate_ids):
                         for right_id in occurrence.candidate_ids[index + 1 :]:
                             left, right = by_id[left_id], by_id[right_id]
-                            self.assertLess(
-                                max(left.start_char, right.start_char),
-                                min(left.end_char, right.end_char),
-                            )
+                            self.assertEqual(left, right)
+
+    def test_overlapping_repeat_citations_are_not_conclusive_occurrence_identity(self):
+        text = "Backup is daily. I repeat: backup is daily."
+        raw = [
+            candidate(
+                "v0:s0",
+                text,
+                text="Backup is daily.",
+                quote=text[start:end],
+                offset=start,
+            )
+            for start, end in ((0, 26), (17, 43))
+        ]
+        report = analyze(
+            videos([text]),
+            ScriptedGenerator({("v0:s0", "direct"): raw}),
+            qa_enabled=False,
+        )
+        self.assertEqual(2, report.counts.accepted_candidates)
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual(2, report.counts.occurrences)
+        self.assertEqual("partial", report.status)
+        self.assertTrue(report.counts.occurrences_provisional)
+        self.assertTrue(report.counts.by_segment[0].occurrences_provisional)
+        self.assertTrue(report.counts.by_video[0].occurrences_provisional)
+        self.assertEqual(
+            ["unresolved_overlap", "unresolved_overlap"],
+            [item.alignment_state for item in report.occurrences],
+        )
+        self.assertIn(
+            "occurrence_alignment_uncertain", [issue.kind for issue in report.issues]
+        )
+
+    def test_contained_and_partially_overlapping_assertion_anchors_remain_provisional(
+        self,
+    ):
+        text = "Backup is daily. This is the schedule."
+        for spans in (((0, 16), (0, len(text))), ((0, 20), (10, len(text)))):
+            with self.subTest(spans=spans):
+                raw = [
+                    candidate(
+                        "v0:s0",
+                        text,
+                        text="Backup is daily.",
+                        quote=text[start:end],
+                        offset=start,
+                    )
+                    for start, end in spans
+                ]
+                report = analyze(
+                    videos([text]),
+                    ScriptedGenerator({("v0:s0", "direct"): raw}),
+                    qa_enabled=False,
+                )
+                self.assertEqual(1, report.counts.unique_units)
+                self.assertEqual(2, report.counts.occurrences)
+                self.assertEqual("partial", report.status)
+                self.assertTrue(report.counts.occurrences_provisional)
+                self.assertTrue(
+                    all(
+                        item.alignment_state == "unresolved_overlap"
+                        for item in report.occurrences
+                    )
+                )
+
+    def test_exact_assertion_anchors_deduplicate_routes_despite_different_contexts(
+        self,
+    ):
+        text = "Backup is daily. More context."
+        other = "The policy was confirmed."
+        assertion = "Backup is daily."
+        direct = candidate(
+            "v0:s0",
+            text,
+            quote=assertion,
+            contexts=(
+                {
+                    "segment_id": "v0:s0",
+                    "quote": "More context.",
+                    "start_char": 17,
+                    "end_char": len(text),
+                    "role": "context",
+                },
+            ),
+        )
+        qa = candidate(
+            "v0:s0",
+            text,
+            quote=assertion,
+            qa=True,
+            contexts=(
+                {
+                    "segment_id": "v0:s1",
+                    "quote": other,
+                    "start_char": 0,
+                    "end_char": len(other),
+                    "role": "context",
+                },
+            ),
+        )
+        # Reordered evidence and a duplicate assertion do not change its set.
+        qa["evidence"].append(copy.deepcopy(qa["evidence"][0]))
+        qa["evidence"].reverse()
+        report = analyze(
+            videos([text, other]),
+            ScriptedGenerator({("v0:s0", "direct"): [direct], ("v0:s0", "qa"): [qa]}),
+        )
+        self.assertEqual("completed", report.status)
+        self.assertEqual(2, report.counts.accepted_candidates)
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual(1, report.counts.occurrences)
+        self.assertFalse(report.counts.occurrences_provisional)
+        self.assertEqual(1, len(report.occurrences[0].assertion_evidence))
+        self.assertEqual(2, len(report.occurrences[0].context_evidence))
+        self.assertEqual(("direct", "qa"), report.occurrences[0].routes)
+        self.assertEqual("source_anchor_group", report.occurrences[0].alignment_state)
+        self.assertEqual([], list(report.issues))
 
     def test_identical_text_in_different_context_still_receives_pair_evaluation(self):
         source = videos(["O limite do Alfa é fixo.", "O limite do Beta é fixo."])

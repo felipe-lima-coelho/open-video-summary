@@ -663,75 +663,73 @@ class _AnalysisRun:
 
     def _occurrences(self, unit_id, group, first_index):
         buckets = []
-        # Narrow evidence is aligned first. Retain each candidate's assertion
-        # anchors separately: accumulated export evidence cannot expand an
-        # occurrence's identity and bridge disjoint repetitions transitively.
-        ordered = sorted(
-            group,
-            key=lambda record: (
-                sum(
-                    item.end_char - item.start_char
-                    for item in record.candidate.evidence
-                    if item.role == "assertion"
-                ),
-                self.segments[record.target_segment_id].video_index,
-                self.segments[record.target_segment_id].segment_index,
-                min(
-                    item.start_char
-                    for item in record.candidate.evidence
-                    if item.role == "assertion"
-                ),
-            ),
-        )
-        for record in ordered:
+        by_signature = {}
+        # Literal intersection, including containment, cannot establish that two
+        # citations refer to the same utterance. Only identical assertion anchor
+        # sets deduplicate occurrences; context citations never determine identity.
+        for record in group:
             assertions = tuple(
                 item for item in record.candidate.evidence if item.role == "assertion"
             )
             contexts = tuple(
                 item for item in record.candidate.evidence if item.role == "context"
             )
-
-            def overlaps(anchor):
-                return any(
-                    max(a.start_char, b.start_char) < min(a.end_char, b.end_char)
-                    for a in assertions
-                    for b in anchor
+            signature = tuple(
+                sorted(
+                    {
+                        (
+                            item.segment_id,
+                            item.source_identity,
+                            item.start_char,
+                            item.end_char,
+                            item.quote,
+                        )
+                        for item in assertions
+                    }
                 )
-
-            overlapping = [
-                bucket
-                for bucket in buckets
-                if bucket["segment_id"] == record.target_segment_id
-                and any(overlaps(anchor) for anchor in bucket["anchors"])
-            ]
-            matches = [
-                bucket
-                for bucket in overlapping
-                if all(overlaps(anchor) for anchor in bucket["anchors"])
-            ]
-            if len(overlapping) > 1 or any(
-                bucket not in matches for bucket in overlapping
-            ):
-                self.issue(
-                    "occurrence_alignment_uncertain",
-                    "Evidence overlaps incompatible occurrence anchors; separate repetitions were preserved and their alignment remains pending.",
-                    (record.target_segment_id,),
-                    (record.id,),
-                )
-            if matches:
-                bucket = matches[0]
-            else:
+            )
+            key = (record.target_segment_id, signature)
+            bucket = by_signature.get(key)
+            if bucket is None:
+                overlapping = [
+                    existing
+                    for existing in buckets
+                    if existing["segment_id"] == record.target_segment_id
+                    and any(
+                        a.segment_id == b.segment_id
+                        and a.source_identity == b.source_identity
+                        and max(a.start_char, b.start_char)
+                        < min(a.end_char, b.end_char)
+                        for a in assertions
+                        for b in existing["assertions"]
+                    )
+                ]
                 bucket = {
                     "segment_id": record.target_segment_id,
-                    "anchors": [],
                     "candidates": [],
                     "assertions": [],
                     "contexts": [],
                     "routes": [],
+                    "alignment_state": "source_anchor_group",
                 }
+                if overlapping:
+                    bucket["alignment_state"] = "unresolved_overlap"
+                    for existing in overlapping:
+                        existing["alignment_state"] = "unresolved_overlap"
+                    self.issue(
+                        "occurrence_alignment_uncertain",
+                        "Nonidentical assertion anchors overlap. Separate evidence groups were retained; their occurrence total is provisional and may overcount utterances.",
+                        (record.target_segment_id,),
+                        (record.id,)
+                        + tuple(
+                            identifier
+                            for existing in overlapping
+                            for identifier in existing["candidates"]
+                        ),
+                    )
                 buckets.append(bucket)
+                by_signature[key] = bucket
             bucket["candidates"].append(record.id)
-            bucket["anchors"].append(assertions)
             for destination, additions in (
                 ("assertions", assertions),
                 ("contexts", contexts),
@@ -750,6 +748,7 @@ class _AnalysisRun:
                 tuple(bucket["assertions"]),
                 tuple(bucket["contexts"]),
                 tuple(bucket["routes"]),
+                bucket["alignment_state"],
             )
             for index, bucket in enumerate(buckets)
         )
@@ -832,7 +831,7 @@ class _AnalysisRun:
             "timestamp_resolution": "source_segment",
             "completeness_proven": False,
             "thresholds_calibrated": False,
-            "count_semantics": "Identified accepted propositions under this protocol; partial counts are provisional.",
+            "count_semantics": "Unique units count accepted semantic groups. Occurrences count exact assertion-anchor groups; overlapping nonidentical anchors remain separate with occurrences_provisional=true and may overcount utterances. Other pending work can also make partial counts provisional.",
         }
         return InformationReport(
             1,
@@ -871,7 +870,10 @@ class _AnalysisRun:
     def _counts(self, units, occurrences, status):
         def count(identifier, selected):
             return ScopeCount(
-                identifier, len(selected), len({item.unit_id for item in selected})
+                identifier,
+                len(selected),
+                len({item.unit_id for item in selected}),
+                any(item.alignment_state == "unresolved_overlap" for item in selected),
             )
 
         by_segment = tuple(
@@ -900,6 +902,7 @@ class _AnalysisRun:
             by_segment,
             by_video,
             status == "completed" and not units,
+            any(item.alignment_state == "unresolved_overlap" for item in occurrences),
         )
 
 

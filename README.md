@@ -315,19 +315,28 @@ Pair comparisons preserve complement, specificity, contradiction and correction
 relations. Only sufficiently strong equivalence decisions merge meanings, and
 every member of a merged group must be pairwise compatible. Equal text in different
 contexts still needs evaluation. Exact validated duplicates with identical
-evidence can be deduplicated in code. Repetitions retain distinct positional source
-identities and assertion spans; overlapping evidence from two routes does not add
-another occurrence. Ambiguous broad quotes cannot join two known repetitions and
-are marked for review.
+evidence can be deduplicated in code. Occurrence deduplication requires the same
+set of literal assertion anchors (source identity, segment and character offsets);
+context citations do not determine identity. Repetitions retain distinct
+positional source identities and assertion spans. Different overlapping anchors,
+including contained quotes, remain separate evidence groups with
+`alignment_state="unresolved_overlap"` and an alignment issue. Their total is
+provisional and may overcount utterances; `counts.occurrences_provisional=true`
+and the corresponding segment/video flags expose this uncertainty. Overlap alone
+never merges occurrences. These groups can still belong to one semantic unit, so
+the distinct unit count remains separate from occurrence alignment.
 
 JSON is the canonical report. It includes the frozen source snapshot, source and
 current-input fingerprints, source/current order, selection stage order,
 `stage_id="before_introduction"`, candidate validation and reasons, contextual
-units, assertion occurrences, context evidence, pair relations, coverage records,
+units, assertion evidence groups and their alignment state, context evidence,
+pair relations, coverage records,
 counts by segment/video/whole input and unresolved issues. Calls record requested
 and returned models, input/output hashes, usage when available, latency and retry
 attempts. Prompt hashes, protocol version and settings are retained without keys.
-The optional CSV is an occurrence table; the JSON contains the full evidence.
+The optional CSV is an occurrence evidence table with alignment state; the JSON
+contains the full evidence. The CLI labels unresolved totals as provisional
+occurrence evidence groups.
 
 `completed` means the configured operations finished without recorded pending
 issues. It is **not proof of complete extraction or calibrated semantic accuracy**.
