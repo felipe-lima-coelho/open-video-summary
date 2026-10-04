@@ -297,8 +297,14 @@ class ContentBasedRedundancy(SelectionCriteria):
         *,
         audit_report=None,
     ) -> list[set[VideoSegment]]:
-        clusters: list[set[VideoSegment]] = []
-        locations: dict[VideoSegment, int] = {}
+        """Group eligible selected pairs by connectivity in first-encounter order."""
+        # Build connected components from the selected redundancy edges. A
+        # segment may be reached as either endpoint, and a later edge can join
+        # two components that were discovered earlier.
+        nodes: list[VideoSegment] = []
+        node_indices: dict[VideoSegment, int] = {}
+        parents: list[int] = []
+        edge_decisions: list[tuple[dict, int]] = []
         pair_lookup = {}
         if audit_report is not None:
             pair_lookup = {
@@ -306,11 +312,35 @@ class ContentBasedRedundancy(SelectionCriteria):
                 for pair in audit_report["pair_decisions"]
             }
 
+        def add_node(segment: VideoSegment) -> int:
+            if segment not in node_indices:
+                node_indices[segment] = len(nodes)
+                nodes.append(segment)
+                parents.append(len(parents))
+            return node_indices[segment]
+
+        def find(index: int) -> int:
+            while parents[index] != index:
+                parents[index] = parents[parents[index]]
+                index = parents[index]
+            return index
+
+        def union(left: int, right: int) -> bool:
+            left_root = find(left)
+            right_root = find(right)
+            if left_root == right_root:
+                return False
+            # Keep the earliest encountered node as the component root. This
+            # makes component order follow the first edge that discovered it.
+            if left_root > right_root:
+                left_root, right_root = right_root, left_root
+            parents[right_root] = left_root
+            return True
+
         for item_a, item_b in redundancies:
             segment_a = videos[item_a[0]].segments[item_a[1]]
             segment_b = videos[item_b[0]].segments[item_b[1]]
             decision = None
-            pair = None
             if audit_report is not None:
                 ids = (handler.segment_id(segment_a), handler.segment_id(segment_b))
                 pair = pair_lookup[ids]
@@ -331,21 +361,36 @@ class ContentBasedRedundancy(SelectionCriteria):
             ):
                 continue
 
-            if segment_a in locations:
-                clusters[locations[segment_a]].add(segment_b)
-                locations[segment_b] = locations[segment_a]
-                cluster_index, action = locations[segment_a], "add_to_row_segment_cluster"
-            elif segment_b in locations:
-                clusters[locations[segment_b]].add(segment_a)
-                locations[segment_a] = locations[segment_b]
-                cluster_index, action = locations[segment_b], "add_to_column_segment_cluster"
+            a_was_known = segment_a in node_indices
+            b_was_known = segment_b in node_indices
+            index_a = add_node(segment_a)
+            index_b = add_node(segment_b)
+            merged = union(index_a, index_b)
+            if not a_was_known and not b_was_known:
+                action = "create_cluster"
+            elif a_was_known and not b_was_known:
+                action = "add_to_row_segment_cluster"
+            elif b_was_known and not a_was_known:
+                action = "add_to_column_segment_cluster"
             else:
-                clusters.append({segment_a, segment_b})
-                locations[segment_a] = len(clusters) - 1
-                cluster_index, action = len(clusters) - 1, "create_cluster"
+                action = "merge_clusters" if merged else "add_within_cluster"
             if decision is not None:
                 decision["action"] = action
-                decision["cluster_id"] = f"{self.name}:cluster{cluster_index}"
+                edge_decisions.append((decision, index_a))
+
+        component_members: dict[int, set[VideoSegment]] = {}
+        for index, segment in enumerate(nodes):
+            component_members.setdefault(find(index), set()).add(segment)
+        clusters = list(component_members.values())
+        root_cluster_ids = {
+            root: f"{self.name}:cluster{cluster_index}"
+            for cluster_index, root in enumerate(component_members)
+        }
+
+        # Actions describe edge processing at the time it occurred; IDs always
+        # refer to the final components, including any later bridge merges.
+        for decision, node_index in edge_decisions:
+            decision["cluster_id"] = root_cluster_ids[find(node_index)]
 
         if audit_report is not None:
             audit_report["clusters"] = [

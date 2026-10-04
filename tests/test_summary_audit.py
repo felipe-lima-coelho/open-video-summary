@@ -114,14 +114,18 @@ class CorrelationAuditTests(unittest.TestCase):
         self.assertIn("lower_triangle_positive_mask", lower["exclusion_reasons"])
         self.assertNotIn("Private transcript", json.dumps(handler.audit))
 
-    def test_maximum_then_eligibility_preserves_exclusions_and_overlap_behavior(self):
+    def test_maximum_then_eligibility_preserves_exclusions_and_connected_groups(self):
         handler = self.make_handler()
         criterion = self.run_criterion(handler)
-        self.assertEqual(2, len(handler.pick))
-        repeated = handler.source[1].segments[0]
-        self.assertTrue(all(repeated in cluster for cluster in handler.pick))
-        self.assertEqual(2, len(criterion.last_audit["segment_cluster_memberships"]["v1:s0"]))
-        self.assertEqual(["create_cluster", "add_to_row_segment_cluster", "create_cluster"], [
+        self.assertEqual([{
+            handler.source[0].segments[0], handler.source[1].segments[0],
+            handler.source[2].segments[0], handler.source[2].segments[1],
+        }], handler.pick)
+        self.assertEqual(
+            ["ContentBasedRedundancy:cluster0"],
+            criterion.last_audit["segment_cluster_memberships"]["v1:s0"],
+        )
+        self.assertEqual(["create_cluster", "add_to_row_segment_cluster", "add_to_row_segment_cluster"], [
             item["action"] for item in criterion.last_audit["cluster_decisions"]
         ])
 
@@ -147,6 +151,46 @@ class CorrelationAuditTests(unittest.TestCase):
         self.assertFalse(equal["retained_after_filters"])
         self.assertIn("not_strictly_above_threshold", equal["exclusion_reasons"])
         self.assertIsNone(equal["video_pair_maximum"])
+
+    def test_bridge_final_ids_match_handler_groups_and_quality_source_ids(self):
+        handler = self.make_handler()
+        bow = fixture_bow()
+        bow.iloc[:] = np.array([
+            [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+            [0.9, 0.0, 0.4], [0.0, 0.0, 0.0],
+            [0.0, 0.8, 0.7], [0.0, 0.0, 0.0],
+        ])
+        criterion = ContentBasedRedundancy(reference_time_sec=30, base_threshold=0.1)
+        with patch.object(criterion, "get_bow_df", return_value=bow):
+            criterion.evaluate(handler)
+        report = criterion.last_audit
+        cluster_id = "ContentBasedRedundancy:cluster0"
+        self.assertEqual([{
+            handler.source[0].segments[0], handler.source[0].segments[1],
+            handler.source[1].segments[0], handler.source[2].segments[0],
+        }], handler.pick)
+        self.assertEqual(handler.pick, handler.agent_logs[criterion.name].pick)
+        self.assertEqual(["create_cluster", "create_cluster", "merge_clusters"], [
+            item["action"] for item in report["cluster_decisions"]
+        ])
+        self.assertEqual([cluster_id] * 3, [item["cluster_id"] for item in report["cluster_decisions"]])
+        self.assertEqual([cluster_id], [item["cluster_id"] for item in report["clusters"]])
+        for pair in report["pair_decisions"]:
+            if pair["is_video_pair_maximum"]:
+                self.assertEqual([cluster_id], pair["cluster_ids"])
+
+        quality = QualityPick(criterion.name, bovw_dict_size=3)
+        with (
+            patch.object(quality, "extract_segments_visual_features", side_effect=lambda segments: {segment: np.ones((3, 128)) for segment in segments}),
+            patch.object(quality, "get_bovw_dataframe", side_effect=lambda items: DataFrame({0: list(range(1, len(items) + 1))}, index=list(items))),
+        ):
+            quality.evaluate(handler)
+        self.assertEqual([cluster_id], [
+            item["source_cluster_id"] for item in quality.last_audit["clusters"]
+        ])
+        self.assertEqual(set(report["clusters"][0]["segment_ids"]), {
+            item["segment_id"] for item in quality.last_audit["clusters"][0]["candidates"]
+        })
 
     def test_all_exact_video_pair_maximum_ties_are_recorded(self):
         handler = self.make_handler()

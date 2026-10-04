@@ -181,7 +181,7 @@ first-request order (`external:s0`, etc.).
 | `sources`, `segments` | Source identity and input-order manifest; candidate timestamps stay original in either scope |
 | `criteria.ContentBasedRedundancy.raw_matrix` | Complete pandas correlation result before any selection mask; rows/columns follow `matrix_segment_ids` |
 | `pair_decisions` | Every ordered matrix cell, with its value/origin, filter reasons, eligibility, video-pair maximum, maximum tie flag, and actual cluster memberships |
-| `cluster_decisions`, `clusters`, `segment_cluster_memberships` | Existing grouping steps and memberships, including overlaps |
+| `cluster_decisions`, `clusters`, `segment_cluster_memberships` | Edge-processing steps and final connected-component memberships; each segment belongs to at most one group |
 | `criteria.QualityPick.clusters` | Actual candidate order, descriptor counts and extraction scope/bounds, visual-word weights, summed score, full rank order, exact ties, and chosen flags |
 | `outcome` | Final output order and per-segment state, recorded actions, and exclusion reasons |
 
@@ -193,6 +193,14 @@ distinction, structural mirrors, and unavailable values (`null`). It records the
 existing masks, then the maximum among retained pairs for each ordered video pair,
 then prior discard/output eligibility and the resulting grouping. These are the
 actual stages used for selection; logging does not recompute TF-IDF or similarities.
+
+Content redundancy groups are connected components of the eligible selected
+pairs. A segment can connect indirectly: pairs A-B, A-C, and B-D form one group
+with A, B, C, and D. A later pair joining two existing groups merges them. Groups
+follow the first encountered pair in each final component, and their members
+remain sets. In `cluster_decisions`, `action` describes the step when the pair
+was processed; `cluster_id` refers to the final group after all merges. Earlier
+`create_cluster` steps can therefore reference the same final group.
 
 The visual score is the existing BoVW sum:
 `sum(term_frequency * log10(dictionary_size / candidate_document_frequency))`.
