@@ -31,7 +31,7 @@ videos are in the tracked `data/raw/bebe_real.zip` file (35 MB).
 .\.venv\Scripts\python.exe -m open_video_summary summarize
 ```
 
-This runs the original HSMVideoSumm on the three videos and 13 pre-segmented
+This runs HSMVideoSumm on the three videos and 13 pre-segmented
 clips in `data/processed/bebe_real.json`. The transcripts and topics are already
 in that versioned dataset, so the command does not need Ollama, OpenAI, Whisper,
 ElevenLabs, or an API key. HSMVideoSumm, video processing, and rendering run
@@ -42,6 +42,7 @@ The command writes:
 - `outputs/bebe_real_summary.mp4`: the summary video with audio;
 - `outputs/bebe_real_summary.json`: selected clips and timestamps;
 - `outputs/bebe_real_summary_handler.json`: selection decisions;
+- `outputs/bebe_real_summary_audit.json`: numerical scores, all text similarities, and exclusion reasons;
 - `outputs/bebe_real_summary_visual_profile.json`: visual stage timings and counters;
 - `app.log`: execution log.
 
@@ -62,11 +63,11 @@ value overrides the process environment and `.env`; otherwise, `OVS_THREADS`
 from the process environment takes priority over `.env`. Blank values are treated
 as absent, and the final default is two threads.
 
-For visual extraction, the runner starts at most `min(threads, unique videos)`
-Windows-compatible processes. Each process decodes one full video and runs SIFT
+For visual extraction, the runner starts at most `min(threads, unique requests)`
+Windows-compatible processes. Each process decodes one source interval or full video and runs SIFT
 and keyframe matching with one OpenCV/BLAS/OpenMP thread. A budget of one uses
-the original serial path. With three source videos, budgets of four and eight
-both allow at most three extraction workers. Each evaluation creates and closes
+the serial path. A request is a distinct source interval in `segment` scope or a
+distinct source video in `video` scope. Each evaluation creates and closes
 its own pool; startup and numerical-library imports can outweigh parallel work
 on small inputs.
 
@@ -79,15 +80,18 @@ The CLI sets the usual OpenMP/BLAS environment limits itself. The already-pinned
 `threadpoolctl` dependency also limits native pools inside workers when the
 calling Python program imported them before Windows spawned the child.
 
-`QualityPick` keeps full-video SIFT descriptors in memory for reuse by segments
-from the same source during one evaluation. The cache holds at most 256 MiB of
+`QualityPick` keeps SIFT descriptors in memory for reuse during one evaluation.
+The cache holds at most 256 MiB of
 descriptor arrays and is released after the evaluation, including on failure.
-It keys entries by canonical file path, file metadata, and extraction settings;
+It keys entries by canonical file path, file metadata, scope, and extraction settings,
+including start/end times in `segment` scope. Repeated identical intervals share
+descriptors; different intervals from the same source have separate entries. In
+`video` scope, segments from the same source share full-video descriptors;
 larger entries are recomputed, and least recently used entries are evicted when
 needed. Sampled frames and active candidate-group/KMeans arrays require additional
 memory beyond this cache capacity. Parallel workers each hold their own sampled
-frames and SIFT working memory. Prefetch holds at most `min(workers + 1, unique videos)`
-pending tasks, including one extra task so a worker can continue when a later video
+frames and SIFT working memory. Prefetch holds at most `min(workers + 1, unique requests)`
+pending tasks, including one extra task so a worker can continue when a later request
 finishes before the first requested result. Completed descriptors wait in temporary
 numeric `.npy` files until their original request order. These files contain no
 pickled objects and are deleted on consumption or pool cleanup, including on
@@ -100,10 +104,39 @@ Python API defaults to serial extraction. On Windows, call a parallel evaluation
 inside the usual `if __name__ == "__main__":` guard in an importable Python script.
 Setting `max_descriptor_cache_bytes=0` disables both reuse and speculative extraction.
 
-Extraction still uses the full source video at its original resolution, one
-sampled frame per second, and the same first/last-frame exclusion. Each candidate
-group still fits its own 300-word KMeans dictionary with the same descriptor
-order and multiplicities. SIFT reuses one detector per extraction. Descriptor
+The default visual scope is now `segment`. It extracts frames from each
+candidate's source path in the interval `[start, end)`. Bounds use the source's
+floating-point FPS, including fractional rates. Frame seeks are checked; a
+backend that cannot report the requested position uses a fresh sequential
+reader. Resolution stays native. The nominal one-frame-per-second sampling
+keeps the existing global stride: source frame indices divisible by
+`int(native_fps)`. At fractional rates this is an approximate one FPS schedule.
+SIFT still excludes the first and last sampled frames (`frames[1:-1]`) within
+the extracted interval. This changes descriptor inputs and can change summary
+selection.
+
+Set `OVS_VISUAL_SCOPE=video` in the root `.env` for the legacy full-source scope.
+`summarize --visual-scope segment|video` overrides the process environment, then
+root `.env`, then the default `segment`. A blank value is absent; a blank process
+value masks the file value and uses the default. `video` keeps the previous full
+video sampling, integer-FPS boundary behavior, and per-source descriptor reuse.
+Introduction and subjectivity retain their existing frame retrieval in both modes.
+Python callers select the scope with `QualityPick(visual_scope="segment", ...)`
+or `QualityPick(visual_scope="video", ...)`.
+
+For example, save two separate local validation runs on the same preprocessed data:
+
+```powershell
+.\.venv\Scripts\python.exe -m open_video_summary summarize `
+  --dataset data/processed/catedral_notre_dame.json --visual-scope segment `
+  --output outputs/cathedral_segment/summary.mp4 --no-render
+.\.venv\Scripts\python.exe -m open_video_summary summarize `
+  --dataset data/processed/catedral_notre_dame.json --visual-scope video `
+  --output outputs/cathedral_video/summary.mp4 --no-render
+```
+
+Each candidate group still fits its own 300-word KMeans dictionary with the same
+descriptor order and multiplicities. SIFT reuses one detector per extraction. Descriptor
 matching keeps the same dot products, thresholds, and NumPy sort behavior for
 ties and NaNs; repeated reverse comparisons reuse their exact previous result.
 
@@ -132,6 +165,62 @@ comparisons must hold the candidate order and random state constant and record
 thread settings. Parallel extraction consumes the same arrays in the original
 candidate order and leaves random seeds, dictionary fitting, and ranking in the
 parent unchanged. It does not make the existing algorithm deterministic.
+
+### Selection audit
+
+Every saved summary also gets `<summary_stem>_audit.json`, including with
+`--no-render`. This separate audit uses `schema_version: 1` and contains no
+transcripts, pixels, prompts, or credentials. Source paths inside the repository
+are root-relative POSIX paths. Segment IDs such as `v0:s2` refer to input video
+and segment positions, with source path, original order, start/end, and topics in
+the manifest. IDs for direct criteria calls without source videos use the actual
+first-request order (`external:s0`, etc.).
+
+| Field | Meaning |
+| --- | --- |
+| `sources`, `segments` | Source identity and input-order manifest; candidate timestamps stay original in either scope |
+| `criteria.ContentBasedRedundancy.raw_matrix` | Complete pandas correlation result before any selection mask; rows/columns follow `matrix_segment_ids` |
+| `pair_decisions` | Every ordered matrix cell, with its value/origin, filter reasons, eligibility, video-pair maximum, maximum tie flag, and actual cluster memberships |
+| `cluster_decisions`, `clusters`, `segment_cluster_memberships` | Existing grouping steps and memberships, including overlaps |
+| `criteria.QualityPick.clusters` | Actual candidate order, descriptor counts and extraction scope/bounds, visual-word weights, summed score, full rank order, exact ties, and chosen flags |
+| `outcome` | Final output order and per-segment state, recorded actions, and exclusion reasons |
+
+Text coverage includes all computed off-diagonal similarities, even those below
+the strict `>` threshold or within one video. Pandas calculates each unordered
+off-diagonal pair once and mirrors it. Its diagonal is forced to 1; it is labelled
+`pandas_diagonal` and is not a measured self similarity. The audit preserves that
+distinction, structural mirrors, and unavailable values (`null`). It records the
+existing masks, then the maximum among retained pairs for each ordered video pair,
+then prior discard/output eligibility and the resulting grouping. These are the
+actual stages used for selection; logging does not recompute TF-IDF or similarities.
+
+The visual score is the existing BoVW sum:
+`sum(term_frequency * log10(dictionary_size / candidate_document_frequency))`.
+It is a ranking score within its fitted candidate group, not a confidence or a
+calibrated image-quality probability. Exact ties use pandas `nlargest`'s existing
+first-candidate rule; both the order and all tied IDs are recorded. Missing word
+weights are `null` and are skipped by the existing sum. In `segment` scope, an
+interval without SIFT descriptors has zero word terms and score 0 when the group
+can still fit the unchanged dictionary. Fewer than 300 total descriptors fails
+explicitly and saves a partial audit with the failure reason; the vocabulary is
+never reduced automatically. Empty, reversed, negative, and nonfinite interval
+bounds fail explicitly. An interval beyond the source or without a sampled frame
+has no descriptors. The legacy `video` scope retains its empty-SIFT error behavior.
+
+Unchosen candidates are recorded in this audit without adding discard actions to
+the existing handler. `recorded_actions` reflects the existing handler logs;
+candidate rank decisions provide the additional visual exclusion evidence.
+KMeans and set iteration remain unchanged, so independent runs can vary even in
+the same scope. Mode comparisons need the same candidate order, random state,
+data, and thread settings to attribute a difference to scope alone.
+
+Library calls to `Summarizer.summarize(...)` save the audit by default; set
+`audit_output_path` to choose its path. With `save_output=False`, inspect
+`summarizer.last_audit` and `summarizer.last_handler` in memory. Set
+`collect_audit=False` to disable capture. Direct criterion calls expose their
+report through `criterion.last_audit` and `handler.audit`. Old handler JSON files
+remain readable. Audit capture adds no model run and does not change selection or
+consume random state.
 
 ## Choose transcription and topic models
 
@@ -224,6 +313,7 @@ The supported settings and defaults are:
 | `OVS_STT_TIMEOUT_SECONDS` | `120` | ElevenLabs HTTP and FFmpeg audio-extraction timeout; it does not interrupt synchronous local Whisper inference |
 | `OVS_MAX_ATTEMPTS` | `3` | Maximum total attempts for LLM generation and transient hosted STT failures |
 | `OVS_THREADS` | `2` | CPU thread budget used by the CLI; an explicit global `--threads` value takes priority |
+| `OVS_VISUAL_SCOPE` | `segment` | Visual extraction from each source interval or legacy full source video (`video`); summarize `--visual-scope` takes priority |
 
 For example, use OpenAI with a compatible endpoint by setting
 `OVS_LLM_BASE_URL=https://gateway.example/v1`. That endpoint must implement the

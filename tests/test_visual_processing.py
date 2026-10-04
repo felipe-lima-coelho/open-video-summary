@@ -187,6 +187,9 @@ class SiftAndVideoTests(unittest.TestCase):
 
 
 class QualityCacheTests(unittest.TestCase):
+    def legacy_quality(self, *args, **kwargs):
+        return QualityPick(*args, visual_scope="video", **kwargs)
+
     def setUp(self):
         output = PROJECT_DIR / "outputs"
         output.mkdir(exist_ok=True)
@@ -240,7 +243,7 @@ class QualityCacheTests(unittest.TestCase):
         second = self.segment(0, 1, relative=True)
         third = self.segment(1, 2)
         handler = self.handler([[first, third], [second, third]])
-        criterion = QualityPick(source_criteria="fixture")
+        criterion = self.legacy_quality(source_criteria="fixture")
         frames, extract, bovw = self.run_mocked(criterion, handler)
         self.assertEqual(2, frames.call_count)
         self.assertEqual(2, extract.call_count)
@@ -257,7 +260,7 @@ class QualityCacheTests(unittest.TestCase):
             self.assertEqual({"grayscale": True}, call.kwargs)
 
     def test_cache_is_fresh_on_each_evaluation_and_absent_on_direct_extraction(self):
-        criterion = QualityPick(source_criteria="fixture")
+        criterion = self.legacy_quality(source_criteria="fixture")
         handler = self.handler([[self.segment(0)]])
         for _ in range(2):
             _, extract, _ = self.run_mocked(criterion, handler)
@@ -275,7 +278,7 @@ class QualityCacheTests(unittest.TestCase):
         self.assertEqual(2, extract.call_count)
 
     def test_file_change_invalidates_cached_descriptors_within_run(self):
-        criterion = QualityPick(source_criteria="fixture")
+        criterion = self.legacy_quality(source_criteria="fixture")
         handler = self.handler([[self.segment(0, 0)], [self.segment(0, 1)]])
 
         def dataframe(items):
@@ -289,7 +292,7 @@ class QualityCacheTests(unittest.TestCase):
     def test_memory_limit_evicts_or_bypasses_without_changing_features(self):
         groups = [[self.segment(0, 0)], [self.segment(1, 0)], [self.segment(0, 1)]]
         for limit in (0, self.descriptors.nbytes - 1, self.descriptors.nbytes):
-            criterion = QualityPick("fixture", max_descriptor_cache_bytes=limit)
+            criterion = self.legacy_quality("fixture", max_descriptor_cache_bytes=limit)
             _, extract, bovw = self.run_mocked(criterion, self.handler(groups))
             self.assertEqual(3, extract.call_count)
             for call in bovw.call_args_list:
@@ -305,7 +308,7 @@ class QualityCacheTests(unittest.TestCase):
 
     def test_custom_extractor_keeps_per_segment_call_behavior(self):
         extract = Mock(side_effect=[self.descriptors, self.descriptors + 1])
-        criterion = QualityPick("fixture", features_extractor=extract, visual_threads=4)
+        criterion = self.legacy_quality("fixture", features_extractor=extract, visual_threads=4)
         with (
             patch.object(VideoProcessor, "retrieve_video_frames", return_value=[]),
             patch.object(criterion, "get_bovw_dataframe", side_effect=self.dataframe),
@@ -322,7 +325,7 @@ class QualityCacheTests(unittest.TestCase):
             [self.segment(0, 1), self.segment(2, 1)],
         ]
         handler = self.handler(groups)
-        criterion = QualityPick("fixture", visual_threads=2)
+        criterion = self.legacy_quality("fixture", visual_threads=2)
         workers = MagicMock()
         workers.get.return_value = self.descriptors
         events = []
@@ -388,7 +391,7 @@ class QualityCacheTests(unittest.TestCase):
                         ImageProcessor, "ks_sift", return_value=self.descriptors
                     ) as extract,
                 ):
-                    criterion = QualityPick(
+                    criterion = self.legacy_quality(
                         "fixture",
                         features_extractor=extract,
                         visual_threads=2,
@@ -421,7 +424,7 @@ class QualityCacheTests(unittest.TestCase):
             (0, [[self.segment(0), self.segment(1)]]),
             (1024, [[self.segment(0, 0)], [self.segment(0, 1)]]),
         ):
-            criterion = QualityPick(
+            criterion = self.legacy_quality(
                 "fixture", visual_threads=4, max_descriptor_cache_bytes=cache_bytes
             )
             with patch(
@@ -432,10 +435,10 @@ class QualityCacheTests(unittest.TestCase):
 
     def test_visual_thread_budget_must_be_positive(self):
         with self.assertRaisesRegex(ValueError, "visual_threads must be positive"):
-            QualityPick("fixture", visual_threads=0)
+            self.legacy_quality("fixture", visual_threads=0)
 
     def test_failed_run_does_not_leave_cache_or_active_profile(self):
-        criterion = QualityPick("fixture")
+        criterion = self.legacy_quality("fixture")
         handler = self.handler([[self.segment(0)]])
         with self.assertRaisesRegex(RuntimeError, "fixture failure"):
             self.run_mocked(

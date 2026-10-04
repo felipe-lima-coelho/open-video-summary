@@ -4,11 +4,13 @@ import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
+from typing import Literal, Mapping
 from urllib.parse import urlsplit
 
 from open_video_summary.errors import ConfigurationError
 from open_video_summary.utils.config import PROJECT_DIR
+
+VisualScope = Literal["segment", "video"]
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,29 @@ def load_thread_count(
         return _positive(value, name, integer=True)
     except ConfigurationError:
         raise ConfigurationError(f"{name} must be a positive integer.") from None
+
+
+def load_visual_scope(
+    cli_value: str | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    env_file: str | Path | None = None,
+) -> VisualScope:
+    """Resolve visual extraction scope independently of provider credentials."""
+    if cli_value is not None:
+        value, name = _optional(cli_value) or "segment", "--visual-scope"
+    else:
+        from dotenv import dotenv_values
+
+        path = Path(env_file) if env_file is not None else PROJECT_DIR / ".env"
+        values = dict(dotenv_values(path, interpolate=False)) if path.is_file() else {}
+        values.update(os.environ if environ is None else environ)
+        value = _optional(values.get("OVS_VISUAL_SCOPE")) or "segment"
+        name = "OVS_VISUAL_SCOPE"
+    value = value.lower()
+    if value not in {"segment", "video"}:
+        raise ConfigurationError(f"{name} must be 'segment' or 'video'.")
+    return value
 
 
 def load_provider_config(

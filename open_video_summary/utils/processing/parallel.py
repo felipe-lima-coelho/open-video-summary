@@ -43,7 +43,10 @@ def _initialize_worker() -> None:
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
-def _extract_to_file(path: str, expected_signature: tuple, output: str, task: int):
+def _extract_to_file(
+    path: str, expected_signature: tuple, output: str, task: int,
+    start_second=None, end_second=None, visual_scope="video",
+):
     imports_started = perf_counter()
     imports_cpu_started = process_time()
     import cv2
@@ -72,9 +75,19 @@ def _extract_to_file(path: str, expected_signature: tuple, output: str, task: in
         started = perf_counter()
         cpu_started = process_time()
         with collect_visual_profile(profile):
-            frames = VideoProcessor.retrieve_video_frames(path, grayscale=True)
+            frames = (
+                VideoProcessor.retrieve_segment_frames(
+                    path, start_second, end_second, grayscale=True
+                )
+                if visual_scope == "segment"
+                else VideoProcessor.retrieve_video_frames(path, grayscale=True)
+            )
             try:
-                descriptors = ImageProcessor.ks_sift(frames)
+                descriptors = (
+                    ImageProcessor.ks_sift(frames, allow_empty=True)
+                    if visual_scope == "segment"
+                    else ImageProcessor.ks_sift(frames)
+                )
             finally:
                 del frames
         finished = perf_counter()
@@ -97,6 +110,13 @@ def _extract_to_file(path: str, expected_signature: tuple, output: str, task: in
         "stale": source_signature(path) != expected_signature,
         "worker": worker,
         "counters": profile.as_dict()["counters"],
+        "extraction": {
+            "scope": visual_scope,
+            "start": start_second,
+            "end": end_second,
+            "sampled_frames": profile.counters["sampled_frames"],
+            "descriptor_count": len(descriptors),
+        },
     }
     if not result["stale"]:
         # Completed futures retain only metadata. Descriptor arrays waiting for
@@ -109,7 +129,7 @@ def _extract_to_file(path: str, expected_signature: tuple, output: str, task: in
 
 
 class DescriptorWorkers:
-    """Prefetch at most ``workers + 1`` videos and consume in request order."""
+    """Prefetch at most ``workers + 1`` requests and consume in request order."""
 
     def __init__(self, sources: dict, workers: int) -> None:
         self.workers = min(workers, len(sources))
@@ -120,6 +140,7 @@ class DescriptorWorkers:
         self.directory = None
         self.closed = False
         self.next_task = 0
+        self.last_extraction = None
 
     def __enter__(self):
         try:
@@ -144,13 +165,19 @@ class DescriptorWorkers:
             source = next(self.sources, None)
             if source is None:
                 break
-            key, path = source
+            key, request = source
             task = self.next_task
             self.next_task += 1
             output = str(Path(self.directory.name) / f"{task}.npy")
-            self.pending[key] = self.executor.submit(
-                _extract_to_file, path, key[:6], output, task
-            )
+            if isinstance(request, str):
+                arguments = (request, key[:6], output, task)
+            else:
+                path, scope, start, end = request
+                arguments = (
+                    (path, key[:6], output, task, start, end, scope)
+                    if scope == "segment" else (path, key[:6], output, task)
+                )
+            self.pending[key] = self.executor.submit(_extract_to_file, *arguments)
             visual_count("worker_tasks_submitted")
             visual_maximum("worker_pending_peak", len(self.pending))
 
@@ -167,6 +194,7 @@ class DescriptorWorkers:
 
         with visual_stage("worker_wait"):
             result = self.pending[key].result()
+        self.last_extraction = result.get("extraction")
         del self.pending[key]
         if "worker" in result:
             visual_worker(result["worker"], result["counters"])
