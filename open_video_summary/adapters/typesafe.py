@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import socket
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 from collections.abc import Mapping
 from typing import Callable
 from urllib.parse import urlsplit
@@ -20,6 +19,7 @@ from open_video_summary.contracts import (
     EvaluationMetadata,
     EvaluationResult,
     NoulResult,
+    ProviderProgress,
 )
 from open_video_summary.errors import (
     AuthenticationError,
@@ -30,6 +30,8 @@ from open_video_summary.errors import (
     ServiceTimeoutError,
     ServiceUnavailableError,
 )
+from open_video_summary.utils.progress import notify
+from open_video_summary.utils.retry import retry_after, retry_delay
 
 DEFAULT_TYPESAFE_MODEL = "jev-1.13.0"
 _ENDPOINT_PATH = "/v1/systemone"
@@ -175,11 +177,28 @@ class TypeSafeEvaluator:
         config: TypeSafeConfig,
         transport: Transport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        *, progress=None, jitter=random.uniform,
     ) -> None:
         self.config = config
         self.transport = transport or _stdlib_transport
         self.sleep = sleep
+        self.progress, self.jitter = progress, jitter
+        self.can_fork = transport is None
         self.records: list[EvaluationMetadata] = []
+
+    def fork(self):
+        """Keep worker metadata and transport ownership separate."""
+        if not self.can_fork:
+            raise ConfigurationError("An injected evaluator transport cannot be shared by workers.")
+        return type(self)(self.config, sleep=self.sleep, jitter=self.jitter)
+
+    def _record(self, metadata):
+        self.records.append(metadata)
+        success = metadata.status == "success"
+        notify(self.progress, ProviderProgress(
+            "attempt_completed" if success else "attempt_failed",
+            self.config.provider, metadata.attempts, self.config.max_attempts,
+            metadata.duration_seconds, error_type=None if success else metadata.status))
 
     def preflight(self) -> None:
         """Validate local settings and credentials without contacting the API."""
@@ -225,6 +244,8 @@ class TypeSafeEvaluator:
 
         for attempt in range(1, self.config.max_attempts + 1):
             request_started = time.monotonic()
+            notify(self.progress, ProviderProgress("attempt_started", self.config.provider,
+                attempt, self.config.max_attempts))
             try:
                 response = self.transport(
                     url,
@@ -239,7 +260,7 @@ class TypeSafeEvaluator:
                 metadata = self._failed_metadata(
                     attempt, time.monotonic() - request_started, error
                 )
-                self.records.append(metadata)
+                self._record(metadata)
                 if attempt < self.config.max_attempts and should_retry:
                     self._wait_before_retry(attempt, retry_after)
                     continue
@@ -252,7 +273,7 @@ class TypeSafeEvaluator:
                 metadata = self._failed_metadata(
                     attempt, time.monotonic() - request_started, error
                 )
-                self.records.append(metadata)
+                self._record(metadata)
                 if attempt < self.config.max_attempts:
                     self._wait_before_retry(attempt, None)
                     continue
@@ -262,7 +283,7 @@ class TypeSafeEvaluator:
                 metadata = self._failed_metadata(
                     attempt, time.monotonic() - request_started, error
                 )
-                self.records.append(metadata)
+                self._record(metadata)
                 if attempt < self.config.max_attempts:
                     self._wait_before_retry(attempt, None)
                     continue
@@ -274,7 +295,7 @@ class TypeSafeEvaluator:
                 metadata = self._failed_metadata(
                     attempt, time.monotonic() - request_started, error
                 )
-                self.records.append(metadata)
+                self._record(metadata)
                 if attempt < self.config.max_attempts:
                     self._wait_before_retry(attempt, None)
                     continue
@@ -284,7 +305,7 @@ class TypeSafeEvaluator:
                 error = InvalidResponseError(
                     "TypeSafe transport returned an invalid response."
                 )
-                self.records.append(
+                self._record(
                     self._failed_metadata(
                         attempt, time.monotonic() - request_started, error
                     )
@@ -304,7 +325,7 @@ class TypeSafeEvaluator:
                 error = InvalidResponseError(
                     "TypeSafe returned an invalid HTTP response."
                 )
-                self.records.append(
+                self._record(
                     self._failed_metadata(
                         attempt, time.monotonic() - request_started, error
                     )
@@ -316,7 +337,7 @@ class TypeSafeEvaluator:
                         self._parse_response(response, noul_ids, choice_options)
                     )
                 except InvalidResponseError as error:
-                    self.records.append(
+                    self._record(
                         self._failed_metadata(
                             attempt, time.monotonic() - request_started, error
                         )
@@ -332,7 +353,7 @@ class TypeSafeEvaluator:
                     output_tokens=output_tokens,
                     provider=self.config.provider,
                 )
-                self.records.append(metadata)
+                self._record(metadata)
                 return EvaluationResult(
                     noul=tuple(answers[key] for key in noul_ids),
                     choice=tuple(answers[key] for key in choice_options),
@@ -340,7 +361,7 @@ class TypeSafeEvaluator:
                 )
 
             error = self._http_error(response.status_code)
-            self.records.append(
+            self._record(
                 self._failed_metadata(
                     attempt, time.monotonic() - request_started, error
                 )
@@ -541,15 +562,11 @@ class TypeSafeEvaluator:
         )
 
     def _wait_before_retry(self, attempt: int, retry_after: float | None) -> None:
-        fallback = min(
-            _MAX_RETRY_AFTER_SECONDS,
-            self.config.retry_backoff_seconds * (2 ** (attempt - 1)),
-        )
-        delay = (
-            fallback
-            if retry_after is None
-            else min(_MAX_RETRY_AFTER_SECONDS, max(0.0, retry_after))
-        )
+        delay = retry_delay(attempt, self.config.retry_backoff_seconds,
+            backoff_cap=_MAX_RETRY_AFTER_SECONDS, retry_after_seconds=retry_after,
+            jitter=self.jitter)
+        notify(self.progress, ProviderProgress("retry_scheduled", self.config.provider,
+            attempt, self.config.max_attempts, delay_seconds=delay))
         self.sleep(delay)
 
 
@@ -589,25 +606,4 @@ def _read_usage(value: object) -> tuple[int | None, int | None]:
 
 
 def _retry_after(headers: Mapping[str, str]) -> float | None:
-    value = next(
-        (v for key, v in headers.items() if key.lower() == "retry-after"), None
-    )
-    if value is None:
-        return None
-    try:
-        seconds = float(value)
-        if math.isfinite(seconds):
-            return min(_MAX_RETRY_AFTER_SECONDS, max(0.0, seconds))
-    except (TypeError, ValueError):
-        pass
-    try:
-        date = parsedate_to_datetime(value)
-        if date.tzinfo is None:
-            date = date.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        return min(
-            _MAX_RETRY_AFTER_SECONDS,
-            max(0.0, (date.astimezone(timezone.utc) - now).total_seconds()),
-        )
-    except (TypeError, ValueError, OverflowError):
-        return None
+    return retry_after(headers, _MAX_RETRY_AFTER_SECONDS)

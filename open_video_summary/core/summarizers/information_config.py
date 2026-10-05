@@ -18,11 +18,13 @@ class InformationAnalysisConfig:
     acceptance_threshold: float = 0.85
     gap_threshold: float = 0.65
     equivalence_threshold: float = 0.90
+    concurrency: int = 2
 
     def __post_init__(self):
         if not isinstance(self.qa_enabled, bool):
             raise ConfigurationError("Information QA must be a boolean.")
         limits = {
+            "concurrency": (1, 8),
             "max_calls": (1, 10000),
             "max_coverage_rounds": (0, 10),
             "max_pair_comparisons": (0, 10000),
@@ -49,7 +51,7 @@ class InformationAnalysisConfig:
                 )
 
 
-def configured_information_analyzer(overrides=None, *, environ=None, env_file=None):
+def configured_information_analyzer(overrides=None, *, environ=None, env_file=None, progress=None):
     """Construct independently selected generation and typed evaluation roles."""
     from open_video_summary.adapters.factory import create_evaluator, create_llm
     from open_video_summary.core.summarizers.information_analysis import (
@@ -87,6 +89,7 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
 
     settings = InformationAnalysisConfig(
         qa_enabled=get("information_qa", "OVS_INFORMATION_QA", True, boolean),
+        concurrency=get("information_concurrency", "OVS_INFORMATION_CONCURRENCY", 2, int),
         max_calls=get("information_max_calls", "OVS_INFORMATION_MAX_CALLS", 256, int),
         max_coverage_rounds=get("information_rounds", "OVS_INFORMATION_ROUNDS", 2, int),
         max_pair_comparisons=get(
@@ -117,4 +120,4 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
     generator = create_llm(
         load_provider_config(supplied, environ=values, env_file=env_file).llm
     )
-    return InformationAnalyzer(generator, create_evaluator(evaluator_config), settings)
+    return InformationAnalyzer(generator, create_evaluator(evaluator_config), settings, progress=progress)

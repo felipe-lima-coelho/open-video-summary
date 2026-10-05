@@ -119,7 +119,7 @@ def _summarize(args) -> None:
 
 def _print_information_report(report, path):
     if report is None:
-        print("Information analysis: failed before a snapshot report could be built.")
+        print("Information analysis: failed before a snapshot report could be built.", flush=True)
         return
     occurrence_label = (
         "provisional occurrence evidence groups (alignment pending)"
@@ -129,10 +129,11 @@ def _print_information_report(report, path):
     print(
         f"Information analysis: {report.status}; "
         f"{report.counts.unique_units} identified units, "
-        f"{report.counts.occurrences} {occurrence_label}; {len(report.issues)} issues."
+        f"{report.counts.occurrences} {occurrence_label}; {len(report.issues)} issues.",
+        flush=True,
     )
     if path:
-        print(f"Information report: {portable_path(path)}")
+        print(f"Information report: {portable_path(path)}", flush=True)
 
 
 def _print_information_progress(progress):

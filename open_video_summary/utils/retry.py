@@ -1,0 +1,35 @@
+"""Finite retry delays shared by hosted generation and evaluation adapters."""
+
+import math
+import random
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+
+
+def retry_after(headers, cap=30.0):
+    value = next((value for key, value in (headers or {}).items()
+                  if key.lower() == "retry-after"), None)
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+        if math.isfinite(seconds):
+            return min(cap, max(0.0, seconds))
+    except (TypeError, ValueError):
+        pass
+    try:
+        date = parsedate_to_datetime(value)
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        return min(cap, max(0.0, (date.astimezone(timezone.utc)
+                                 - datetime.now(timezone.utc)).total_seconds()))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def retry_delay(attempt, base, *, backoff_cap, retry_after_seconds=None,
+                jitter=random.uniform):
+    backoff = min(backoff_cap, base * (2 ** (attempt - 1)))
+    # Add at most 25% jitter without shortening an advertised server delay.
+    delay = min(backoff_cap, backoff + jitter(0.0, backoff * 0.25))
+    return max(delay, retry_after_seconds or 0.0)

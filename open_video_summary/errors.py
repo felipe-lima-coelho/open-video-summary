@@ -9,6 +9,10 @@ class ConfigurationError(ProviderError):
     pass
 
 
+class ProviderConfigurationError(ConfigurationError):
+    """A provider-wide setting or billing failure, rather than target data."""
+
+
 class AuthenticationError(ProviderError):
     pass
 

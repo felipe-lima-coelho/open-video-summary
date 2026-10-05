@@ -220,7 +220,9 @@ class TypeSafeAdapterTests(unittest.TestCase):
         with self.assertRaises(ServiceTimeoutError) as caught:
             evaluator.evaluate("private transcript", noul={"q": "Question?"})
         self.assertEqual(2, len(transport.calls))
-        self.assertEqual([0.25], waits)
+        self.assertEqual(1, len(waits))
+        self.assertGreaterEqual(waits[0], 0.25)
+        self.assertLessEqual(waits[0], 0.3125)
         self.assertNotIn(self.key, str(caught.exception))
         self.assertNotIn("private transcript", str(caught.exception))
         self.assertNotIn(self.key, repr(evaluator.records))

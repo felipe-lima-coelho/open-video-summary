@@ -416,8 +416,12 @@ up to eight. Operations within each target keep their dependency order, and pair
 consolidation runs after target analysis; report entries are assembled in source
 order. All workers share the logical-call cap, so target coverage at cap exhaustion
 can depend on scheduling. Provider retries remain bounded by their attempt limits;
-`Retry-After` delays are capped at 30 seconds, with capped jittered backoff when the
-service supplies no usable delay.
+`Retry-After` delays are capped at 30 seconds. Retries wait for the greater of that
+delay and exponential backoff with up to 25% jitter (backoff capped at 10 seconds
+for generation, 30 for evaluation). SDK retries are disabled for OpenAI, avoiding
+a second retry loop. Permanent authentication or provider-wide model/billing
+failures stop new analysis requests; in-flight requests retain their finite
+timeouts. A target-specific invalid request does not cancel other targets.
 
 The CLI prints target, operation, provider-attempt, retry, and elapsed-time updates
 while analysis runs, plus a ten-second heartbeat during long provider calls. For
@@ -432,6 +436,12 @@ control exports and protected dataset identity. An optional
 its export and before selection criteria run. With `save_output=False` and no
 explicit report path, inspect the immutable `last_information_report` in memory.
 The return type remains `Video`, and report state is reset for every invocation.
+`InformationAnalyzer(..., progress=observer)` optionally emits frozen
+`AnalysisProgress` events; without an observer the library emits no progress.
+Observers must return promptly; callback exceptions do not change the analysis.
+Injected clients or transports without a safe `fork()` run serially, with actual
+concurrency recorded in report metadata. Interrupting a concurrent run cancels
+queued targets and waits for bounded in-flight requests and client cleanup.
 
 The neutral `AnalysisSnapshot -> InformationReport` contract lives alongside the
 analyzer in `core/summarizers/`. Original source provenance and allowed current

@@ -4,9 +4,12 @@ import json
 import re
 import time
 import uuid
+import math
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from itertools import combinations
+from threading import Lock
 
 from open_video_summary.adapters.information_schema import (
     information_schema,
@@ -24,6 +27,7 @@ from open_video_summary.core.summarizers.information_config import (
 from open_video_summary.core.summarizers.information_contracts import (
     AnalysisCall,
     AnalysisIssue,
+    AnalysisProgress,
     AnalysisSnapshot,
     CandidateRecord,
     CoverageRecord,
@@ -39,7 +43,10 @@ from open_video_summary.core.summarizers.information_contracts import (
     canonical_json,
     fingerprint,
 )
-from open_video_summary.errors import ConfigurationError, InvalidResponseError
+from open_video_summary.errors import (
+    AuthenticationError, ConfigurationError, InvalidResponseError, ProviderConfigurationError,
+)
+from open_video_summary.utils.progress import heartbeat, notify
 
 
 PROTOCOL_VERSION = "contextual-propositions-v1"
@@ -81,6 +88,29 @@ class _LimitReached(Exception):
     pass
 
 
+class _ProviderStopped(Exception):
+    pass
+
+
+class _CallBudget:
+    def __init__(self, limit):
+        self.limit, self.used, self.lock = limit, 0, Lock()
+        self.permanent_failure = None
+
+    def stop(self, error):
+        with self.lock:
+            self.permanent_failure = type(error).__name__
+
+    def claim(self):
+        with self.lock:
+            if self.permanent_failure is not None:
+                raise _ProviderStopped()
+            if self.used >= self.limit:
+                raise _LimitReached()
+            self.used += 1
+            return self.used
+
+
 class InformationAnalyzer:
     """Each invocation uses local state and returns an immutable report."""
 
@@ -89,17 +119,21 @@ class InformationAnalyzer:
         generator: LanguageModel,
         evaluator: Evaluator,
         config: InformationAnalysisConfig | None = None,
+        *, progress=None, progress_interval_seconds=10.0,
     ):
         self.generator = generator
         self.evaluator = evaluator
         self.config = config or InformationAnalysisConfig()
+        if not math.isfinite(progress_interval_seconds) or progress_interval_seconds <= 0:
+            raise ConfigurationError("Progress interval must be positive and finite.")
+        self.progress, self.progress_interval_seconds = progress, progress_interval_seconds
 
     def analyze(self, snapshot: AnalysisSnapshot) -> InformationReport:
         return _AnalysisRun(self, snapshot).run()
 
 
 class _AnalysisRun:
-    def __init__(self, analyzer, snapshot):
+    def __init__(self, analyzer, snapshot, *, budget=None, parent=None, target_index=None):
         self.generator, self.evaluator, self.config = (
             analyzer.generator,
             analyzer.evaluator,
@@ -114,11 +148,27 @@ class _AnalysisRun:
             [],
             [],
         )
-        self.call_count = 0
-        self.started = time.monotonic()
-        self.started_at = datetime.now(timezone.utc).isoformat()
-        self.run_id = uuid.uuid4().hex
+        self.budget = budget or _CallBudget(self.config.max_calls)
+        self.progress, self.progress_interval = analyzer.progress, analyzer.progress_interval_seconds
+        self.started = parent.started if parent else time.monotonic()
+        self.started_at = parent.started_at if parent else datetime.now(timezone.utc).isoformat()
+        self.run_id = parent.run_id if parent else uuid.uuid4().hex
+        self.target_index = target_index
+        self.candidate_prefix = f"t{target_index}:" if target_index not in {None, 0} else ""
+        self.actual_concurrency = parent.actual_concurrency if parent else 1
         self.evaluated_targets = set()
+
+    @property
+    def call_count(self):
+        return self.budget.used
+
+    def _event(self, event, **fields):
+        return AnalysisProgress(self.run_id, event, time.monotonic() - self.started,
+            self.call_count, self.config.max_calls, target_index=self.target_index,
+            target_total=len(self.snapshot.current_order), concurrency=self.actual_concurrency, **fields)
+
+    def _notify(self, event, **fields):
+        notify(self.progress, self._event(event, **fields))
 
     def issue(self, kind, detail, segments=(), candidates=()):
         item = AnalysisIssue(kind, detail, tuple(segments), tuple(candidates))
@@ -140,14 +190,31 @@ class _AnalysisRun:
                 "A request exceeded the character budget; original text was not truncated.",
             )
             raise _LimitReached()
-        self.call_count += 1
+        try:
+            self.budget.claim()
+        except _ProviderStopped:
+            self.issue("provider_stopped", "No new requests were sent after a permanent authentication or configuration failure.")
+            raise
+        except _LimitReached:
+            self.issue("call_budget_exhausted", "Remaining analysis work was not executed.")
+            raise
 
     def _invoke(self, adapter, operation, input_data, callback, provider):
+        started = time.monotonic()
+        target_id = getattr(self, "active_target", None)
+        self._notify("call_started", operation=operation, provider=provider, segment_id=target_id)
+        previous_progress = getattr(adapter, "progress", None)
+        if hasattr(adapter, "progress") and self.progress is not None:
+            adapter.progress = lambda service: self._notify("provider_attempt", operation=operation, provider=provider, segment_id=target_id, service=service)
         first_record = len(getattr(adapter, "records", []))
         input_hash = fingerprint(input_data)
         try:
-            result = callback()
+            with heartbeat(self.progress, lambda: self._event("waiting", operation=operation, provider=provider, segment_id=target_id, operation_seconds=time.monotonic() - started), self.progress_interval):
+                result = callback()
         except Exception as exc:
+            if isinstance(exc, (AuthenticationError, ProviderConfigurationError)):
+                self.budget.stop(exc)
+            self._notify("call_failed", operation=operation, provider=provider, segment_id=target_id, error_type=type(exc).__name__, operation_seconds=time.monotonic() - started)
             records = getattr(adapter, "records", [])[first_record:]
             metadata = [asdict(item) for item in records]
             self.calls.append(
@@ -161,6 +228,9 @@ class _AnalysisRun:
                 )
             )
             raise
+        finally:
+            if hasattr(adapter, "progress"):
+                adapter.progress = previous_progress
         metadata = asdict(result.metadata)
         records = getattr(adapter, "records", [])[first_record:]
         metadata["attempt_records"] = [asdict(item) for item in records]
@@ -183,6 +253,7 @@ class _AnalysisRun:
                 canonical_json(value) if hasattr(result, "noul") else None,
             )
         )
+        self._notify("call_completed", operation=operation, provider=provider, segment_id=target_id, operation_seconds=time.monotonic() - started)
         return result
 
     def _evaluate(self, operation, context, noul=None, choice=None):
@@ -364,7 +435,7 @@ class _AnalysisRun:
         )
 
     def _validate(self, raw, target, route, round_number, permitted_ids):
-        identifier = f"c{len(self.candidates)}"
+        identifier = f"{self.candidate_prefix}c{len(self.candidates)}"
         record = CandidateRecord(
             identifier,
             target.id,
@@ -542,6 +613,68 @@ class _AnalysisRun:
                     (target.id,),
                 )
                 return
+
+    def _run_target(self, target, index, isolated):
+        generator, evaluator = self.generator, self.evaluator
+        owned = []
+        worker = None
+        try:
+            if isolated:
+                generator = self.generator.fork()
+                owned.append(generator)
+                evaluator = self.evaluator.fork()
+                owned.append(evaluator)
+            analyzer = InformationAnalyzer(generator, evaluator, self.config,
+                progress=self.progress, progress_interval_seconds=self.progress_interval)
+            worker = _AnalysisRun(analyzer, self.snapshot, budget=self.budget,
+                                  parent=self, target_index=index)
+            worker.active_target = target.id
+            worker._notify("target_started", segment_id=target.id)
+            try:
+                worker._target(target)
+            except Exception as exc:
+                worker.issue("target_analysis_failed", type(exc).__name__, (target.id,))
+            worker._notify("target_completed", segment_id=target.id,
+                           status="partial" if worker.issues else "completed")
+            return worker
+        finally:
+            for adapter in reversed(owned):
+                closer = getattr(adapter, "close", None)
+                if closer is not None:
+                    try:
+                        closer()
+                    except Exception as exc:
+                        if worker is not None:
+                            worker.issue("adapter_cleanup_failed", type(exc).__name__, (target.id,))
+
+    def _run_targets(self):
+        targets = self.snapshot.current_segments
+        if self.actual_concurrency == 1:
+            workers = []
+            for index, target in enumerate(targets):
+                workers.append(self._run_target(target, index, False))
+                if self.call_count >= self.config.max_calls or self.budget.permanent_failure:
+                    break
+        else:
+            executor = ThreadPoolExecutor(max_workers=self.actual_concurrency,
+                                          thread_name_prefix="ovs-information")
+            futures = []
+            try:
+                futures = [executor.submit(self._run_target, target, index, True)
+                           for index, target in enumerate(targets)]
+                # Read results in source order; workers and progress run concurrently.
+                workers = [future.result() for future in futures]
+            finally:
+                for future in futures:
+                    future.cancel()
+                executor.shutdown(wait=True, cancel_futures=True)
+        for worker in workers:
+            self.candidates.extend(worker.candidates)
+            self.coverage.extend(worker.coverage)
+            self.calls.extend(worker.calls)
+            self.evaluated_targets.update(worker.evaluated_targets)
+            for item in worker.issues:
+                self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
 
     def _consolidate(self):
         accepted = self._accepted()
@@ -765,6 +898,12 @@ class _AnalysisRun:
 
     def run(self):
         failed = False
+        can_isolate = all(callable(getattr(adapter, "fork", None))
+                          and getattr(adapter, "can_fork", True)
+                          for adapter in (self.generator, self.evaluator))
+        self.actual_concurrency = (min(self.config.concurrency,
+            max(1, len(self.snapshot.current_order))) if can_isolate else 1)
+        self._notify("analysis_started")
         try:
             current = set(self.snapshot.current_order)
             if not set(
@@ -777,18 +916,9 @@ class _AnalysisRun:
                 # Missing evaluator credentials must fail before contacting a generator.
                 self.evaluator.preflight()
                 self.generator.preflight()
-            for target in self.snapshot.current_segments:
-                try:
-                    self._target(target)
-                except Exception as exc:
-                    self.issue(
-                        "target_analysis_failed", type(exc).__name__, (target.id,)
-                    )
-                    if (
-                        isinstance(exc, _LimitReached)
-                        and self.call_count >= self.config.max_calls
-                    ):
-                        break
+            self._run_targets()
+            self.active_target = None
+            self._notify("consolidation_started")
             units, occurrences = self._consolidate()
         except Exception as exc:
             failed = True
@@ -828,6 +958,11 @@ class _AnalysisRun:
             "duration_seconds": time.monotonic() - self.started,
             "settings": asdict(self.config),
             "logical_calls": self.call_count,
+            "requested_concurrency": self.config.concurrency,
+            "actual_concurrency": self.actual_concurrency,
+            "adapter_isolation_available": can_isolate,
+            "permanent_provider_failure": self.budget.permanent_failure,
+            "budget_allocation": "A shared logical-call cap includes all targets and consolidation. With concurrent targets, work completed before cap exhaustion can depend on scheduling; report records are assembled in source order. Provider retries are additional bounded physical attempts.",
             "generator": self._provider_settings(self.generator),
             "evaluator": self._provider_settings(self.evaluator),
             "evaluator_provider": getattr(
@@ -846,7 +981,7 @@ class _AnalysisRun:
             "thresholds_calibrated": False,
             "count_semantics": "Unique units count accepted semantic groups. Occurrences count exact assertion-anchor groups; overlapping nonidentical anchors remain separate with occurrences_provisional=true and may overcount utterances. Other pending work can also make partial counts provisional.",
         }
-        return InformationReport(
+        report = InformationReport(
             1,
             PROTOCOL_VERSION,
             self.run_id,
@@ -862,6 +997,8 @@ class _AnalysisRun:
             tuple(self.calls),
             canonical_json(metadata),
         )
+        self._notify("analysis_completed", status=status)
+        return report
 
     @staticmethod
     def _provider_settings(adapter):

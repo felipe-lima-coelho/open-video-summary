@@ -4,6 +4,7 @@ import base64
 import ast
 import json
 import math
+import random
 import re
 import time
 from abc import ABC, abstractmethod
@@ -16,6 +17,7 @@ from open_video_summary.contracts import (
     GenerationRequest,
     GenerationResult,
     OutputSpec,
+    ProviderProgress,
     ServiceMetadata,
 )
 from open_video_summary.errors import (
@@ -23,11 +25,14 @@ from open_video_summary.errors import (
     ConfigurationError,
     InvalidResponseError,
     ProviderError,
+    ProviderConfigurationError,
     RateLimitError,
     ServiceTimeoutError,
     ServiceUnavailableError,
 )
 from open_video_summary.utils.providers import LLMConfig
+from open_video_summary.utils.progress import notify
+from open_video_summary.utils.retry import retry_after, retry_delay
 
 
 def _value(obj, key: str, default=None):
@@ -58,7 +63,7 @@ def _external_error(exc: Exception, provider: str) -> ProviderError:
         return AuthenticationError(f"{provider} authentication or permission failed.")
     if status == 429 or name == "RateLimitError":
         if code in {"insufficient_quota", "billing_hard_limit_reached"}:
-            return ConfigurationError(f"{provider} quota or billing limit was reached.")
+            return ProviderConfigurationError(f"{provider} quota or billing limit was reached.")
         return RateLimitError(f"{provider} request limit was reached.")
     if isinstance(exc, TimeoutError) or "Timeout" in name or status == 408:
         return ServiceTimeoutError(f"{provider} request timed out.")
@@ -76,7 +81,11 @@ def _external_error(exc: Exception, provider: str) -> ProviderError:
             and re.fullmatch(r"[\w.\[\]]{1,80}", parameter)
             else ""
         )
-        return ConfigurationError(
+        provider_setting = isinstance(parameter, str) and parameter in {
+            "model", "reasoning", "reasoning.effort"
+        }
+        error_class = ProviderConfigurationError if status == 404 or provider_setting else ConfigurationError
+        return error_class(
             f"{provider} rejected the model or request settings (HTTP {status}){suffix}."
         )
     return ServiceUnavailableError(f"{provider} request failed ({name}).")
@@ -263,7 +272,8 @@ class DomainResponseInterpreter:
 class LLMAdapter(ABC):
     """One finite budget covers external failures and invalid domain responses."""
 
-    def __init__(self, config: LLMConfig, *, client=None, sleep=time.sleep):
+    def __init__(self, config: LLMConfig, *, client=None, sleep=time.sleep,
+                 progress=None, jitter=random.uniform):
         self.config = config
         self.model = config.model
         self.max_attempts = config.max_attempts
@@ -272,8 +282,27 @@ class LLMAdapter(ABC):
         self._client = client
         self._injected_client = client is not None
         self._sleep = sleep
+        self.progress, self._jitter = progress, jitter
         self.interpreter = DomainResponseInterpreter()
         self._validate_config()
+
+    @property
+    def can_fork(self):
+        return not self._injected_client
+
+    def fork(self):
+        """Create private request state and a separate lazily constructed client."""
+        if not self.can_fork:
+            raise ConfigurationError("An injected LLM client cannot be shared by workers.")
+        return type(self)(config=self.config, sleep=self._sleep, jitter=self._jitter)
+
+    def _record(self, metadata):
+        self.records.append(metadata)
+        notify(self.progress, ProviderProgress(
+            "attempt_completed" if metadata.status == "completed" else "attempt_failed",
+            self.config.provider, metadata.attempts, self.max_attempts,
+            metadata.duration_seconds or 0.0,
+            error_type=None if metadata.status == "completed" else metadata.status))
 
     def _validate_config(self):
         if not self.model.strip() or self.config.max_attempts < 1:
@@ -303,6 +332,8 @@ class LLMAdapter(ABC):
             raise ConfigurationError("The generation prompt must not be empty.")
         for attempt in range(1, self.max_attempts + 1):
             started = time.monotonic()
+            notify(self.progress, ProviderProgress("attempt_started", self.config.provider,
+                                                  attempt, self.max_attempts))
             self._request_sent = False
             self._reported_model = None
             self._reported_effort = None
@@ -334,13 +365,13 @@ class LLMAdapter(ABC):
                 metadata = replace(
                     metadata, duration_seconds=time.monotonic() - started
                 )
-                self.records.append(metadata)
+                self._record(metadata)
                 return GenerationResult(
                     text=text.strip(), value=value, metadata=metadata
                 )
             except Exception as exc:
                 error = _external_error(exc, self.config.provider)
-                self.records.append(
+                self._record(
                     replace(
                         metadata,
                         duration_seconds=time.monotonic() - started,
@@ -360,7 +391,13 @@ class LLMAdapter(ABC):
                 )
                 if not error.retryable or attempt == self.max_attempts:
                     raise error from None
-                self._sleep(min(self.attempts_interval * (2 ** (attempt - 1)), 10.0))
+                headers = getattr(getattr(exc, "response", None), "headers", None)
+                delay = retry_delay(attempt, self.attempts_interval, backoff_cap=10.0,
+                    retry_after_seconds=retry_after(headers), jitter=self._jitter)
+                notify(self.progress, ProviderProgress("retry_scheduled", self.config.provider,
+                    attempt, self.max_attempts, time.monotonic() - started,
+                    delay_seconds=delay, error_type=type(error).__name__))
+                self._sleep(delay)
         raise InvalidResponseError("The language model exhausted its attempt budget.")
 
     def generate_pattern(self, prompt: str, pattern: str, **kwargs) -> str:
@@ -402,6 +439,8 @@ class OllamaAdapter(LLMAdapter):
         config: LLMConfig | None = None,
         client=None,
         sleep=time.sleep,
+        progress=None,
+        jitter=random.uniform,
     ) -> None:
         super().__init__(
             config
@@ -412,6 +451,8 @@ class OllamaAdapter(LLMAdapter):
             ),
             client=client,
             sleep=sleep,
+            progress=progress,
+            jitter=jitter,
         )
 
     def _validate_config(self):
@@ -503,7 +544,8 @@ class OpenAIAdapter(LLMAdapter):
         )
 
     def __init__(
-        self, *, config: LLMConfig | None = None, client=None, sleep=time.sleep
+        self, *, config: LLMConfig | None = None, client=None, sleep=time.sleep,
+        progress=None, jitter=random.uniform,
     ):
         super().__init__(
             config
@@ -514,6 +556,8 @@ class OpenAIAdapter(LLMAdapter):
             ),
             client=client,
             sleep=sleep,
+            progress=progress,
+            jitter=jitter,
         )
 
     def _validate_config(self):

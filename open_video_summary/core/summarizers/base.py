@@ -34,6 +34,7 @@ class Summarizer:
         information_output_path: str | None = None,
         information_csv_path: str | None = None,
         information_input_path: str | None = None,
+        information_report_observer=None,
     ) -> Video:
         self.last_information_report = None
         self.last_information_path = None
@@ -46,6 +47,12 @@ class Summarizer:
                 information_csv_path, information_input_path, video_output_path,
                 handler_output_path, audit_output_path, save_output,
             )
+            if information_report_observer is not None:
+                try:
+                    information_report_observer(self.last_information_report,
+                                                self.last_information_path)
+                except Exception:
+                    pass
         error = None
         try:
             handler = reduce(lambda h, c: c.evaluate(h), self.selection_criteria, handler)

@@ -30,6 +30,17 @@ class ServiceMetadata:
 
 
 @dataclass(frozen=True)
+class ProviderProgress:
+    event: str
+    provider: str
+    attempt: int
+    max_attempts: int
+    elapsed_seconds: float = 0.0
+    delay_seconds: float | None = None
+    error_type: str | None = None
+
+
+@dataclass(frozen=True)
 class OutputSpec:
     """The domain's expected output, independent of vendor response formats."""
 

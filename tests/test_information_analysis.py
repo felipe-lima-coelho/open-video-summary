@@ -874,7 +874,7 @@ class InformationProtocolTests(unittest.TestCase):
         )
         self.assertEqual(2, report.counts.unique_units)
         self.assertEqual(3, report.counts.occurrences)
-        self.assertEqual(("c0", "c1"), report.units[0].candidate_ids)
+        self.assertEqual(("c0", "t1:c0"), report.units[0].candidate_ids)
         self.assertEqual("contradiction", report.relations[1].relation)
         self.assertFalse(report.relations[2].merged)
         self.assertEqual("partial", report.status)

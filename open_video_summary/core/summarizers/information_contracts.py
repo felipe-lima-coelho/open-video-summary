@@ -5,6 +5,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, fields, is_dataclass
 
+from open_video_summary.contracts import ProviderProgress
 from open_video_summary.errors import ConfigurationError
 from open_video_summary.utils.paths import portable_path
 
@@ -322,6 +323,25 @@ class AnalysisCall:
     status: str
     metadata_json: str
     decisions_json: str | None = None
+
+
+@dataclass(frozen=True)
+class AnalysisProgress:
+    run_id: str
+    event: str
+    elapsed_seconds: float
+    logical_calls: int
+    call_limit: int
+    target_index: int | None = None
+    target_total: int = 0
+    segment_id: str | None = None
+    operation: str | None = None
+    provider: str | None = None
+    operation_seconds: float | None = None
+    service: ProviderProgress | None = None
+    status: str | None = None
+    error_type: str | None = None
+    concurrency: int = 1
 
 
 @dataclass(frozen=True)
