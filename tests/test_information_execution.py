@@ -20,7 +20,7 @@ from open_video_summary.core.summarizers.base import Summarizer
 from open_video_summary.core.summarizers.information_analysis import InformationAnalyzer
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig, configured_information_analyzer
 from open_video_summary.core.summarizers.information_contracts import AnalysisProgress, capture_snapshot
-from open_video_summary.errors import AuthenticationError, ConfigurationError, ServiceTimeoutError
+from open_video_summary.errors import AuthenticationError, ConfigurationError, ProviderConfigurationError, ServiceTimeoutError
 from open_video_summary.utils.providers import LLMConfig
 from open_video_summary.utils.retry import retry_after, retry_delay
 from tests.test_information_analysis import ScriptedGenerator, SyntheticEvaluator, candidate, videos
@@ -28,11 +28,13 @@ from tests.test_llm_adapters import ExternalStatusError, response
 
 
 class _Requests:
-    def __init__(self, *, synchronize=False, delays=None, failures=None, transient=False):
+    def __init__(self, *, synchronize=False, delays=None, failures=None, transient=False,
+                 evaluation_failures=None):
         self.lock = threading.Lock()
         self.barrier = threading.Barrier(2) if synchronize else None
         self.delays, self.failures = delays or {}, failures or {}
         self.transient = transient
+        self.evaluation_failures = evaluation_failures or {}
         self.active = self.maximum = 0
         self.targets, self.evaluation_ids, self.clients = [], [], []
         self.target_attempts = {}
@@ -81,6 +83,8 @@ class _Requests:
         with self.lock:
             if "candidate_id" in state:
                 self.evaluation_ids.append((state["target_id"], state["candidate_id"]))
+        if state.get("target_id") in self.evaluation_failures:
+            return TransportResponse(self.evaluation_failures[state["target_id"]], {}, b"private service detail")
         answers = {}
         for identifier, question in payload["questions"].items():
             if question["type"] == "noul":
@@ -168,6 +172,46 @@ class InformationExecutionTests(unittest.TestCase):
         self.assertEqual(2, report.counts.occurrences)
         self.assertEqual("partial", report.status)
 
+    def test_typesafe_endpoint_failure_stops_global_dispatch_but_target_400_does_not(self):
+        tracker = _Requests(evaluation_failures={f"v0:s{index}": 404 for index in range(3)})
+        report, _, _ = self.run_native(tracker, concurrency=1)
+        self.assertEqual(["v0:s0"], tracker.targets)
+        self.assertEqual([("v0:s0", "c0")], tracker.evaluation_ids)
+        self.assertEqual(2, len(report.calls))
+        self.assertEqual("ProviderConfigurationError", json.loads(report.metadata_json)["permanent_provider_failure"])
+        self.assertEqual("failed", report.status)
+        self.assertFalse(report.counts.valid_zero)
+        tracker = _Requests(evaluation_failures={"v0:s0": 400})
+        report, _, _ = self.run_native(tracker, concurrency=1)
+        self.assertEqual(["v0:s0", "v0:s1", "v0:s2"], tracker.targets)
+        self.assertIsNone(json.loads(report.metadata_json)["permanent_provider_failure"])
+        self.assertEqual(2, report.counts.occurrences)
+        self.assertEqual("partial", report.status)
+
+    def test_concurrent_interrupt_stops_active_target_chains_and_queued_targets(self):
+        for interrupted in ("v0:s0", "v0:s1"):
+            with self.subTest(interrupted=interrupted):
+                pending = "v0:s1" if interrupted == "v0:s0" else "v0:s0"
+                tracker = _Requests(synchronize=True, delays={pending: 0.05},
+                    failures={interrupted: KeyboardInterrupt()})
+                with self.assertRaises(KeyboardInterrupt):
+                    self.run_native(tracker)
+                self.assertEqual({"v0:s0", "v0:s1"}, set(tracker.targets))
+                self.assertEqual(2, len(tracker.targets))
+                self.assertEqual([], tracker.evaluation_ids)
+                self.assertTrue(all(client.closed for client in tracker.clients[1:]))
+                self.assertFalse(any(thread.name.startswith("ovs-information")
+                                     for thread in threading.enumerate()))
+
+    def test_concurrent_interrupt_prevents_a_pending_native_request_from_retrying(self):
+        tracker = _Requests(synchronize=True, delays={"v0:s1": 0.05}, transient=True,
+            failures={"v0:s0": KeyboardInterrupt()})
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_native(tracker, attempts=3)
+        self.assertEqual({"v0:s0": 1, "v0:s1": 1}, tracker.target_attempts)
+        self.assertEqual([], tracker.evaluation_ids)
+        self.assertTrue(all(client.closed for client in tracker.clients[1:]))
+
     def test_injected_client_falls_back_to_serial_without_sharing_request_state(self):
         tracker = _Requests()
         generator = OpenAIAdapter(config=LLMConfig(provider="openai"), client=tracker.client())
@@ -240,6 +284,19 @@ class InformationExecutionTests(unittest.TestCase):
 
 
 class RetryExecutionTests(unittest.TestCase):
+    def test_typesafe_404_is_provider_wide_and_400_remains_a_target_request_failure(self):
+        for status, error_class in ((404, ProviderConfigurationError), (400, ConfigurationError)):
+            with self.subTest(status=status):
+                transport = Mock(return_value=TransportResponse(status, {}, b"private"))
+                evaluator = TypeSafeEvaluator(TypeSafeConfig(api_key="private-key"),
+                    transport=transport, sleep=Mock())
+                with self.assertRaises(error_class) as caught:
+                    evaluator.evaluate("private transcript", noul={"q": "Question?"})
+                self.assertIs(error_class, type(caught.exception))
+                self.assertEqual(1, transport.call_count)
+                evaluator.sleep.assert_not_called()
+                self.assertNotIn("private", str(caught.exception))
+
     def test_openai_retry_after_and_capped_jitter_with_attempt_progress(self):
         error = ExternalStatusError(429)
         error.response = SimpleNamespace(headers={"Retry-After": "3"})

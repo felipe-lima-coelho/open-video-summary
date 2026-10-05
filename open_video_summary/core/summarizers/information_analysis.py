@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from itertools import combinations
-from threading import Lock
+from threading import Event, Lock
 
 from open_video_summary.adapters.information_schema import (
     information_schema,
@@ -47,6 +47,7 @@ from open_video_summary.errors import (
     AuthenticationError, ConfigurationError, InvalidResponseError, ProviderConfigurationError,
 )
 from open_video_summary.utils.progress import heartbeat, notify
+from open_video_summary.utils.retry import check_cancelled
 
 
 PROTOCOL_VERSION = "contextual-propositions-v1"
@@ -96,6 +97,11 @@ class _CallBudget:
     def __init__(self, limit):
         self.limit, self.used, self.lock = limit, 0, Lock()
         self.permanent_failure = None
+        self.cancel_event = Event()
+
+    def cancel(self):
+        with self.lock:
+            self.cancel_event.set()
 
     def stop(self, error):
         with self.lock:
@@ -103,6 +109,7 @@ class _CallBudget:
 
     def claim(self):
         with self.lock:
+            check_cancelled(self.cancel_event)
             if self.permanent_failure is not None:
                 raise _ProviderStopped()
             if self.used >= self.limit:
@@ -176,6 +183,7 @@ class _AnalysisRun:
             self.issues.append(item)
 
     def _permit(self, context, instructions=()):
+        check_cancelled(self.budget.cancel_event)
         if self.call_count >= self.config.max_calls:
             self.issue(
                 "call_budget_exhausted", "Remaining analysis work was not executed."
@@ -204,12 +212,16 @@ class _AnalysisRun:
         target_id = getattr(self, "active_target", None)
         self._notify("call_started", operation=operation, provider=provider, segment_id=target_id)
         previous_progress = getattr(adapter, "progress", None)
+        previous_cancel = getattr(adapter, "cancel_event", None)
+        if hasattr(adapter, "cancel_event"):
+            adapter.cancel_event = self.budget.cancel_event
         if hasattr(adapter, "progress") and self.progress is not None:
             adapter.progress = lambda service: self._notify("provider_attempt", operation=operation, provider=provider, segment_id=target_id, service=service)
         first_record = len(getattr(adapter, "records", []))
         input_hash = fingerprint(input_data)
         try:
             with heartbeat(self.progress, lambda: self._event("waiting", operation=operation, provider=provider, segment_id=target_id, operation_seconds=time.monotonic() - started), self.progress_interval):
+                check_cancelled(self.budget.cancel_event)
                 result = callback()
         except Exception as exc:
             if isinstance(exc, (AuthenticationError, ProviderConfigurationError)):
@@ -231,6 +243,8 @@ class _AnalysisRun:
         finally:
             if hasattr(adapter, "progress"):
                 adapter.progress = previous_progress
+            if hasattr(adapter, "cancel_event"):
+                adapter.cancel_event = previous_cancel
         metadata = asdict(result.metadata)
         records = getattr(adapter, "records", [])[first_record:]
         metadata["attempt_records"] = [asdict(item) for item in records]
@@ -637,6 +651,11 @@ class _AnalysisRun:
             worker._notify("target_completed", segment_id=target.id,
                            status="partial" if worker.issues else "completed")
             return worker
+        except BaseException:
+            # Signal other targets immediately, even if the coordinator is
+            # currently waiting for an earlier source-ordered future.
+            self.budget.cancel()
+            raise
         finally:
             for adapter in reversed(owned):
                 closer = getattr(adapter, "close", None)
@@ -664,6 +683,9 @@ class _AnalysisRun:
                            for index, target in enumerate(targets)]
                 # Read results in source order; workers and progress run concurrently.
                 workers = [future.result() for future in futures]
+            except BaseException:
+                self.budget.cancel()
+                raise
             finally:
                 for future in futures:
                     future.cancel()

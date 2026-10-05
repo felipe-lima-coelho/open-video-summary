@@ -13,6 +13,10 @@ class ProviderConfigurationError(ConfigurationError):
     """A provider-wide setting or billing failure, rather than target data."""
 
 
+class RequestCancelledError(ProviderError):
+    """No further provider attempt may start after analysis interruption."""
+
+
 class AuthenticationError(ProviderError):
     pass
 

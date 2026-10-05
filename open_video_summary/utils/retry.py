@@ -2,8 +2,24 @@
 
 import math
 import random
+import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from open_video_summary.errors import RequestCancelledError
+
+
+def check_cancelled(cancel_event):
+    if cancel_event is not None and cancel_event.is_set():
+        raise RequestCancelledError("The analysis was interrupted; no new request was sent.")
+
+
+def wait_for_retry(delay, sleep, cancel_event=None):
+    check_cancelled(cancel_event)
+    if cancel_event is not None and sleep is time.sleep:
+        cancel_event.wait(delay)
+    else:
+        sleep(delay)
+    check_cancelled(cancel_event)
 
 
 def retry_after(headers, cap=30.0):

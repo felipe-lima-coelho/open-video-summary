@@ -32,7 +32,7 @@ from open_video_summary.errors import (
 )
 from open_video_summary.utils.providers import LLMConfig
 from open_video_summary.utils.progress import notify
-from open_video_summary.utils.retry import retry_after, retry_delay
+from open_video_summary.utils.retry import check_cancelled, retry_after, retry_delay, wait_for_retry
 
 
 def _value(obj, key: str, default=None):
@@ -283,6 +283,7 @@ class LLMAdapter(ABC):
         self._injected_client = client is not None
         self._sleep = sleep
         self.progress, self._jitter = progress, jitter
+        self.cancel_event = None
         self.interpreter = DomainResponseInterpreter()
         self._validate_config()
 
@@ -331,6 +332,7 @@ class LLMAdapter(ABC):
         if not request.prompt.strip():
             raise ConfigurationError("The generation prompt must not be empty.")
         for attempt in range(1, self.max_attempts + 1):
+            check_cancelled(self.cancel_event)
             started = time.monotonic()
             notify(self.progress, ProviderProgress("attempt_started", self.config.provider,
                                                   attempt, self.max_attempts))
@@ -397,7 +399,7 @@ class LLMAdapter(ABC):
                 notify(self.progress, ProviderProgress("retry_scheduled", self.config.provider,
                     attempt, self.max_attempts, time.monotonic() - started,
                     delay_seconds=delay, error_type=type(error).__name__))
-                self._sleep(delay)
+                wait_for_retry(delay, self._sleep, self.cancel_event)
         raise InvalidResponseError("The language model exhausted its attempt budget.")
 
     def generate_pattern(self, prompt: str, pattern: str, **kwargs) -> str:

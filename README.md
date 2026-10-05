@@ -441,7 +441,9 @@ The return type remains `Video`, and report state is reset for every invocation.
 Observers must return promptly; callback exceptions do not change the analysis.
 Injected clients or transports without a safe `fork()` run serially, with actual
 concurrency recorded in report metadata. Interrupting a concurrent run cancels
-queued targets and waits for bounded in-flight requests and client cleanup.
+queued targets, prevents further logical calls and retry attempts in active
+targets, and waits for already sent bounded requests and client cleanup; it does
+not forcibly abort their sockets.
 
 The neutral `AnalysisSnapshot -> InformationReport` contract lives alongside the
 analyzer in `core/summarizers/`. Original source provenance and allowed current

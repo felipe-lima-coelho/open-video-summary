@@ -26,12 +26,13 @@ from open_video_summary.errors import (
     ConfigurationError,
     InvalidResponseError,
     ProviderError,
+    ProviderConfigurationError,
     RateLimitError,
     ServiceTimeoutError,
     ServiceUnavailableError,
 )
 from open_video_summary.utils.progress import notify
-from open_video_summary.utils.retry import retry_after, retry_delay
+from open_video_summary.utils.retry import check_cancelled, retry_after, retry_delay, wait_for_retry
 
 DEFAULT_TYPESAFE_MODEL = "jev-1.13.0"
 _ENDPOINT_PATH = "/v1/systemone"
@@ -183,6 +184,7 @@ class TypeSafeEvaluator:
         self.transport = transport or _stdlib_transport
         self.sleep = sleep
         self.progress, self.jitter = progress, jitter
+        self.cancel_event = None
         self.can_fork = transport is None
         self.records: list[EvaluationMetadata] = []
 
@@ -243,6 +245,7 @@ class TypeSafeEvaluator:
         started = time.monotonic()
 
         for attempt in range(1, self.config.max_attempts + 1):
+            check_cancelled(self.cancel_event)
             request_started = time.monotonic()
             notify(self.progress, ProviderProgress("attempt_started", self.config.provider,
                 attempt, self.config.max_attempts))
@@ -529,6 +532,8 @@ class TypeSafeEvaluator:
             return RateLimitError("TypeSafe request limit was reached.")
         if status_code == 408:
             return ServiceTimeoutError("TypeSafe request timed out.")
+        if status_code == 404:
+            return ProviderConfigurationError("TypeSafe endpoint or model was not found (HTTP 404).")
         if status_code == 529 or 500 <= status_code <= 599:
             return ServiceUnavailableError("TypeSafe is temporarily unavailable.")
         if 400 <= status_code <= 499:
@@ -567,7 +572,7 @@ class TypeSafeEvaluator:
             jitter=self.jitter)
         notify(self.progress, ProviderProgress("retry_scheduled", self.config.provider,
             attempt, self.config.max_attempts, delay_seconds=delay))
-        self.sleep(delay)
+        wait_for_retry(delay, self.sleep, self.cancel_event)
 
 
 def _validate_identifier(value: object) -> None:
