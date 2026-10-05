@@ -12,7 +12,12 @@ from open_video_summary.adapters.information_schema import (
     information_schema,
     validate_information,
 )
-from open_video_summary.contracts import GenerationRequest, OutputSpec
+from open_video_summary.contracts import (
+    Evaluator,
+    GenerationRequest,
+    LanguageModel,
+    OutputSpec,
+)
 from open_video_summary.core.summarizers.information_config import (
     InformationAnalysisConfig,
 )
@@ -79,7 +84,12 @@ class _LimitReached(Exception):
 class InformationAnalyzer:
     """Each invocation uses local state and returns an immutable report."""
 
-    def __init__(self, generator, evaluator, config=None):
+    def __init__(
+        self,
+        generator: LanguageModel,
+        evaluator: Evaluator,
+        config: InformationAnalysisConfig | None = None,
+    ):
         self.generator = generator
         self.evaluator = evaluator
         self.config = config or InformationAnalysisConfig()
@@ -188,7 +198,7 @@ class _AnalysisRun:
             operation,
             {"context": context, "noul": noul, "choice": choice},
             lambda: self.evaluator.evaluate(encoded, noul=noul, choice=choice),
-            "typesafe",
+            getattr(getattr(self.evaluator, "config", None), "provider", "unknown"),
         )
         signals = {item.id: item.probability for item in result.noul}
         choices = {item.id: item for item in result.choice}
@@ -820,6 +830,9 @@ class _AnalysisRun:
             "logical_calls": self.call_count,
             "generator": self._provider_settings(self.generator),
             "evaluator": self._provider_settings(self.evaluator),
+            "evaluator_provider": getattr(
+                getattr(self.evaluator, "config", None), "provider", "unknown"
+            ),
             "prompt_template_hashes": {
                 "protocol": fingerprint(PROTOCOL),
                 "direct": fingerprint(DIRECT_INSTRUCTION),

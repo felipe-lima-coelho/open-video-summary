@@ -37,6 +37,19 @@ class STTConfig:
 
 
 @dataclass(frozen=True)
+class EvaluatorConfig:
+    """Independent, non-generative evaluator settings without exposed keys."""
+
+    provider: str = "typesafe"
+    model: str = "jev-1.13.0"
+    base_url: str = "https://api.typesafe.ai"
+    api_key: str | None = field(default=None, repr=False)
+    timeout_seconds: float = 30.0
+    max_attempts: int = 2
+    retry_backoff_seconds: float = 0.5
+
+
+@dataclass(frozen=True)
 class ProviderConfig:
     llm: LLMConfig
     stt: STTConfig
@@ -59,6 +72,26 @@ def _positive(value, name: str, *, integer: bool = False):
     return result
 
 
+def load_environment_values(
+    *,
+    environ: Mapping[str, str] | None = None,
+    env_file: str | Path | None = None,
+) -> dict[str, str | None]:
+    """Read root settings without interpolation or changing process values."""
+    from dotenv import dotenv_values
+
+    path = Path(env_file) if env_file is not None else PROJECT_DIR / ".env"
+    values = dict(dotenv_values(path, interpolate=False)) if path.is_file() else {}
+    values.update(os.environ if environ is None else environ)
+    return values
+
+
+def _setting(supplied, values, argument: str, variable: str, default=None):
+    explicit = supplied.get(argument)
+    value = explicit if explicit is not None else values.get(variable)
+    return _optional(value) if _optional(value) is not None else default
+
+
 def load_thread_count(
     cli_value: int | None = None,
     *,
@@ -69,11 +102,7 @@ def load_thread_count(
     if cli_value is not None:
         value, name = cli_value, "--threads"
     else:
-        from dotenv import dotenv_values
-
-        path = Path(env_file) if env_file is not None else PROJECT_DIR / ".env"
-        values = dict(dotenv_values(path, interpolate=False)) if path.is_file() else {}
-        values.update(os.environ if environ is None else environ)
+        values = load_environment_values(environ=environ, env_file=env_file)
         value = _optional(values.get("OVS_THREADS")) or "2"
         name = "OVS_THREADS"
 
@@ -93,11 +122,7 @@ def load_visual_scope(
     if cli_value is not None:
         value, name = _optional(cli_value) or "segment", "--visual-scope"
     else:
-        from dotenv import dotenv_values
-
-        path = Path(env_file) if env_file is not None else PROJECT_DIR / ".env"
-        values = dict(dotenv_values(path, interpolate=False)) if path.is_file() else {}
-        values.update(os.environ if environ is None else environ)
+        values = load_environment_values(environ=environ, env_file=env_file)
         value = _optional(values.get("OVS_VISUAL_SCOPE")) or "segment"
         name = "OVS_VISUAL_SCOPE"
     value = value.lower()
@@ -119,18 +144,13 @@ def load_provider_config(
     value masks the .env value and is treated as absent. Credentials are never
     included in dataclass representations.
     """
-    from dotenv import dotenv_values
     from open_video_summary.adapters.factory import LLM_PROVIDERS, STT_PROVIDERS
 
-    path = Path(env_file) if env_file is not None else PROJECT_DIR / ".env"
-    values = dict(dotenv_values(path, interpolate=False)) if path.is_file() else {}
-    values.update(os.environ if environ is None else environ)
+    values = load_environment_values(environ=environ, env_file=env_file)
     supplied = overrides or {}
 
     def get(argument: str, variable: str, default=None):
-        explicit = supplied.get(argument)
-        value = explicit if explicit is not None else values.get(variable)
-        return _optional(value) if _optional(value) is not None else default
+        return _setting(supplied, values, argument, variable, default)
 
     llm_provider = get("llm_provider", "OVS_LLM_PROVIDER", "ollama").lower()
     stt_provider = get("stt_provider", "OVS_STT_PROVIDER", "whisper_local").lower()
@@ -177,3 +197,67 @@ def load_provider_config(
     if endpoint.username is not None or endpoint.password is not None:
         raise ConfigurationError("OVS_LLM_BASE_URL must not contain credentials.")
     return ProviderConfig(llm, stt)
+
+
+def load_evaluator_config(
+    overrides: Mapping[str, object] | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    env_file: str | Path | None = None,
+) -> EvaluatorConfig:
+    """Resolve only the selected evaluator; unrelated commands need not load it.
+
+    A registered provider supplies its adapter, model and endpoint defaults.
+    Every evaluator uses the role's OVS_EVALUATOR_API_KEY from process/root .env,
+    independent of LLM/STT credentials. CLI settings do not carry secrets, and
+    former TypeSafe/Jev settings are not used as fallbacks.
+    """
+    from open_video_summary.adapters.factory import EVALUATOR_PROVIDERS
+
+    values = load_environment_values(environ=environ, env_file=env_file)
+    supplied = overrides or {}
+
+    def get(argument: str, variable: str, default=None):
+        return _setting(supplied, values, argument, variable, default)
+
+    provider = get("evaluator_provider", "OVS_EVALUATOR_PROVIDER", "typesafe").lower()
+    if provider not in EVALUATOR_PROVIDERS:
+        raise ConfigurationError(f"Unknown evaluator provider '{provider}'.")
+    definition = EVALUATOR_PROVIDERS[provider]
+    config = EvaluatorConfig(
+        provider=provider,
+        model=get("evaluator_model", "OVS_EVALUATOR_MODEL", definition.default_model),
+        base_url=get(
+            "evaluator_base_url", "OVS_EVALUATOR_BASE_URL", definition.base_url
+        ),
+        # This role has one neutral credential variable for every adapter.
+        api_key=_optional(values.get("OVS_EVALUATOR_API_KEY")),
+        timeout_seconds=_positive(
+            get("evaluator_timeout", "OVS_EVALUATOR_TIMEOUT_SECONDS", "30"),
+            "OVS_EVALUATOR_TIMEOUT_SECONDS",
+        ),
+        max_attempts=_positive(
+            get("evaluator_max_attempts", "OVS_EVALUATOR_MAX_ATTEMPTS", "2"),
+            "OVS_EVALUATOR_MAX_ATTEMPTS",
+            integer=True,
+        ),
+    )
+    try:
+        endpoint = urlsplit(config.base_url)
+        _ = endpoint.port
+    except ValueError:
+        raise ConfigurationError(
+            "OVS_EVALUATOR_BASE_URL must be a valid HTTP(S) endpoint."
+        ) from None
+    if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
+        raise ConfigurationError("OVS_EVALUATOR_BASE_URL must be an HTTP(S) endpoint.")
+    if (
+        endpoint.username is not None
+        or endpoint.password is not None
+        or endpoint.query
+        or endpoint.fragment
+    ):
+        raise ConfigurationError(
+            "OVS_EVALUATOR_BASE_URL must not contain credentials, query or fragment."
+        )
+    return config

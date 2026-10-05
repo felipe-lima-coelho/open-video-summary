@@ -1,12 +1,9 @@
 """Opt-in information-analysis settings, loaded only for an analysis request."""
 
 import math
-import os
 from dataclasses import dataclass
-from pathlib import Path
 
 from open_video_summary.errors import ConfigurationError
-from open_video_summary.utils.config import PROJECT_DIR
 
 
 @dataclass(frozen=True)
@@ -53,19 +50,19 @@ class InformationAnalysisConfig:
 
 
 def configured_information_analyzer(overrides=None, *, environ=None, env_file=None):
-    """Construct the existing generator plus a separately typed Jev evaluator."""
-    from dotenv import dotenv_values
-    from open_video_summary.adapters.factory import create_llm
-    from open_video_summary.adapters.typesafe import TypeSafeConfig, TypeSafeEvaluator
+    """Construct independently selected generation and typed evaluation roles."""
+    from open_video_summary.adapters.factory import create_evaluator, create_llm
     from open_video_summary.core.summarizers.information_analysis import (
         InformationAnalyzer,
     )
-    from open_video_summary.utils.providers import load_provider_config
+    from open_video_summary.utils.providers import (
+        load_environment_values,
+        load_evaluator_config,
+        load_provider_config,
+    )
 
     supplied = overrides or {}
-    path = Path(env_file) if env_file is not None else PROJECT_DIR / ".env"
-    values = dict(dotenv_values(path, interpolate=False)) if path.is_file() else {}
-    values.update(os.environ if environ is None else environ)
+    values = load_environment_values(environ=environ, env_file=env_file)
 
     def get(argument, variable, default, convert=str):
         value = supplied.get(argument)
@@ -114,14 +111,10 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
             "information_equivalence", "OVS_INFORMATION_EQUIVALENCE", 0.90, float
         ),
     )
-    evaluator_config = TypeSafeConfig(
-        api_key=values.get("TYPESAFE_API_KEY") or None,
-        model=get("jev_model", "OVS_JEV_MODEL", "jev-1.13.0"),
-        base_url=get("jev_base_url", "OVS_JEV_BASE_URL", "https://api.typesafe.ai"),
-        timeout_seconds=get("jev_timeout", "OVS_JEV_TIMEOUT_SECONDS", 30.0, float),
-        max_attempts=get("jev_max_attempts", "OVS_JEV_MAX_ATTEMPTS", 2, int),
+    evaluator_config = load_evaluator_config(
+        supplied, environ=values, env_file=env_file
     )
     generator = create_llm(
-        load_provider_config(supplied, environ=values, env_file=path).llm
+        load_provider_config(supplied, environ=values, env_file=env_file).llm
     )
-    return InformationAnalyzer(generator, TypeSafeEvaluator(evaluator_config), settings)
+    return InformationAnalyzer(generator, create_evaluator(evaluator_config), settings)

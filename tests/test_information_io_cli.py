@@ -13,6 +13,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from open_video_summary import __main__ as cli
+from open_video_summary.adapters.factory import (
+    EVALUATOR_PROVIDERS,
+    LLM_PROVIDERS,
+    ProviderDefinition,
+)
 from open_video_summary.core.summarizers.base import Summarizer
 from open_video_summary.core.summarizers.information_analysis import InformationAnalyzer
 from open_video_summary.core.summarizers.information_config import (
@@ -199,16 +204,24 @@ class InformationConfigurationAndCLITests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.env_file = self.root / ".env"
+        settings_root = patch(
+            "open_video_summary.utils.providers.PROJECT_DIR", self.root
+        )
+        settings_root.start()
+        self.addCleanup(settings_root.stop)
+        process_settings = patch.dict(os.environ, {}, clear=True)
+        process_settings.start()
+        self.addCleanup(process_settings.stop)
 
     def test_config_precedence_optional_keys_bounds_and_no_secret_serialization(self):
         self.env_file.write_text(
-            "TYPESAFE_API_KEY=file-secret\nOVS_INFORMATION_QA=false\nOVS_INFORMATION_MAX_CALLS=4\n",
+            "OVS_EVALUATOR_API_KEY=file-secret\nOVS_INFORMATION_QA=false\nOVS_INFORMATION_MAX_CALLS=4\n",
             encoding="utf-8",
         )
         analyzer = configured_information_analyzer(
             {"information_max_calls": 9},
             environ={
-                "TYPESAFE_API_KEY": "process-secret",
+                "OVS_EVALUATOR_API_KEY": "process-secret",
                 "OVS_INFORMATION_MAX_CALLS": "7",
             },
             env_file=self.env_file,
@@ -218,7 +231,7 @@ class InformationConfigurationAndCLITests(unittest.TestCase):
         self.assertEqual("process-secret", analyzer.evaluator.config.api_key)
         self.assertNotIn("process-secret", repr(analyzer.evaluator.config))
         missing = configured_information_analyzer(
-            environ={"TYPESAFE_API_KEY": ""}, env_file=self.env_file
+            environ={"OVS_EVALUATOR_API_KEY": ""}, env_file=self.env_file
         )
         report = missing.analyze(capture_snapshot(videos(["Texto."])))
         self.assertEqual("failed", report.status)
@@ -233,6 +246,175 @@ class InformationConfigurationAndCLITests(unittest.TestCase):
                 configured_information_analyzer(
                     values, environ={}, env_file=self.env_file
                 )
+
+    def test_registered_evaluator_is_selected_without_algorithm_changes_or_key_leakage(
+        self,
+    ):
+        text = "O backup é diário."
+        generator = ScriptedGenerator({("v0:s0", "direct"): [candidate("v0:s0", text)]})
+        selected = []
+
+        def construct(config):
+            evaluator = SyntheticEvaluator()
+            evaluator.config = config
+            selected.append(evaluator)
+            return evaluator
+
+        with (
+            patch.dict(
+                LLM_PROVIDERS,
+                {
+                    "ollama": ProviderDefinition(
+                        lambda config: generator, "fixture", "http://localhost:11434"
+                    )
+                },
+            ),
+            patch.dict(
+                EVALUATOR_PROVIDERS,
+                {
+                    "fixture": ProviderDefinition(
+                        construct,
+                        "fixture-evaluator",
+                        "https://evaluator.example",
+                        "OVS_EVALUATOR_API_KEY",
+                    )
+                },
+            ),
+        ):
+            analyzer = configured_information_analyzer(
+                {"evaluator_provider": "fixture", "information_qa": False},
+                environ={
+                    "OVS_EVALUATOR_API_KEY": "evaluator-private",
+                    "OPENAI_API_KEY": "generator-private",
+                },
+                env_file=self.env_file,
+            )
+            report = analyzer.analyze(capture_snapshot(videos([text])))
+        self.assertIs(selected[0], analyzer.evaluator)
+        self.assertEqual("evaluator-private", analyzer.evaluator.config.api_key)
+        self.assertEqual("fixture-evaluator", analyzer.evaluator.config.model)
+        self.assertEqual("completed", report.status)
+        exported = report.to_dict()
+        self.assertEqual("fixture", exported["metadata"]["evaluator_provider"])
+        self.assertEqual("fixture", exported["metadata"]["evaluator"]["provider"])
+        self.assertTrue(
+            all(
+                call.provider == "fixture"
+                for call in report.calls
+                if not call.operation.startswith("extract_")
+            )
+        )
+        self.assertNotIn("evaluator-private", json.dumps(exported))
+        self.assertNotIn("generator-private", json.dumps(exported))
+
+    def test_cli_evaluator_options_reach_selected_factory_with_precedence(self):
+        dataset, path = self.root / "input.json", self.root / "report.json"
+        VideoDumper.dump_videos_to_json(videos(["Bom dia."]), str(dataset))
+        self.env_file.write_text(
+            "OVS_EVALUATOR_MODEL=file-model\nOVS_EVALUATOR_API_KEY=file-key\n",
+            encoding="utf-8",
+        )
+        constructed = []
+
+        def construct(config):
+            evaluator = SyntheticEvaluator()
+            evaluator.config = config
+            constructed.append(evaluator)
+            return evaluator
+
+        with (
+            patch.dict(
+                LLM_PROVIDERS,
+                {
+                    "ollama": ProviderDefinition(
+                        lambda config: ScriptedGenerator(),
+                        "fixture",
+                        "http://localhost:11434",
+                    )
+                },
+            ),
+            patch.dict(
+                EVALUATOR_PROVIDERS,
+                {
+                    "fixture": ProviderDefinition(
+                        construct,
+                        "fixture-evaluator",
+                        "https://default.example",
+                        "OVS_EVALUATOR_API_KEY",
+                    )
+                },
+            ),
+            patch.dict(
+                os.environ,
+                {
+                    "OVS_EVALUATOR_PROVIDER": "unknown",
+                    "OVS_EVALUATOR_MODEL": "process-model",
+                    "OVS_EVALUATOR_API_KEY": "process-key",
+                },
+            ),
+            patch.object(cli, "_cpu_settings"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            cli.main(
+                [
+                    "analyze-information",
+                    "--dataset",
+                    str(dataset),
+                    "--output",
+                    str(path),
+                    "--evaluator-provider",
+                    "fixture",
+                    "--evaluator-model",
+                    "cli-model",
+                    "--evaluator-base-url",
+                    "https://cli.example",
+                    "--evaluator-timeout",
+                    "7.5",
+                    "--evaluator-max-attempts",
+                    "1",
+                ]
+            )
+        config = constructed[0].config
+        self.assertEqual("fixture", config.provider)
+        self.assertEqual("cli-model", config.model)
+        self.assertEqual("process-key", config.api_key)
+        self.assertEqual("https://cli.example", config.base_url)
+        self.assertEqual(7.5, config.timeout_seconds)
+        self.assertEqual(1, config.max_attempts)
+        self.assertNotIn("process-key", path.read_text(encoding="utf-8"))
+
+    def test_unknown_evaluator_cli_fails_configuration_before_generation_or_network(
+        self,
+    ):
+        dataset = self.root / "input.json"
+        VideoDumper.dump_videos_to_json(videos(["Regra."]), str(dataset))
+        with (
+            patch.object(cli, "_cpu_settings"),
+            patch(
+                "open_video_summary.adapters.factory.create_llm",
+                side_effect=AssertionError(
+                    "Generator constructed before evaluator configuration validation"
+                ),
+            ),
+            patch(
+                "urllib.request.urlopen",
+                side_effect=AssertionError("Unexpected live request"),
+            ),
+            contextlib.redirect_stderr(io.StringIO()) as error,
+            self.assertRaises(SystemExit) as exit,
+        ):
+            cli.main(
+                [
+                    "analyze-information",
+                    "--dataset",
+                    str(dataset),
+                    "--evaluator-provider",
+                    "missing",
+                ]
+            )
+        self.assertEqual(1, exit.exception.code)
+        self.assertIn("Unknown evaluator provider 'missing'", error.getvalue())
+        self.assertEqual([dataset], list(self.root.glob("*.json")))
 
     def test_text_only_cli_runs_without_source_video_or_classifier_or_ffmpeg(self):
         dataset, path, csv_path = (
@@ -394,6 +576,13 @@ class InformationConfigurationAndCLITests(unittest.TestCase):
 
     def test_disabled_summarize_and_other_commands_do_not_configure_information(self):
         with (
+            patch.dict(
+                os.environ,
+                {
+                    "OVS_EVALUATOR_PROVIDER": "unsupported",
+                    "OVS_EVALUATOR_TIMEOUT_SECONDS": "invalid",
+                },
+            ),
             patch(
                 "open_video_summary.core.summarizers.information_config.configured_information_analyzer",
                 side_effect=AssertionError("Information config unexpectedly loaded"),
@@ -410,7 +599,7 @@ class InformationConfigurationAndCLITests(unittest.TestCase):
     def test_import_information_module_in_fresh_process_has_no_hsm_classifier_import(
         self,
     ):
-        code = "import sys; import open_video_summary.core.summarizers.information_analysis; assert 'open_video_summary.classifiers.text' not in sys.modules; assert 'tensorflow' not in sys.modules"
+        code = "import sys; import open_video_summary.core.summarizers.information_analysis; assert 'open_video_summary.classifiers.text' not in sys.modules; assert 'tensorflow' not in sys.modules; assert 'open_video_summary.adapters.typesafe' not in sys.modules"
         result = subprocess.run(
             [str(PROJECT_DIR / ".venv/Scripts/python.exe"), "-c", code],
             capture_output=True,

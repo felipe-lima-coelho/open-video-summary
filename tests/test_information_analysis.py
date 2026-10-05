@@ -199,7 +199,14 @@ class SyntheticEvaluator:
                 ChoiceResult(identifier, selected, probabilities, confidence)
             )
         metadata = EvaluationMetadata(
-            "jev-1.13.0", "jev-1.13.0", 0.001, 1, "success", 20, 8
+            "jev-1.13.0",
+            "jev-1.13.0",
+            0.001,
+            1,
+            "success",
+            20,
+            8,
+            provider=self.config.provider,
         )
         self.records.append(metadata)
         return EvaluationResult(
@@ -946,6 +953,8 @@ class InformationProtocolTests(unittest.TestCase):
         self.assertEqual(2, len(bodies))
         exported = report.to_dict()
         self.assertNotIn("fixture-secret", json.dumps(exported))
+        self.assertEqual("typesafe", exported["metadata"]["evaluator_provider"])
+        self.assertEqual("typesafe", exported["metadata"]["evaluator"]["provider"])
         self.assertEqual(5, exported["calls"][1]["metadata"]["input_tokens"])
         self.assertEqual(
             "atomic", exported["calls"][1]["decisions"]["choice"][0]["selected"]

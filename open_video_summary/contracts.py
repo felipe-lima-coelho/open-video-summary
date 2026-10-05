@@ -74,6 +74,57 @@ class LanguageModel(Protocol):
 
 
 @dataclass(frozen=True)
+class NoulResult:
+    id: str
+    probability: float
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
+class ChoiceResult:
+    id: str
+    selected: str
+    probabilities: tuple[tuple[str, float], ...] = ()
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
+class EvaluationMetadata:
+    requested_model: str
+    returned_model: str | None
+    duration_seconds: float
+    attempts: int
+    status: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    sdk_version: str | None = None
+    provider: str = "unknown"
+    adapter_version: str = "1"
+
+
+@dataclass(frozen=True)
+class EvaluationResult:
+    noul: tuple[NoulResult, ...]
+    choice: tuple[ChoiceResult, ...]
+    metadata: EvaluationMetadata
+
+
+class Evaluator(Protocol):
+    """Typed probability decisions, separate from generative language models."""
+
+    records: list[EvaluationMetadata]
+
+    def preflight(self) -> None: ...
+
+    def evaluate(
+        self,
+        context: str,
+        noul: dict[str, str] | None = None,
+        choice: dict[str, tuple[str, tuple[str, ...]]] | None = None,
+    ) -> EvaluationResult: ...
+
+
+@dataclass(frozen=True)
 class TimedWord:
     text: str
     start: float

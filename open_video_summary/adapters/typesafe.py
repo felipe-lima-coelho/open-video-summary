@@ -15,6 +15,12 @@ from collections.abc import Mapping
 from typing import Callable
 from urllib.parse import urlsplit
 
+from open_video_summary.contracts import (
+    ChoiceResult,
+    EvaluationMetadata,
+    EvaluationResult,
+    NoulResult,
+)
 from open_video_summary.errors import (
     AuthenticationError,
     ConfigurationError,
@@ -46,6 +52,7 @@ class TypeSafeConfig:
     timeout_seconds: float = 30.0
     max_attempts: int = 2
     retry_backoff_seconds: float = 0.5
+    provider: str = field(default="typesafe", init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.model, str) or not self.model.strip():
@@ -103,42 +110,6 @@ class TypeSafeConfig:
             raise ConfigurationError(
                 "TypeSafe api_key must be a string when configured."
             )
-
-
-@dataclass(frozen=True)
-class NoulResult:
-    id: str
-    probability: float
-    confidence: float | None = None
-
-
-@dataclass(frozen=True)
-class ChoiceResult:
-    id: str
-    selected: str
-    probabilities: tuple[tuple[str, float], ...] = ()
-    confidence: float | None = None
-
-
-@dataclass(frozen=True)
-class EvaluationMetadata:
-    requested_model: str
-    returned_model: str | None
-    duration_seconds: float
-    attempts: int
-    status: str
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    sdk_version: str | None = None
-    provider: str = field(default="typesafe", init=False)
-    adapter_version: str = field(default="1", init=False)
-
-
-@dataclass(frozen=True)
-class EvaluationResult:
-    noul: tuple[NoulResult, ...]
-    choice: tuple[ChoiceResult, ...]
-    metadata: EvaluationMetadata
 
 
 @dataclass(frozen=True)
@@ -359,6 +330,7 @@ class TypeSafeEvaluator:
                     status="success",
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
+                    provider=self.config.provider,
                 )
                 self.records.append(metadata)
                 return EvaluationResult(
@@ -565,6 +537,7 @@ class TypeSafeEvaluator:
             duration_seconds=max(0.0, duration),
             attempts=attempt,
             status=status,
+            provider=self.config.provider,
         )
 
     def _wait_before_retry(self, attempt: int, retry_after: float | None) -> None:
