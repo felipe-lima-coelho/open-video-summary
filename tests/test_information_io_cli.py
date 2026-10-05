@@ -38,6 +38,7 @@ from tests.test_information_analysis import (
     candidate,
     videos,
 )
+from tests import test_information_analysis as analysis_fixtures
 
 
 class InformationIOTests(unittest.TestCase):
@@ -81,6 +82,40 @@ class InformationIOTests(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             save_information_report(self.report, path)
         self.assertEqual(before, path.read_bytes())
+
+    def test_unknown_canonical_qualifiers_export_as_null_with_proposal_audit(self):
+        text = "O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei."
+        raw = candidate("v0:s0", text, negated=True)
+        evaluator, _ = analysis_fixtures.InformationEvaluationRegressionTests().evaluator({"attribution_annotation": 0.57})
+        report = InformationAnalyzer(
+            ScriptedGenerator({("v0:s0", "direct"): [raw]}), evaluator,
+            InformationAnalysisConfig(qa_enabled=False),
+        ).analyze(capture_snapshot(videos([text])))
+        path, csv_path = self.root / "unknown.json", self.root / "unknown.csv"
+        save_information_report(report, path, csv_path=csv_path)
+        exported = json.loads(path.read_text(encoding="utf-8"))
+        unit, record = exported["units"][0], exported["candidates"][0]
+        self.assertEqual(3, exported["schema_version"])
+        self.assertIsNone(unit["qualifiers"])
+        self.assertEqual("unknown", unit["qualifier_state"])
+        self.assertEqual(record["id"], unit["representative_candidate_id"])
+        self.assertEqual("uncertain", record["annotation_state"])
+        self.assertEqual(raw["qualifiers"], record["candidate"]["proposed_qualifiers"])
+        row = next(csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8"))))
+        self.assertEqual("null", row["qualifiers"])
+        self.assertEqual("unknown", row["qualifier_state"])
+        self.assertEqual(record["id"], row["representative_candidate_id"])
+
+    def test_verified_canonical_qualifiers_export_with_their_representative(self):
+        path, csv_path = self.root / "verified.json", self.root / "verified.csv"
+        save_information_report(self.report, path, csv_path=csv_path)
+        exported = json.loads(path.read_text(encoding="utf-8"))
+        unit = exported["units"][0]
+        self.assertEqual("verified", unit["qualifier_state"])
+        self.assertEqual("palestrante", unit["qualifiers"]["attribution"])
+        row = next(csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8"))))
+        self.assertEqual("verified", row["qualifier_state"])
+        self.assertEqual(unit["qualifiers"], json.loads(row["qualifiers"]))
 
     def test_overlapping_occurrence_groups_export_provisional_state_and_cli_label(self):
         text = "Backup is daily. I repeat: backup is daily."

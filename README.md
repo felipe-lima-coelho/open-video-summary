@@ -318,18 +318,45 @@ Every resolved candidate still requires semantic validation. Timestamps are
 copied from source segments, with segment-level resolution, never estimated by a
 model. Context citations can resolve a reference but create no occurrence.
 
-Jev receives readable assertion quotations, explicitly cited reference context
-and the proposed claim, without uncited source text, timing metadata or extraction
-instructions. Separate positive questions check support and each qualifier's
-fidelity; absence is valid when the source and proposition both lack that feature.
-Independent annotation checks also guard the stored qualifier fields. An empty
-generated field never disables its source-based fidelity check. Attribution names
-a reported speaker or claimant; an entity acting in a narrated event remains in
-the proposition without becoming a reporting source. Choice options retain stable
-IDs with descriptions for granularity and semantic relations. Acceptance thresholds
-remain unchanged. An atomic proposition may cite a longer passage without being
-required to include its unrelated independent facts; coverage auditing handles
-those omissions.
+Jev receives readable assertion quotations, the whole original target, whole
+source segments for cited reference context, and the proposed claim. The
+source-owned scope exposes governing conditions, attribution, modality and
+negation outside a generator-selected quote. It does not authorize new assertions
+from reference context. Timing metadata and extraction instructions are excluded.
+Focused anchor binding first checks that the selected wording identifies the
+candidate's property or event. That request contains only assertion wording and
+claim, so another source assertion cannot supply its answer. Exact quote/claim
+identity, or one contiguous exact candidate passage covering every selected
+assertion interval, can establish binding in code. Matching only a different
+occurrence or combining disjoint passages cannot. This proves binding only;
+source-scope fidelity and atomicity checks still run. Six independent checks gate
+content support and qualifier fidelity, together with atomicity and applicable
+QA checks. An empty generated annotation never disables
+these source-based checks. An atomic claim need not include unrelated independent
+facts in a longer source passage; coverage auditing handles those omissions.
+
+Auxiliary annotation quality is audited separately from content acceptance at the
+same threshold. Candidate `proposed_qualifiers` and raw generator fields remain
+proposals, with `annotation_state`, reasons and signals. A supported proposition
+can be counted while its proposed annotations remain uncertain or invalid.
+Canonical units expose `qualifiers: null` and `qualifier_state: "unknown"` in that
+case; null does not mean that the proposition has no qualifiers. Verified canonical
+fields belong to the unit's `representative_candidate_id` and its chosen text;
+they are not borrowed from another paraphrase. Unverified proposals do not affect
+coverage, pair comparison, matching or duplicate shortcuts. Attribution names a
+reported speaker or claimant, rather than an actor merely performing an action.
+Choice options retain stable IDs with descriptions. Content and equivalence
+thresholds remain unchanged.
+
+Within an immutable source target, completed validation can be reused only for
+the same resolved evidence, claim, QA question/answer, proposed annotations and
+source scope. Each repeated candidate retains its own raw output and route, with
+`validation_reused_from` tracing the original decision. Errors are not cached;
+changed content or evidence requires new checks. Reuse also retains negative and
+uncertain decisions rather than seeking a different probability for unchanged
+content. Focused binding can add a logical call for a nonliteral paraphrase;
+reuse and free literal binding avoid redundant calls. The configured global
+call limit is unchanged, and any unexecuted work remains visible.
 
 Coverage checks read the original target and accepted propositions, including
 markers for quantities, negations, conditions and references. These markers are
@@ -342,7 +369,12 @@ Pair comparisons preserve complement, specificity, contradiction and correction
 relations. Only sufficiently strong equivalence decisions merge meanings, and
 every member of a merged group must be pairwise compatible. Equal text in different
 contexts still needs evaluation. Exact validated duplicates with identical
-evidence can be deduplicated in code. Occurrence deduplication requires the same
+evidence can be deduplicated in code, independently of auxiliary annotations.
+These free duplicate checks run before paid comparisons even if the logical-call
+budget is exhausted. Shared assertion anchors and textual similarity prioritize
+the remaining comparisons; priority alone never establishes equivalence.
+Unexamined pairs remain explicit and unique-unit counts remain provisional.
+Occurrence deduplication requires the same
 set of literal assertion anchors (source identity, segment and character offsets);
 context citations do not determine identity. Repetitions retain distinct
 positional source identities and assertion spans. Different overlapping anchors,
@@ -360,10 +392,12 @@ units, assertion evidence groups and their alignment state, context evidence,
 pair relations, coverage records,
 counts by segment/video/whole input and unresolved issues. Calls record requested
 and returned models, input/output hashes, usage when available, latency and retry
-attempts. Report schema 2 adds evidence-resolution records; source data and older
-reports are not rewritten. Generator and evaluator template hashes, the evaluator
+attempts. Report schema 3 retains schema 2 evidence-resolution records, separates
+content validation from annotation audit, and makes canonical qualifiers nullable.
+Source data and older reports are not rewritten. Generator and evaluator template hashes, the evaluator
 template version, protocol version and settings are retained without keys.
-The optional CSV is an occurrence evidence table with alignment state; the JSON
+The optional CSV is an occurrence evidence table with alignment state, canonical
+qualifier state, nullable qualifiers and representative candidate ID; the JSON
 contains the full evidence. The CLI labels unresolved totals as provisional
 occurrence evidence groups.
 

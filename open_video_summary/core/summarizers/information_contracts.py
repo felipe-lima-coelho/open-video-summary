@@ -255,6 +255,11 @@ class CandidateRecord:
     granularity_probability: float | None = None
     granularity_confidence: float | None = None
     evidence_resolutions: tuple[EvidenceResolution, ...] = ()
+    annotation_state: str = "not_evaluated"
+    annotation_reasons: tuple[str, ...] = ()
+    annotation_signals: tuple[tuple[str, float], ...] = ()
+    anchor_binding_origin: str | None = None
+    validation_reused_from: str | None = None
 
 
 @dataclass(frozen=True)
@@ -262,8 +267,10 @@ class InformationUnit:
     id: str
     text: str
     unit_type: str
-    qualifiers: Qualifiers
+    qualifiers: Qualifiers | None
     candidate_ids: tuple[str, ...]
+    qualifier_state: str = "unknown"
+    representative_candidate_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -381,7 +388,10 @@ class InformationReport:
                 result = {}
                 for item in fields(value):
                     field_value = getattr(value, item.name)
-                    if item.name == "metadata_json":
+                    if isinstance(value, InformationCandidate) and item.name == "qualifiers":
+                        # Candidate annotations are proposals, never canonical fields.
+                        result["proposed_qualifiers"] = export(field_value)
+                    elif item.name == "metadata_json":
                         result["metadata"] = json.loads(field_value)
                     elif item.name == "raw_json":
                         result["raw"] = json.loads(field_value)

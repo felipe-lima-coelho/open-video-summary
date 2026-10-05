@@ -8,6 +8,7 @@ import math
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
+from heapq import nsmallest
 from itertools import combinations
 from threading import Event, Lock
 
@@ -47,6 +48,7 @@ from open_video_summary.core.summarizers.information_contracts import (
 from open_video_summary.core.summarizers.information_evaluation import (
     EVALUATION_TEMPLATE_VERSION,
     RELATION_CRITERIA,
+    anchor_binding_spec,
     coverage_spec,
     evaluation_templates,
     relation_state,
@@ -183,6 +185,7 @@ class _AnalysisRun:
         self.candidate_prefix = f"t{target_index}:" if target_index not in {None, 0} else ""
         self.actual_concurrency = parent.actual_concurrency if parent else 1
         self.evaluated_targets = set()
+        self.validation_cache = {}
 
     @property
     def call_count(self):
@@ -379,15 +382,26 @@ class _AnalysisRun:
         if audit is not None:
             data["coverage_audit"] = asdict(audit)
             data["accepted"] = [
-                asdict(record.candidate) for record in self._accepted(target.id)
+                {
+                    "text": record.candidate.text,
+                    "unit_type": record.candidate.unit_type,
+                    "evidence": [asdict(item) for item in record.candidate.evidence],
+                    "qualifiers": (asdict(record.candidate.qualifiers)
+                                   if record.annotation_state == "verified" else None),
+                    "annotation_state": record.annotation_state,
+                }
+                for record in self._accepted(target.id)
             ]
             data["repair_candidates"] = [
                 {
-                    "candidate": json.loads(record.raw_json),
+                    "proposal": json.loads(record.raw_json),
                     "validation": record.validation,
                     "reasons": record.reasons,
                     "signals": dict(record.signals),
                     "granularity": record.granularity,
+                    "annotation_state": record.annotation_state,
+                    "annotation_reasons": record.annotation_reasons,
+                    "annotation_signals": dict(record.annotation_signals),
                 }
                 for record in self.candidates
                 if record.target_segment_id == target.id
@@ -500,16 +514,65 @@ class _AnalysisRun:
         record = replace(record, candidate=candidate, validation="not_evaluated",
                          evidence_resolutions=resolutions)
         self.candidates.append(record)
-        state, questions, granularity = validation_spec(candidate, identifier, target.id)
+        cache_key = fingerprint({
+            "candidate": asdict(candidate),
+            "target_content": target.content,
+            "cited_context": [(item.segment_id, self.segments[item.segment_id].content)
+                              for item in candidate.evidence if item.role == "context"],
+        })
+        previous = self.validation_cache.get(cache_key)
+        if previous is not None:
+            self.candidates[-1] = replace(
+                previous, id=record.id, target_segment_id=record.target_segment_id,
+                route=route, round=round_number, raw_json=record.raw_json,
+                evidence_resolutions=resolutions, validation_reused_from=previous.id,
+            )
+            return
+        state, questions, granularity = validation_spec(
+            candidate, identifier, target, self._context(target)
+        )
         try:
+            assertion = tuple(item for item in candidate.evidence if item.role == "assertion")
+            if len(assertion) == 1 and candidate.text == assertion[0].quote:
+                binding, binding_origin = 1.0, "literal_identity"
+            elif self._literal_passage_covers(candidate.text, target.content, assertion):
+                binding, binding_origin = 1.0, "literal_source_passage"
+            else:
+                anchor_state, anchor_questions = anchor_binding_spec(candidate)
+                binding_signals, _ = self._evaluate(
+                    "bind_candidate_anchor", anchor_state, anchor_questions
+                )
+                binding, binding_origin = binding_signals["anchor_binding"], "evaluator"
+            if binding < self.config.acceptance_threshold:
+                self.candidates[-1] = replace(
+                    record, validation="rejected" if binding <= 1 - self.config.acceptance_threshold else "needs_review",
+                    reasons=("anchor_binding",), signals=(("anchor_binding", binding),),
+                    anchor_binding_origin=binding_origin,
+                )
+                self.validation_cache[cache_key] = self.candidates[-1]
+                return
             signals, choices = self._evaluate(
                 "validate_candidate", state, questions, granularity
             )
             decision = choices["granularity"]
             probability = dict(decision.probabilities).get(decision.selected, 0.0)
+            content_signals = {key: value for key, value in signals.items()
+                               if not key.endswith("_annotation")}
+            content_signals["anchor_binding"] = binding
+            annotation_signals = {key: value for key, value in signals.items()
+                                  if key.endswith("_annotation")}
+            annotation_reasons = tuple(
+                key for key, value in annotation_signals.items()
+                if value < self.config.acceptance_threshold
+            )
+            annotation_state = (
+                "verified" if not annotation_reasons else
+                "invalid" if any(value <= 1 - self.config.acceptance_threshold
+                                 for value in annotation_signals.values()) else "uncertain"
+            )
             reasons = tuple(
                 key
-                for key, value in signals.items()
+                for key, value in content_signals.items()
                 if value < self.config.acceptance_threshold
             )
             if candidate.unresolved_references:
@@ -524,7 +587,7 @@ class _AnalysisRun:
             elif (
                 decision.selected == "not_information"
                 and probability >= self.config.acceptance_threshold
-            ) or signals["support"] <= 1 - self.config.acceptance_threshold:
+            ) or content_signals["support"] <= 1 - self.config.acceptance_threshold:
                 validation = "rejected"
             elif (
                 candidate.unresolved_references
@@ -534,7 +597,7 @@ class _AnalysisRun:
                 )
                 or any(
                     value <= 1 - self.config.acceptance_threshold
-                    for value in signals.values()
+                    for value in content_signals.values()
                 )
             ):
                 validation = "needs_repair"
@@ -544,14 +607,30 @@ class _AnalysisRun:
                 record,
                 validation=validation,
                 reasons=reasons,
-                signals=tuple(signals.items()),
+                signals=tuple(content_signals.items()),
                 granularity=decision.selected,
                 granularity_probability=probability,
                 granularity_confidence=decision.confidence,
+                annotation_state=annotation_state,
+                annotation_reasons=annotation_reasons,
+                annotation_signals=tuple(annotation_signals.items()),
+                anchor_binding_origin=binding_origin,
             )
+            self.validation_cache[cache_key] = self.candidates[-1]
         except Exception as exc:
             self.candidates[-1] = replace(record, reasons=(type(exc).__name__,))
             raise
+
+    @staticmethod
+    def _literal_passage_covers(text, source, assertion):
+        """Prove binding only for one contiguous passage covering every anchor."""
+        start = source.find(text)
+        while start >= 0:
+            end = start + len(text)
+            if all(start <= item.start_char and item.end_char <= end for item in assertion):
+                return True
+            start = source.find(text, start + 1)
+        return False
 
     def _accepted(self, target_id=None):
         return [
@@ -687,19 +766,62 @@ class _AnalysisRun:
             for item in worker.issues:
                 self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
 
+    @staticmethod
+    def _exact_proposition_key(record):
+        candidate = record.candidate
+        return candidate.text, candidate.unit_type, candidate.evidence
+
+    def _candidate_pairs(self, accepted):
+        """Process free exact matches, then schedule plausible semantic matches.
+
+        Similarity is only scheduling evidence. Every nonexact merge still needs
+        the evaluator's equivalence decision and the full group compatibility
+        checks. A bounded heap avoids storing every possible pair.
+        """
+        exact = {}
+        for record in accepted:
+            exact.setdefault(self._exact_proposition_key(record), []).append(record)
+        for group in exact.values():
+            yield from combinations(group, 2)
+        tokens = {
+            record.id: frozenset(re.findall(r"\w+", record.candidate.text.casefold()))
+            for record in accepted
+        }
+        anchors = {
+            record.id: frozenset((item.source_identity, item.segment_id,
+                                  item.start_char, item.end_char)
+                                 for item in record.candidate.evidence
+                                 if item.role == "assertion")
+            for record in accepted
+        }
+        positions = {record.id: index for index, record in enumerate(accepted)}
+
+        def priority(pair):
+            left, right = pair
+            a, b = tokens[left.id], tokens[right.id]
+            similarity = len(a & b) / max(1, len(a | b))
+            same_anchor = anchors[left.id] == anchors[right.id]
+            same_target = left.target_segment_id == right.target_segment_id
+            tier = (
+                0 if left.candidate.text == right.candidate.text else
+                1 if same_anchor and similarity >= 0.4 else
+                2 if same_target and similarity >= 0.5 else
+                3 if similarity >= 0.6 else 4 if same_anchor else 5
+            )
+            return tier, -similarity, positions[left.id], positions[right.id]
+
+        nonexact = (
+            pair for pair in combinations(accepted, 2)
+            if self._exact_proposition_key(pair[0]) != self._exact_proposition_key(pair[1])
+        )
+        yield from nsmallest(self.config.max_pair_comparisons, nonexact, key=priority)
+
     def _consolidate(self):
         accepted = self._accepted()
         compatible = {}
-        compared = 0
         total_pairs = len(accepted) * (len(accepted) - 1) // 2
-        for left, right in combinations(accepted, 2):
-            a, b = left.candidate, right.candidate
-            if (a.text, a.unit_type, a.qualifiers, a.evidence) == (
-                b.text,
-                b.unit_type,
-                b.qualifiers,
-                b.evidence,
-            ):
+        for left, right in self._candidate_pairs(accepted):
+            if self._exact_proposition_key(left) == self._exact_proposition_key(right):
                 relation = InformationRelation(
                     left.id,
                     right.id,
@@ -709,13 +831,7 @@ class _AnalysisRun:
                     origin="exact_validated_proposition",
                 )
             else:
-                if compared >= self.config.max_pair_comparisons:
-                    self.issue(
-                        "pair_budget_exhausted",
-                        f"At least {total_pairs - len(self.relations)} candidate pairs remain unexamined; unique-unit counts are provisional.",
-                    )
-                    break
-                state = relation_state(left, right)
+                state = relation_state(left, right, self.segments)
                 try:
                     _, decisions = self._evaluate(
                         "compare_candidates",
@@ -729,7 +845,6 @@ class _AnalysisRun:
                         candidates=(left.id, right.id),
                     )
                     break
-                compared += 1
                 result = decisions["relation"]
                 probability = dict(result.probabilities).get(result.selected, 0.0)
                 label = (
@@ -750,6 +865,11 @@ class _AnalysisRun:
                     "Candidate meanings were not merged without a sufficiently strong equivalence decision.",
                     candidates=(left.id, right.id),
                 )
+        if len(self.relations) < total_pairs:
+            self.issue(
+                "pair_budget_exhausted",
+                f"{total_pairs - len(self.relations)} candidate pairs remain unexamined; unique-unit counts are provisional.",
+            )
         groups = []
         for record in accepted:
             group = next(
@@ -771,14 +891,17 @@ class _AnalysisRun:
         memberships = {}
         for index, group in enumerate(groups):
             unit_id = f"u{index}"
-            first = group[0].candidate
+            representative = group[0]
+            first = representative.candidate
             units.append(
                 InformationUnit(
                     unit_id,
                     first.text,
                     first.unit_type,
-                    first.qualifiers,
+                    first.qualifiers if representative.annotation_state == "verified" else None,
                     tuple(record.id for record in group),
+                    "verified" if representative.annotation_state == "verified" else "unknown",
+                    representative.id,
                 )
             )
             memberships.update((record.id, unit_id) for record in group)
@@ -932,6 +1055,13 @@ class _AnalysisRun:
                         (identifier,),
                     )
             for record in self.candidates:
+                if record.validation == "accepted" and record.annotation_state != "verified":
+                    self.issue(
+                        "annotation_unresolved",
+                        "The proposition is accepted; proposed auxiliary annotations are unverified and canonical qualifiers remain unknown.",
+                        (record.target_segment_id,),
+                        (record.id,),
+                    )
                 if record.validation in {
                     "needs_repair",
                     "needs_review",
@@ -976,6 +1106,10 @@ class _AnalysisRun:
                 **{name: fingerprint(value) for name, value in evaluation_templates().items()},
             },
             "evaluation_template_version": EVALUATION_TEMPLATE_VERSION,
+            "acceptance_semantics": "Content requires literal anchors, focused anchor binding, six source-scope fidelity checks, applicable QA checks and atomicity at the configured threshold. Exact claim/quote identity or one contiguous literal claim passage covering every assertion anchor establishes binding in code; otherwise a separate focused request excludes unrelated source assertions. Auxiliary annotation audits are separate; unverified proposals never supply canonical qualifiers or affect coverage or semantic grouping.",
+            "validation_reuse": "Within each immutable target worker, identical resolved candidates, QA fields, proposed annotations and source scopes reuse completed decisions with validation_reused_from. Errors are never cached; changed content or evidence requires new validation.",
+            "validation_reused_candidates": sum(record.validation_reused_from is not None for record in self.candidates),
+            "pair_scheduling": "Free exact validated text/type/evidence duplicates are processed first, then anchor and token similarity prioritize evaluator comparisons. Similarity never establishes equivalence; unexamined pairs remain provisional.",
             "literal_alignment": "Matching supplied offsets are retained. Otherwise only a unique exact quote within the same permitted segment is resolved, with raw offsets and evidence_resolutions retained; ambiguous and nonliteral evidence is rejected.",
             "scope": "verbal_transcript",
             "timestamp_resolution": "source_segment",
@@ -984,7 +1118,7 @@ class _AnalysisRun:
             "count_semantics": "Unique units count accepted semantic groups. Occurrences count exact assertion-anchor groups; overlapping nonidentical anchors remain separate with occurrences_provisional=true and may overcount utterances. Other pending work can also make partial counts provisional.",
         }
         report = InformationReport(
-            2,
+            3,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -1070,7 +1204,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         False,
     )
     return InformationReport(
-        2,
+        3,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",

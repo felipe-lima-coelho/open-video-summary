@@ -5,6 +5,7 @@ import io
 import json
 import os
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 
 from open_video_summary.errors import ConfigurationError
@@ -69,6 +70,9 @@ def information_csv(report) -> str:
         "unit_id",
         "text",
         "unit_type",
+        "qualifier_state",
+        "qualifiers",
+        "representative_candidate_id",
         "occurrence_id",
         "alignment_state",
         "segment_id",
@@ -90,6 +94,12 @@ def information_csv(report) -> str:
                 "unit_id": unit.id,
                 "text": unit.text,
                 "unit_type": unit.unit_type,
+                "qualifier_state": unit.qualifier_state,
+                "qualifiers": json.dumps(
+                    asdict(unit.qualifiers) if unit.qualifiers is not None else None,
+                    ensure_ascii=False,
+                ),
+                "representative_candidate_id": unit.representative_candidate_id,
                 "occurrence_id": occurrence.id,
                 "alignment_state": occurrence.alignment_state,
                 "segment_id": occurrence.segment_id,

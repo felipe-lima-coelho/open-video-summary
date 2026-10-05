@@ -9,14 +9,16 @@ annotation never disables a source-based check.
 import json
 
 
-EVALUATION_TEMPLATE_VERSION = "literal-comparisons-v2"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v3"
+SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
+ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
 VALIDATION_QUESTIONS = {
-    "support": "Does the assertion evidence support the candidate claim? Use reference context only to resolve references. Evaluate what was communicated, not external truth.",
-    "conditions": "Does the candidate preserve conditional rules and exceptions that apply to its own assertion? If there are none and none are added, answer yes. Other independent assertions in the evidence need not be included.",
-    "negation": "Does the candidate claim preserve negation and its scope in the assertion evidence? If both are affirmative, answer yes.",
-    "quantities": "Does the candidate claim preserve the quantities relevant to it in the assertion evidence? If none apply to this claim and none are added, answer yes.",
-    "modality": "Does the candidate claim preserve the level of certainty in the assertion evidence?",
-    "attribution": "Does the candidate claim preserve the speaker attribution in the assertion evidence? If no speaker is named, answer yes.",
+    "support": "Does the original source support the candidate claim at the selected anchor, including governing wording outside that anchor? Reference context may resolve references but may not supply a new assertion. Evaluate communicated meaning, not external truth.",
+    "conditions": "Does the candidate preserve conditions and exceptions governing its anchored assertion in the original source scope? If none govern this assertion and none are added, answer yes. Unrelated assertions need not be included.",
+    "negation": "Does the candidate claim preserve the polarity of this assertion in the original source, including negation outside the selected anchor? If both are affirmative, answer yes.",
+    "quantities": "Does the candidate claim preserve this assertion's quantities, ranks and quantitative comparisons in the original source? If none apply and none are added, answer yes. Ignore quantities of other independent assertions.",
+    "modality": "Does the candidate claim preserve the source assertion's level of certainty? If both make a definite assertion, answer yes.",
+    "attribution": "Does the candidate claim preserve who reports or claims this assertion in the original source? If no reporting source is present or added, answer yes.",
 }
 ANNOTATION_ABSENCE_QUESTIONS = {
     "conditions_annotation": "Is the candidate claim free of explicit conditional rules and exceptions?",
@@ -55,25 +57,68 @@ COVERAGE_QUESTIONS = {
     "missing_occurrence": "Is an asserted occurrence in the original target missing from the represented assertion evidence spans? Duplicate routes at the same span count once; separate repeated utterances need separate spans.",
 }
 QA_QUESTIONS = {
-    "qa_anchor": "Is the candidate question answerable from the assertion evidence and reference context?",
+    "qa_anchor": "Is the candidate question answerable from the selected assertion in its original source and cited reference context?",
     "qa_consistency": "Does the candidate answer communicate the same complete proposition as the candidate claim?",
 }
 
 
 def _evidence_text(candidate, role):
     return "\n".join(
-        f"[{item.segment_id}] {item.quote}"
+        f"[{item.segment_id} [{item.start_char},{item.end_char})] {item.quote}"
         for item in candidate.evidence
         if item.role == role
     ) or "None"
 
 
-def validation_spec(candidate, candidate_id, target_id):
-    """Return the exact state and all independent acceptance questions."""
+def _marked_source(segment, evidence):
+    """Mark exact positions so repeated quotations keep their distinct scopes."""
+    events = {}
+    for index, item in enumerate(evidence):
+        if item.segment_id != segment.id:
+            continue
+        events.setdefault(item.start_char, []).append((1, -item.end_char, f"<source-{item.role}-{index}>"))
+        events.setdefault(item.end_char, []).append((0, -item.start_char, f"</source-{item.role}-{index}>"))
+    parts, previous = [], 0
+    for position in sorted(events):
+        parts.append(segment.content[previous:position])
+        parts.extend(event[2] for event in sorted(events[position]))
+        previous = position
+    parts.append(segment.content[previous:])
+    return "".join(parts)
+
+
+def anchor_binding_spec(candidate):
+    """Do not expose unrelated source assertions to the anchor-binding decision."""
+    return "\n\n".join((
+        "Selected assertion wording:\n" + "\n".join(
+            item.quote for item in candidate.evidence if item.role == "assertion"
+        ),
+        "Candidate claim:\n" + candidate.text,
+    )), {"anchor_binding": ANCHOR_BINDING_QUESTION}
+
+
+def _source_scope(candidate, target, context):
+    """Use whole source-owned segments, including surrounding cited context.
+
+    The envelope governs interpretation of the anchored assertion. Its unrelated
+    propositions do not become assertion evidence for this candidate.
+    """
+    cited = {item.segment_id for item in candidate.evidence if item.role == "context"}
+    return [
+        f"Original target scope [{target.id}]:\n{_marked_source(target, candidate.evidence)}",
+        "Original reference scope:\n" + (
+            "\n".join(f"[{item.id}] {_marked_source(item, candidate.evidence)}" for item in context if item.id in cited)
+            or "None"
+        ),
+    ]
+
+
+def validation_spec(candidate, candidate_id, target, context=()):
+    """Return source-scope fidelity checks and a separate annotation audit."""
     blocks = [
-        f"Candidate id: {candidate_id}\nTarget id: {target_id}",
-        "Assertion evidence:\n" + _evidence_text(candidate, "assertion"),
-        "Reference context:\n" + _evidence_text(candidate, "context"),
+        f"Candidate id: {candidate_id}\nTarget id: {target.id}",
+        SCOPE_INSTRUCTION,
+        *_source_scope(candidate, target, context),
         "Candidate claim:\n" + candidate.text,
     ]
     questions = dict(VALIDATION_QUESTIONS)
@@ -130,14 +175,21 @@ def coverage_spec(target, context, accepted, markers):
     return "\n\n".join(blocks), questions
 
 
-def relation_state(left, right):
+def relation_state(left, right, segments):
     blocks = []
     for label, record in (("Left", left), ("Right", right)):
         candidate = record.candidate
         blocks.extend((
             f"{label} candidate id: {record.id}",
-            f"{label} assertion evidence:\n" + _evidence_text(candidate, "assertion"),
-            f"{label} reference context:\n" + _evidence_text(candidate, "context"),
+            SCOPE_INSTRUCTION,
+            *(
+                f"{label} {block}" for block in _source_scope(
+                    candidate, segments[record.target_segment_id],
+                    tuple(segments[identifier] for identifier in dict.fromkeys(
+                        item.segment_id for item in candidate.evidence if item.role == "context"
+                    )),
+                )
+            ),
             f"{label} claim:\n" + candidate.text,
         ))
     return "\n\n".join(blocks)
@@ -147,6 +199,8 @@ def evaluation_templates():
     """Templates are persisted as hashes alongside generator prompt hashes."""
     return {
         "validation_questions": VALIDATION_QUESTIONS,
+        "source_scope_instruction": SCOPE_INSTRUCTION,
+        "anchor_binding_question": ANCHOR_BINDING_QUESTION,
         "annotation_absence": ANNOTATION_ABSENCE_QUESTIONS,
         "annotation_values": ANNOTATION_VALUE_QUESTIONS,
         "negation_annotations": {str(key): value for key, value in NEGATION_ANNOTATION_QUESTIONS.items()},

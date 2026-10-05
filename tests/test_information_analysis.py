@@ -107,6 +107,8 @@ def evaluation_state(context):
             "target_id": first[1].split(": ", 1)[1],
             "candidate": {"text": section("Candidate claim")},
         }
+    if context.startswith("Selected assertion wording:"):
+        return {"candidate": {"text": section("Candidate claim")}, "anchor_binding": True}
     if context.startswith("Original target ["):
         identifier = context.split("]:", 1)[0].split("[", 1)[1]
         return {
@@ -1004,7 +1006,8 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
             answers = {}
             for key, question in payload["questions"].items():
                 if question["type"] == "noul":
-                    probability = 0.01 if audit else (signals or {}).get(key, 0.99)
+                    probability = (0.01 if audit else signals(payload, key)
+                                   if callable(signals) else (signals or {}).get(key, 0.99))
                     answers[key] = {"type": "noul", "noul": probability}
                 else:
                     selected = granularity if key == "granularity" else "complementary"
@@ -1030,7 +1033,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         resolution = record.evidence_resolutions[0]
         self.assertEqual((76, 154, 76, 155), (resolution.supplied_start_char, resolution.supplied_end_char, resolution.resolved_start_char, resolution.resolved_end_char))
         self.assertEqual("unique_exact_quote", resolution.method)
-        self.assertEqual(2, report.to_dict()["schema_version"])
+        self.assertEqual(3, report.to_dict()["schema_version"])
         self.assertEqual(155, report.to_dict()["candidates"][0]["evidence_resolutions"][0]["resolved_end_char"])
         self.assertEqual(text, report.snapshot.current_segments[0].content)
 
@@ -1074,25 +1077,28 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         self.assertEqual(1, accepted.counts.accepted_candidates)
         self.assertEqual(0.85, json.loads(accepted.metadata_json)["settings"]["acceptance_threshold"])
         payload = bodies[0]
-        self.assertIn("Assertion evidence:\n[v0:s0] " + text, payload["state"])
+        self.assertIn("<source-assertion-0>" + text + "</source-assertion-0>", payload["state"])
         self.assertNotIn("source_identity", payload["state"])
         self.assertNotIn("Python Unicode", payload["state"])
         self.assertEqual("One contextual proposition. A condition and its consequence form one proposition; an attributed claim includes its reporting source.", payload["questions"]["granularity"]["criteria"]["atomic"])
-        for failed_signal in ("conditions", "negation", "quantities", "modality", "attribution", "conditions_annotation", "quantities_annotation", "modality_annotation", "attribution_annotation", "negation_annotation"):
+        for failed_signal in ("support", "conditions", "negation", "quantities", "modality", "attribution"):
             evaluator, _ = self.evaluator({failed_signal: 0.03})
             with self.subTest(signal=failed_signal):
                 report = analyze(videos([text]), generator, evaluator, qa_enabled=False, max_coverage_rounds=0)
                 self.assertEqual(0, report.counts.accepted_candidates)
                 self.assertIn(failed_signal, report.candidates[0].reasons)
 
-    def test_uncited_text_cannot_support_a_proposition_and_qa_is_checked_independently(self):
+    def test_source_scope_is_visible_without_authorizing_uncited_assertions_and_qa_is_checked(self):
         quote = "O prazo é fixo."
         text = quote + " O valor secreto é 99 dias."
         raw = candidate("v0:s0", text, quote=quote, qa=True)
         evaluator, bodies = self.evaluator({"qa_consistency": 0.04})
         report = analyze(videos([text]), ScriptedGenerator({("v0:s0", "qa"): [raw]}), evaluator, max_coverage_rounds=0)
         payload = next(body for body in bodies if "support" in body["questions"])
-        self.assertNotIn("valor secreto", payload["state"])
+        self.assertIn("valor secreto", payload["state"])
+        assertion = payload["state"].split("<source-assertion-0>", 1)[1].split("</source-assertion-0>", 1)[0]
+        self.assertNotIn("valor secreto", assertion)
+        self.assertIn("may not supply a new assertion", payload["questions"]["support"]["instructions"])
         self.assertIn("qa_anchor", payload["questions"])
         self.assertIn("qa_consistency", report.candidates[0].reasons)
         self.assertEqual(0, report.counts.accepted_candidates)
@@ -1112,9 +1118,256 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         recovery = next(data for data, route in inputs if route == "recovery")
         repair = recovery["repair_candidates"][0]
         self.assertEqual("literal_rejected", repair["validation"])
-        self.assertEqual(bad, repair["candidate"])
+        self.assertEqual(bad, repair["proposal"])
         self.assertIn("does not occur literally", repair["reasons"][0])
         self.assertEqual(1, report.counts.accepted_candidates)
+
+    def test_cropped_condition_never_enters_inventory_even_after_qualified_recovery(self):
+        source = "Se a conexão cair, o backup não é realizado."
+        quote = "o backup não é realizado."
+        bad = candidate("v0:s0", source, quote=quote, negated=True)
+        repaired = candidate("v0:s0", source, negated=True, conditions=("a conexão cair",))
+        evaluator = SyntheticEvaluator(coverage={"v0:s0": [0.99, 0.01]})
+        original_evaluate = evaluator.evaluate
+        states = []
+
+        def evaluate(state, noul=None, choice=None):
+            states.append(state)
+            result = original_evaluate(state, noul, choice)
+            if state.startswith("Candidate id:") and "Candidate claim:\n" + quote in state:
+                self.assertIn("Se a conexão cair, <source-assertion-0>" + quote, state)
+                return replace(result, noul=tuple(
+                    replace(item, probability=0.02) if item.id == "conditions" else item
+                    for item in result.noul
+                ))
+            return result
+
+        evaluator.evaluate = evaluate
+        report = analyze(
+            videos([source]), ScriptedGenerator({("v0:s0", "direct"): [bad],
+                                                 ("v0:s0", "recovery"): [repaired]}),
+            evaluator, qa_enabled=False,
+        )
+        self.assertEqual(["needs_repair", "accepted"], [record.validation for record in report.candidates])
+        self.assertEqual([source], [unit.text for unit in report.units])
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual(1, report.counts.occurrences)
+        self.assertNotIn("c0", report.units[0].candidate_ids)
+        self.assertEqual(["gap_detected", "no_gap_signaled"], [audit.state for audit in report.coverage])
+        unconditional = analyze(videos([quote]), ScriptedGenerator({("v0:s0", "direct"): [candidate("v0:s0", quote)]}), qa_enabled=False)
+        self.assertEqual(1, unconditional.counts.accepted_candidates)
+
+    def test_whole_cited_context_preserves_surrounding_qualifier_scope(self):
+        context_source = "Segundo Maria, o prazo pode ser de 30 dias."
+        target = "Esse prazo aplica-se às cópias manuais."
+        context_quote = "o prazo pode ser de 30 dias."
+        context = {"segment_id": "v0:s0", "quote": context_quote,
+                   "start_char": context_source.index(context_quote), "end_char": len(context_source),
+                   "role": "context"}
+        raw = candidate("v0:s1", target, text="O prazo de 30 dias aplica-se às cópias manuais.", contexts=(context,))
+        evaluator, bodies = self.evaluator({"attribution": 0.03, "modality": 0.03})
+        report = analyze(videos([context_source, target]), ScriptedGenerator({("v0:s1", "direct"): [raw]}), evaluator, qa_enabled=False)
+        state = next(body["state"] for body in bodies if "support" in body["questions"])
+        self.assertIn("Original reference scope:\n[v0:s0] Segundo Maria, <source-context-1>" + context_quote, state)
+        self.assertEqual(0, report.counts.accepted_candidates)
+
+    def test_report_derived_faithful_content_is_not_blocked_by_annotation_uncertainty(self):
+        for text, qualifiers, failed, probability in (
+            ("O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei.", {"negated": True}, "attribution_annotation", 0.57),
+            ("A Huawei é a segunda maior fabricante de smartphones do mundo.", {"quantities": ("segunda maior",)}, "quantities_annotation", 0.49),
+        ):
+            with self.subTest(text=text):
+                raw = candidate("v0:s0", text, **qualifiers)
+                evaluator, _ = self.evaluator({failed: probability})
+                report = analyze(videos([text]), ScriptedGenerator({("v0:s0", "direct"): [raw]}), evaluator, qa_enabled=False)
+                record, unit = report.candidates[0], report.units[0]
+                self.assertEqual("accepted", record.validation)
+                self.assertEqual((), record.reasons)
+                self.assertEqual("uncertain", record.annotation_state)
+                self.assertEqual((failed,), record.annotation_reasons)
+                self.assertIsNone(unit.qualifiers)
+                self.assertEqual("unknown", unit.qualifier_state)
+                self.assertEqual(record.id, unit.representative_candidate_id)
+                self.assertEqual(1, report.counts.unique_units)
+                self.assertIn("annotation_unresolved", [issue.kind for issue in report.issues])
+                self.assertFalse(report.counts.valid_zero)
+
+    def test_wrong_auxiliary_metadata_is_unknown_and_never_influences_other_operations(self):
+        source = "O Google decidiu não atualizar os aplicativos. A Huawei desenvolve uma plataforma."
+        first = candidate("v0:s0", source, quote="O Google decidiu não atualizar os aplicativos.",
+                          attribution="INVENTED_REPORTER_731", negated=False)
+        paraphrase = copy.deepcopy(first)
+        paraphrase["text"] = "O Google decidiu parar de atualizar os aplicativos."
+        second = candidate("v0:s0", source, quote="A Huawei desenvolve uma plataforma.")
+        requests = []
+        generator = ScriptedGenerator({("v0:s0", "direct"): [first, paraphrase], ("v0:s0", "recovery"): [second]})
+        evaluator = SyntheticEvaluator(coverage={"v0:s0": [0.99, 0.01]})
+        evaluate_original = evaluator.evaluate
+
+        def evaluate(state, noul=None, choice=None):
+            requests.append(state)
+            result = evaluate_original(state, noul, choice)
+            if state.startswith("Candidate id:"):
+                return replace(result, noul=tuple(
+                    replace(item, probability=0.02) if item.id == "attribution_annotation" else item
+                    for item in result.noul
+                ))
+            return result
+
+        evaluator.evaluate = evaluate
+        report = analyze(videos([source]), generator, evaluator, qa_enabled=False)
+        self.assertEqual(3, report.counts.accepted_candidates)
+        self.assertTrue(all(unit.qualifiers is None for unit in report.units))
+        self.assertNotIn("INVENTED_REPORTER_731", "\n".join(requests))
+        recovery = json.loads(generator.requests[-1].prompt.split("\nInput:\n", 1)[1])
+        self.assertTrue(all(item["qualifiers"] is None for item in recovery["accepted"]))
+        self.assertTrue(all(item["annotation_state"] == "invalid" for item in recovery["accepted"]))
+        exported = report.to_dict()
+        self.assertNotIn("qualifiers", exported["candidates"][0]["candidate"])
+        self.assertEqual("INVENTED_REPORTER_731", exported["candidates"][0]["candidate"]["proposed_qualifiers"]["attribution"])
+        self.assertEqual(first, exported["candidates"][0]["raw"])
+
+    def test_representative_does_not_borrow_metadata_from_an_equivalent_paraphrase(self):
+        source = "O backup não é realizado."
+        first = candidate("v0:s0", source, negated=True)
+        second = candidate("v0:s0", source, text="O backup deixa de ser realizado.", negated=False)
+        evaluator, _ = self.evaluator(lambda payload, key: 0.4 if key == "negation_annotation" and "Candidate claim:\n" + source in payload["state"] else 0.99)
+        # The paraphrase has its own annotation audit; an uncertain representative
+        # must not borrow its negative/affirmative form-dependent annotation.
+        original = evaluator.evaluate
+        def evaluate(state, noul=None, choice=None):
+            result = original(state, noul, choice)
+            if choice and "relation" in choice:
+                return replace(result, choice=(replace(result.choice[0], selected="equivalent", probabilities=tuple((key, float(key == "equivalent")) for key in dict(result.choice[0].probabilities))),))
+            return result
+        evaluator.evaluate = evaluate
+        report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"): [first, second]}), evaluator, qa_enabled=False)
+        self.assertEqual(1, len(report.units))
+        self.assertEqual("verified", report.candidates[1].annotation_state)
+        self.assertEqual(source, report.units[0].text)
+        self.assertIsNone(report.units[0].qualifiers)
+        self.assertEqual("c0", report.units[0].representative_candidate_id)
+
+    def test_exact_duplicates_are_processed_even_after_paid_budget_exhaustion(self):
+        source = "O Android pertence ao Google. A Huawei desenvolve uma plataforma."
+        first = candidate("v0:s0", source, quote="O Android pertence ao Google.")
+        other = candidate("v0:s0", source, quote="A Huawei desenvolve uma plataforma.")
+        duplicate = copy.deepcopy(first)
+        duplicate["qualifiers"]["attribution"] = "Unverified proposal"
+        evaluator, _ = self.evaluator({"attribution_annotation": 0.3})
+        report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"): [first, other, duplicate]}), evaluator, qa_enabled=False, max_calls=5)
+        self.assertEqual(5, json.loads(report.metadata_json)["logical_calls"])
+        self.assertEqual(2, report.counts.unique_units)
+        self.assertEqual(2, report.counts.occurrences)
+        self.assertEqual("exact_validated_proposition", report.relations[0].origin)
+        self.assertTrue(report.relations[0].merged)
+        self.assertIn("pair_budget_exhausted", [issue.kind for issue in report.issues])
+
+    def test_pair_priority_reaches_same_anchor_paraphrases_without_implying_merge(self):
+        texts = ["A retenção é 30 dias.", "A frequência é 24 horas.", "O sistema operacional faz o smartphone funcionar."]
+        items = {(f"v0:s{index}", "direct"): [candidate(f"v0:s{index}", text)] for index, text in enumerate(texts)}
+        items[("v0:s2", "direct")].append(candidate("v0:s2", texts[2], text="O sistema operacional é o que faz o smartphone funcionar."))
+        report = analyze(videos(texts), ScriptedGenerator(items), qa_enabled=False, max_pair_comparisons=1)
+        self.assertEqual(("t2:c0", "t2:c1"), (report.relations[0].left_candidate_id, report.relations[0].right_candidate_id))
+        self.assertEqual("complementary", report.relations[0].relation)
+        self.assertFalse(report.relations[0].merged)
+        self.assertEqual(4, report.counts.unique_units)
+        self.assertIn("pair_budget_exhausted", [issue.kind for issue in report.issues])
+
+    def test_anchor_binding_cannot_borrow_an_unrelated_source_assertion(self):
+        source = "O backup é diário. A retenção é 30 dias."
+        wrong = candidate("v0:s0", source, quote="O backup é diário.", text="A retenção é 30 dias.", quantities=("30 dias",))
+        evaluator, bodies = self.evaluator({"anchor_binding": 0.09})
+        report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"): [wrong]}), evaluator, qa_enabled=False)
+        binding = next(body for body in bodies if "anchor_binding" in body["questions"])
+        self.assertEqual("Selected assertion wording:\nO backup é diário.\n\nCandidate claim:\nA retenção é 30 dias.", binding["state"])
+        self.assertNotIn(source, binding["state"])
+        self.assertNotIn("quantities_annotation", binding["questions"])
+        self.assertEqual("rejected", report.candidates[0].validation)
+        self.assertEqual(("anchor_binding",), report.candidates[0].reasons)
+        self.assertEqual(0, report.counts.unique_units)
+        self.assertFalse(any("support" in body["questions"] for body in bodies))
+
+    def test_exact_validation_reuse_is_traced_and_changed_content_is_not_cached(self):
+        text = "O Google decidiu não atualizar os aplicativos."
+        first = candidate("v0:s0", text, negated=True)
+        repeat = copy.deepcopy(first)
+        repeat["evidence"][0]["end_char"] -= 1
+        changed = candidate("v0:s0", text, text="O Google decidiu atualizar os aplicativos.")
+        generator = ScriptedGenerator({("v0:s0", "direct"): [first, repeat, changed]})
+        evaluator, bodies = self.evaluator({"anchor_binding": 0.1})
+        report = analyze(videos([text]), generator, evaluator, qa_enabled=False)
+        self.assertEqual(["accepted", "accepted", "rejected"], [record.validation for record in report.candidates])
+        self.assertEqual("c0", report.candidates[1].validation_reused_from)
+        self.assertEqual(1, len(report.candidates[1].evidence_resolutions))
+        self.assertIsNone(report.candidates[2].validation_reused_from)
+        self.assertEqual(1, sum("support" in body["questions"] for body in bodies))
+        self.assertEqual(1, sum("anchor_binding" in body["questions"] for body in bodies))
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual(1, report.counts.occurrences)
+
+    def test_validation_reuse_requires_same_qa_annotations_evidence_and_source_scope(self):
+        source = "O backup é diário. O backup é diário."
+        first = candidate("v0:s0", source, quote="O backup é diário.", offset=0)
+        for change in (
+            lambda item: item.update(question="Qual é a frequência?", answer="É semanal."),
+            lambda item: item["qualifiers"].update(attribution="Maria"),
+            lambda item: item["evidence"][0].update(start_char=19, end_char=37),
+        ):
+            other = copy.deepcopy(first)
+            change(other)
+            with self.subTest(other=other):
+                evaluator, bodies = self.evaluator()
+                report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"): [first, other]}), evaluator, qa_enabled=False)
+                self.assertTrue(all(record.validation_reused_from is None for record in report.candidates))
+                self.assertEqual(2, sum("support" in body["questions"] for body in bodies))
+
+    def test_literal_containment_proves_binding_only_at_the_selected_source_occurrence(self):
+        source = "Se a conexão cair, o backup não é realizado. Em qualquer situação, o backup não é realizado."
+        quote = "o backup não é realizado."
+        text = "Se a conexão cair, " + quote
+        good = candidate("v0:s0", source, text=text, quote=quote, offset=source.index(quote), negated=True)
+        wrong_occurrence = candidate("v0:s0", source, text=text, quote=quote, offset=source.rindex(quote), negated=True)
+        evaluator, bodies = self.evaluator({"anchor_binding": 0.1})
+        report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"): [good, wrong_occurrence]}), evaluator, qa_enabled=False)
+        self.assertEqual("literal_source_passage", report.candidates[0].anchor_binding_origin)
+        self.assertEqual("accepted", report.candidates[0].validation)
+        self.assertEqual("evaluator", report.candidates[1].anchor_binding_origin)
+        self.assertEqual("rejected", report.candidates[1].validation)
+        self.assertEqual(1, sum("anchor_binding" in body["questions"] for body in bodies))
+        self.assertEqual(1, sum("support" in body["questions"] for body in bodies))
+
+    def test_literal_containment_never_skips_source_fidelity_or_atomicity(self):
+        source = "Se a conexão cair, o backup não é realizado."
+        quote = "o backup não é realizado."
+        for field in ("conditions", "negation", "attribution", "modality"):
+            cropped = candidate("v0:s0", source, quote=quote)
+            evaluator, bodies = self.evaluator({field: 0.03})
+            with self.subTest(field=field):
+                report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"): [cropped]}), evaluator, qa_enabled=False)
+                self.assertEqual("literal_identity", report.candidates[0].anchor_binding_origin)
+                self.assertEqual(0, report.counts.unique_units)
+                self.assertTrue(any("support" in body["questions"] for body in bodies))
+        compound_source = "O backup é diário. A retenção é 30 dias."
+        raw = candidate("v0:s0", compound_source, quote="O backup é diário.")
+        raw["text"] = compound_source
+        evaluator, bodies = self.evaluator(granularity="compound")
+        report = analyze(videos([compound_source]), ScriptedGenerator({("v0:s0", "direct"): [raw]}), evaluator, qa_enabled=False)
+        self.assertEqual("literal_source_passage", report.candidates[0].anchor_binding_origin)
+        self.assertEqual("needs_repair", report.candidates[0].validation)
+        self.assertEqual(0, report.counts.unique_units)
+        self.assertTrue(any("granularity" in body["questions"] for body in bodies))
+
+    def test_literal_containment_cannot_combine_disjoint_passages(self):
+        source = "O backup é diário. A retenção é 30 dias."
+        raw = candidate("v0:s0", source, quote="O backup é diário.")
+        raw["evidence"].append({"segment_id": "v0:s0", "quote": "A retenção é 30 dias.",
+                                "start_char": 19, "end_char": len(source), "role": "assertion"})
+        evaluator, bodies = self.evaluator({"anchor_binding": 0.1})
+        report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"): [raw]}), evaluator, qa_enabled=False)
+        self.assertEqual("evaluator", report.candidates[0].anchor_binding_origin)
+        self.assertEqual(0, report.counts.unique_units)
+        self.assertTrue(any("anchor_binding" in body["questions"] for body in bodies))
 
 
 class InformationSchemaTests(unittest.TestCase):
