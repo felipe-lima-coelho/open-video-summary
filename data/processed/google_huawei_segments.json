@@ -1,0 +1,181 @@
+[
+    {
+        "name": "jornal_da_band",
+        "path": "data/raw/google_huawei/jornal_da_band.mp4",
+        "topics": [
+            "Rompimento entre Google e Huawei",
+            "Impactos para os usuários de celulares Huawei",
+            "Guerra comercial e acusações de espionagem entre Estados Unidos e China"
+        ],
+        "segments": [
+            {
+                "content": "O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei, segunda maior fabricante de smartphones do mundo, atrás da sul-coreana Samsung.",
+                "start": 0.18,
+                "end": 10.2,
+                "order": 0,
+                "video_topic": "Rompimento entre Google e Huawei",
+                "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+                "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
+            },
+            {
+                "content": "A decisão decorre da guerra comercial travada entre Estados Unidos e China. Usuários de aparelhos da gigante chinesa não vão mais receber atualizações de aplicativos do sistema operacional Android, que pertence ao Google. E, no futuro, celulares da Huawei nem deverão mais incluir programas como o Google Maps e o YouTube.",
+                "start": 10.56,
+                "end": 30.92,
+                "order": 1,
+                "video_topic": "Impactos para os usuários de celulares Huawei",
+                "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+                "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
+            },
+            {
+                "content": "O Google alega estar seguindo diretrizes do governo americano, que proibiu empresas dos Estados Unidos de fazer negócios com companhias estrangeiras de telecomunicações consideradas perigosas para a segurança nacional.",
+                "start": 31.18,
+                "end": 43.72,
+                "order": 2,
+                "video_topic": "Rompimento entre Google e Huawei",
+                "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+                "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
+            },
+            {
+                "content": "O alvo principal da medida era a Huawei. A empresa é acusada por Washington de espionagem cibernética em favor de Pequim.",
+                "start": 44.0,
+                "end": 52.16,
+                "order": 3,
+                "video_topic": "Guerra comercial e acusações de espionagem entre Estados Unidos e China",
+                "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+                "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
+            }
+        ]
+    },
+    {
+        "name": "jornal_nacional",
+        "path": "data/raw/google_huawei/jornal_nacional.mp4",
+        "topics": [
+            "Restrições dos EUA à Huawei e suspensão das atualizações do Android",
+            "Impacto da decisão sobre os smartphones e aplicativos da Huawei",
+            "Acusações de espionagem e segurança nacional",
+            "Disputa comercial entre China e EUA pelo domínio do 5G"
+        ],
+        "segments": [
+            {
+                "content": "Nesta segunda-feira, a guerra comercial entre China e Estados Unidos envolveu dois gigantes da tecnologia.",
+                "start": 0.04,
+                "end": 6.14,
+                "order": 0,
+                "video_topic": "Restrições dos EUA à Huawei e suspensão das atualizações do Android",
+                "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+            },
+            {
+                "content": "Sistema operacional é o que faz o smartphone funcionar, possibilita usar os aplicativos. O Android é o sistema operacional mais usado em smartphones ao redor do planeta. A Huawei é a segunda maior fabricante de smartphones do mundo.",
+                "start": 7.38,
+                "end": 22.22,
+                "order": 1,
+                "video_topic": "Impacto da decisão sobre os smartphones e aplicativos da Huawei",
+                "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+            },
+            {
+                "content": "Durante muito tempo, eles cresceram se ajudando. Mas agora o presidente Donald Trump pode ter acabado com essa parceria. O governo proibiu empresas americanas de fazer negócios com a empresa chinesa. A Google, dona do Android, chegou a anunciar que, pra cumprir a ordem, não ia mais atualizar o sistema operacional em telefones da Huawei. Mas agora, no fim do dia, o governo americano voltou atrás e baixou uma regra provisória permitindo as atualizações dos celulares por mais noventa dias.",
+                "start": 22.62,
+                "end": 53.36,
+                "order": 2,
+                "video_topic": "Restrições dos EUA à Huawei e suspensão das atualizações do Android",
+                "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+            },
+            {
+                "content": "Os novos celulares da Huawei vão continuar sem poder usar o sistema e os aplicativos da Google. O detalhe é que na China, onde a comunicação é monitorada pelo governo, ninguém tem acesso aos serviços da Google, nem mesmo nos celulares Huawei, mas os aplicativos são indispensáveis pro comércio mundial da empresa.",
+                "start": 53.84,
+                "end": 74.12,
+                "order": 3,
+                "video_topic": "Impacto da decisão sobre os smartphones e aplicativos da Huawei",
+                "global_topic": "Impactos das restrições nos smartphones, aplicativos e usuários da Huawei",
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+            },
+            {
+                "content": "Os celulares da Huawei já são proibidos nos Estados Unidos. Os americanos alegam, sem mostrar provas, que eles podem ser uma porta pra espionagem chinesa.",
+                "start": 75.0,
+                "end": 84.34,
+                "order": 4,
+                "video_topic": "Acusações de espionagem e segurança nacional",
+                "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+            },
+            {
+                "content": "Proibir empresas americanas de fazer negócios com a Huawei é mais um passo na guerra comercial entre os dois países, já de olho no mercado do 5G. A nova tecnologia 5G promete revolucionar a internet móvel e os Estados Unidos e a China lutam pra definir quem vai dominar esse mercado.",
+                "start": 84.84,
+                "end": 103.26,
+                "order": 5,
+                "video_topic": "Disputa comercial entre China e EUA pelo domínio do 5G",
+                "global_topic": "Segurança nacional e disputa pelo domínio da tecnologia 5G",
+                "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+            }
+        ]
+    },
+    {
+        "name": "sbt_brasil",
+        "path": "data/raw/google_huawei/sbt_brasil.mp4",
+        "topics": [
+            "Suspensão do Android nos celulares Huawei",
+            "Disputa comercial e acusações entre Estados Unidos e China",
+            "Segurança e controle da tecnologia 5G",
+            "Desenvolvimento de uma plataforma própria pela Huawei"
+        ],
+        "segments": [
+            {
+                "content": "O Google suspendeu o uso do sistema Android em celulares da marca Huawei. A decisão segue uma ordem do presidente dos Estados Unidos. A briga é entre os Estados Unidos e a China, mas a repercussão mundial. \"Acho um absurdo porque o telefone funciona bem e é eficiente\", disse o italiano que usa um smartphone da marca chinesa.",
+                "start": 0.74,
+                "end": 23.62,
+                "order": 0,
+                "video_topic": "Suspensão do Android nos celulares Huawei",
+                "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+            },
+            {
+                "content": "Na semana passada, Donald Trump assinou um decreto alegando emergência nacional para impedir que empresas americanas negociem com algumas companhias chinesas, entre elas a Huawei. O governo dos Estados Unidos afirma que a China está usando os equipamentos da segunda maior fabricante de smartphones do mundo para espionagem.",
+                "start": 24.02,
+                "end": 45.12,
+                "order": 1,
+                "video_topic": "Disputa comercial e acusações entre Estados Unidos e China",
+                "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+            },
+            {
+                "content": "Os americanos também temem perder o controle sobre a rede 5G. Atualmente, a Huawei é uma das empresas mais avançadas nas pesquisas dessa nova tecnologia.",
+                "start": 45.62,
+                "end": 56.26,
+                "order": 2,
+                "video_topic": "Segurança e controle da tecnologia 5G",
+                "global_topic": "Segurança nacional e disputa pelo domínio da tecnologia 5G",
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+            },
+            {
+                "content": "Cumprindo a determinação, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca. A decisão vai afetar principalmente os novos aparelhos da Huawei, que não vão ter aplicativos como Gmail e o YouTube.",
+                "start": 56.64,
+                "end": 73.36,
+                "order": 3,
+                "video_topic": "Suspensão do Android nos celulares Huawei",
+                "global_topic": "Impactos das restrições nos smartphones, aplicativos e usuários da Huawei",
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+            },
+            {
+                "content": "O porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos espalham informações falsas para conseguir vantagens comerciais e não mostram qualquer evidência que provem as acusações. A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras.",
+                "start": 73.74,
+                "end": 94.54,
+                "order": 4,
+                "video_topic": "Disputa comercial e acusações entre Estados Unidos e China",
+                "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+            },
+            {
+                "content": "A Huawei afirma que já trabalha no desenvolvimento de uma nova plataforma para que os celulares possam operar normalmente.",
+                "start": 94.94,
+                "end": 103.42,
+                "order": 5,
+                "video_topic": "Desenvolvimento de uma plataforma própria pela Huawei",
+                "global_topic": "Desenvolvimento de uma plataforma própria pela Huawei",
+                "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+            }
+        ]
+    }
+]
