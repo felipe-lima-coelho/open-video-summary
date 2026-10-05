@@ -221,7 +221,7 @@ class TypeSafeEvaluator:
         self,
         context: str,
         noul: dict[str, str] | None = None,
-        choice: dict[str, tuple[str, tuple[str, ...]]] | None = None,
+        choice: dict[str, tuple[str, tuple[str, ...] | Mapping[str, str]]] | None = None,
     ) -> EvaluationResult:
         self.preflight()
         question_specs, noul_ids, choice_options = self._build_questions(
@@ -385,7 +385,7 @@ class TypeSafeEvaluator:
         self,
         context: str,
         noul: dict[str, str] | None,
-        choice: dict[str, tuple[str, tuple[str, ...]]] | None,
+        choice: dict[str, tuple[str, tuple[str, ...] | Mapping[str, str]]] | None,
     ) -> tuple[dict[str, dict], tuple[str, ...], dict[str, tuple[str, ...]]]:
         if not isinstance(context, str) or not context.strip():
             raise ValueError("TypeSafe evaluation context must be a nonempty string.")
@@ -420,6 +420,16 @@ class TypeSafeEvaluator:
                 raise ValueError(
                     "TypeSafe question instructions must be nonempty strings."
                 )
+            if isinstance(options, Mapping):
+                criteria = dict(options)
+                options = tuple(criteria)
+                if any(
+                    not isinstance(description, str) or not description.strip()
+                    for description in criteria.values()
+                ):
+                    raise ValueError("TypeSafe choice descriptions must be nonempty strings.")
+            else:
+                criteria = None
             if (
                 not isinstance(options, tuple)
                 or not 1 <= len(options) <= 255
@@ -432,10 +442,12 @@ class TypeSafeEvaluator:
                 raise ValueError(
                     "TypeSafe choice options must be 1 to 255 unique strings."
                 )
+            if criteria is None:
+                criteria = {option: option for option in options}
             questions[identifier] = {
                 "type": "choice",
                 "instructions": instructions,
-                "criteria": {option: option for option in options},
+                "criteria": criteria,
             }
             choice_options[identifier] = options
         return questions, noul_ids, choice_options

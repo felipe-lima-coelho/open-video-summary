@@ -95,6 +95,28 @@ def candidate(
     }
 
 
+def evaluation_state(context):
+    """Read the labels used by the deterministic evaluator test doubles."""
+    def section(label):
+        return context.split(label + ":\n", 1)[1].split("\n\n", 1)[0]
+
+    if context.startswith("Candidate id:"):
+        first = context.split("\n\n", 1)[0].splitlines()
+        return {
+            "candidate_id": first[0].split(": ", 1)[1],
+            "target_id": first[1].split(": ", 1)[1],
+            "candidate": {"text": section("Candidate claim")},
+        }
+    if context.startswith("Original target ["):
+        identifier = context.split("]:", 1)[0].split("[", 1)[1]
+        return {
+            "original_target": {"id": identifier, "text": section(f"Original target [{identifier}]")}
+        }
+    if context.startswith("Left candidate id:"):
+        return {"left": {"text": section("Left claim")}, "right": {"text": section("Right claim")}}
+    raise AssertionError("Unexpected evaluator test state.")
+
+
 class ScriptedGenerator:
     def __init__(self, items=None, callback=None):
         self.items = items or {}
@@ -160,7 +182,7 @@ class SyntheticEvaluator:
         self.config = TypeSafeConfig(api_key="fixture-secret")
 
     def evaluate(self, context, noul=None, choice=None):
-        state = json.loads(context)
+        state = evaluation_state(context)
         noul, choice = noul or {}, choice or {}
         self.calls.append((state, dict(noul), dict(choice)))
         probability = 0.99
@@ -762,6 +784,11 @@ class InformationProtocolTests(unittest.TestCase):
                 "quantities",
                 "modality",
                 "attribution",
+                "conditions_annotation",
+                "quantities_annotation",
+                "modality_annotation",
+                "attribution_annotation",
+                "negation_annotation",
             },
             set(validation[1]),
         )
@@ -909,7 +936,7 @@ class InformationProtocolTests(unittest.TestCase):
             payload = json.loads(body)
             bodies.append(payload)
             answers = {}
-            state = json.loads(payload["state"])
+            state = evaluation_state(payload["state"])
             for key, question in payload["questions"].items():
                 if question["type"] == "noul":
                     answers[key] = {
@@ -962,6 +989,132 @@ class InformationProtocolTests(unittest.TestCase):
         self.assertIsNone(exported["calls"][1]["decisions"]["noul"][0]["confidence"])
         self.assertEqual(1.0, exported["candidates"][0]["granularity_probability"])
         self.assertEqual(64, len(exported["calls"][1]["input_hash"]))
+
+
+class InformationEvaluationRegressionTests(unittest.TestCase):
+    """Report-derived failures with explicit offline decisions, not a benchmark."""
+
+    def evaluator(self, signals=None, *, granularity="atomic"):
+        bodies = []
+
+        def transport(url, *, headers, body, timeout):
+            payload = json.loads(body)
+            bodies.append(payload)
+            audit = "missing" in payload["questions"]
+            answers = {}
+            for key, question in payload["questions"].items():
+                if question["type"] == "noul":
+                    probability = 0.01 if audit else (signals or {}).get(key, 0.99)
+                    answers[key] = {"type": "noul", "noul": probability}
+                else:
+                    selected = granularity if key == "granularity" else "complementary"
+                    answers[key] = {
+                        "type": "choice", "choice": selected,
+                        "probabilities": {label: float(label == selected) for label in question["criteria"]},
+                        "confidence": 0.99,
+                    }
+            return TransportResponse(200, {}, json.dumps({"answers": answers}).encode())
+
+        return TypeSafeEvaluator(TypeSafeConfig(api_key="offline-fixture"), transport=transport), bodies
+
+    def test_unique_exact_quote_resolves_report_offset_drift_and_retains_raw(self):
+        text = "O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei, segunda maior fabricante de smartphones do mundo, atrás da sul-coreana Samsung."
+        quote = "segunda maior fabricante de smartphones do mundo, atrás da sul-coreana Samsung."
+        raw = candidate("v0:s0", text, quote=quote, quantities=("segunda maior",))
+        raw["evidence"][0]["end_char"] -= 1
+        report = analyze(videos([text]), ScriptedGenerator({("v0:s0", "direct"): [raw]}), qa_enabled=False)
+        record = report.candidates[0]
+        self.assertEqual("accepted", record.validation)
+        self.assertEqual(154, json.loads(record.raw_json)["evidence"][0]["end_char"])
+        self.assertEqual(text[76:155], record.candidate.evidence[0].quote)
+        resolution = record.evidence_resolutions[0]
+        self.assertEqual((76, 154, 76, 155), (resolution.supplied_start_char, resolution.supplied_end_char, resolution.resolved_start_char, resolution.resolved_end_char))
+        self.assertEqual("unique_exact_quote", resolution.method)
+        self.assertEqual(2, report.to_dict()["schema_version"])
+        self.assertEqual(155, report.to_dict()["candidates"][0]["evidence_resolutions"][0]["resolved_end_char"])
+        self.assertEqual(text, report.snapshot.current_segments[0].content)
+
+    def test_repeated_quotes_require_matching_supplied_anchor_and_never_choose_first(self):
+        text = "Huawei, Google, Huawei."
+        good = candidate("v0:s0", text, quote="Huawei", offset=16)
+        bad = copy.deepcopy(good)
+        bad["evidence"][0].update(start_char=15, end_char=21)
+        report = analyze(videos([text]), ScriptedGenerator({("v0:s0", "direct"): [good, bad]}), qa_enabled=False)
+        self.assertEqual(["accepted", "literal_rejected"], [record.validation for record in report.candidates])
+        self.assertEqual(16, report.occurrences[0].assertion_evidence[0].start_char)
+        self.assertEqual((), report.candidates[0].evidence_resolutions)
+        self.assertIn("more than once", report.candidates[1].reasons[0])
+
+    def test_literal_resolution_never_fuzzes_accents_or_changes_source_or_role(self):
+        source = videos(["A decisão foi anunciada.", "Outro trecho."])
+        valid = candidate("v0:s0", source[0].segments[0].content)
+        for change in (
+            lambda raw: raw["evidence"][0].update(quote="A decisao foi anunciada."),
+            lambda raw: raw["evidence"][0].update(segment_id="v0:s1"),
+            lambda raw: raw["evidence"][0].update(role="context"),
+        ):
+            raw = copy.deepcopy(valid)
+            change(raw)
+            with self.subTest(raw=raw):
+                report = analyze(source, ScriptedGenerator({("v0:s0", "direct"): [raw]}), qa_enabled=False)
+                self.assertEqual("literal_rejected", report.candidates[0].validation)
+                self.assertEqual(0, report.counts.accepted_candidates)
+                self.assertEqual(source[0].segments[0].content, report.snapshot.current_segments[0].content)
+
+    def test_report_derived_scores_and_production_annotations_remain_separate_guards(self):
+        text = "O Android é o sistema operacional mais usado em smartphones ao redor do planeta."
+        raw = candidate("v0:s0", text, quantities=("mais usado",))
+        generator = ScriptedGenerator({("v0:s0", "direct"): [raw]})
+        original_signals = {"support": 0.91, "conditions": 0.82, "negation": 0.90, "quantities": 0.94, "modality": 0.67, "attribution": 0.46}
+        evaluator, _ = self.evaluator(original_signals)
+        pending = analyze(videos([text]), generator, evaluator, qa_enabled=False, max_coverage_rounds=0)
+        self.assertEqual(0, pending.counts.accepted_candidates)
+        evaluator, bodies = self.evaluator({"support": 0.95, "conditions": 0.94, "quantities_annotation": 0.85})
+        accepted = analyze(videos([text]), generator, evaluator, qa_enabled=False)
+        self.assertEqual(1, accepted.counts.accepted_candidates)
+        self.assertEqual(0.85, json.loads(accepted.metadata_json)["settings"]["acceptance_threshold"])
+        payload = bodies[0]
+        self.assertIn("Assertion evidence:\n[v0:s0] " + text, payload["state"])
+        self.assertNotIn("source_identity", payload["state"])
+        self.assertNotIn("Python Unicode", payload["state"])
+        self.assertEqual("One contextual proposition. A condition and its consequence form one proposition; an attributed claim includes its reporting source.", payload["questions"]["granularity"]["criteria"]["atomic"])
+        for failed_signal in ("conditions", "negation", "quantities", "modality", "attribution", "conditions_annotation", "quantities_annotation", "modality_annotation", "attribution_annotation", "negation_annotation"):
+            evaluator, _ = self.evaluator({failed_signal: 0.03})
+            with self.subTest(signal=failed_signal):
+                report = analyze(videos([text]), generator, evaluator, qa_enabled=False, max_coverage_rounds=0)
+                self.assertEqual(0, report.counts.accepted_candidates)
+                self.assertIn(failed_signal, report.candidates[0].reasons)
+
+    def test_uncited_text_cannot_support_a_proposition_and_qa_is_checked_independently(self):
+        quote = "O prazo é fixo."
+        text = quote + " O valor secreto é 99 dias."
+        raw = candidate("v0:s0", text, quote=quote, qa=True)
+        evaluator, bodies = self.evaluator({"qa_consistency": 0.04})
+        report = analyze(videos([text]), ScriptedGenerator({("v0:s0", "qa"): [raw]}), evaluator, max_coverage_rounds=0)
+        payload = next(body for body in bodies if "support" in body["questions"])
+        self.assertNotIn("valor secreto", payload["state"])
+        self.assertIn("qa_anchor", payload["questions"])
+        self.assertIn("qa_consistency", report.candidates[0].reasons)
+        self.assertEqual(0, report.counts.accepted_candidates)
+
+    def test_recovery_receives_literal_failures_and_semantic_reasons(self):
+        text = "O prazo é de 30 dias."
+        raw = candidate("v0:s0", text, quantities=("30 dias",))
+        bad = copy.deepcopy(raw)
+        bad["evidence"][0]["quote"] = "O prazo é de 40 dias."
+        inputs = []
+
+        def generate(data, route):
+            inputs.append((data, route))
+            return [bad] if route == "direct" else [raw]
+
+        report = analyze(videos([text]), ScriptedGenerator(callback=generate), SyntheticEvaluator(coverage={"v0:s0": [0.99, 0.01]}), qa_enabled=False)
+        recovery = next(data for data, route in inputs if route == "recovery")
+        repair = recovery["repair_candidates"][0]
+        self.assertEqual("literal_rejected", repair["validation"])
+        self.assertEqual(bad, repair["candidate"])
+        self.assertIn("does not occur literally", repair["reasons"][0])
+        self.assertEqual(1, report.counts.accepted_candidates)
 
 
 class InformationSchemaTests(unittest.TestCase):

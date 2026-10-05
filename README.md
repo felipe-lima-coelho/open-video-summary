@@ -301,15 +301,35 @@ the external truth of a claim. A unit preserves entity context, attribution,
 negation, modality, numbers, conditions and exceptions. Independent properties
 become separate units; a condition remains with its consequent. Compound
 candidates flagged by the evaluator are excluded and offered to the bounded
-recovery route, so their parts cannot silently add to an already counted compound.
+recovery route with their validation reasons and signals, so their parts cannot
+silently add to an already counted compound.
 
 Direct extraction and optional anchored question/answer extraction initially
 receive the same source context without seeing each other's output. Questions
 and answers are discovery aids; they are not units to add to the count. Every
-candidate must carry literal quote offsets, with assertion evidence in its target
-segment. Code checks Unicode character slices and existing IDs; timestamps are
+candidate must carry literal quotations and proposed offsets, with assertion
+evidence in its target segment. Code checks Unicode character slices and existing
+IDs. A matching supplied anchor is retained, including for repeated quotations.
+If offsets drift, code resolves only a **unique exact quotation in the same
+permitted source segment**. No fuzzy matching or first-occurrence guess is used;
+ambiguous and nonliteral evidence remains rejected. The candidate's `raw` output
+retains supplied offsets, and `evidence_resolutions` records each resolved anchor.
+Every resolved candidate still requires semantic validation. Timestamps are
 copied from source segments, with segment-level resolution, never estimated by a
 model. Context citations can resolve a reference but create no occurrence.
+
+Jev receives readable assertion quotations, explicitly cited reference context
+and the proposed claim, without uncited source text, timing metadata or extraction
+instructions. Separate positive questions check support and each qualifier's
+fidelity; absence is valid when the source and proposition both lack that feature.
+Independent annotation checks also guard the stored qualifier fields. An empty
+generated field never disables its source-based fidelity check. Attribution names
+a reported speaker or claimant; an entity acting in a narrated event remains in
+the proposition without becoming a reporting source. Choice options retain stable
+IDs with descriptions for granularity and semantic relations. Acceptance thresholds
+remain unchanged. An atomic proposition may cite a longer passage without being
+required to include its unrelated independent facts; coverage auditing handles
+those omissions.
 
 Coverage checks read the original target and accepted propositions, including
 markers for quantities, negations, conditions and references. These markers are
@@ -340,7 +360,9 @@ units, assertion evidence groups and their alignment state, context evidence,
 pair relations, coverage records,
 counts by segment/video/whole input and unresolved issues. Calls record requested
 and returned models, input/output hashes, usage when available, latency and retry
-attempts. Prompt hashes, protocol version and settings are retained without keys.
+attempts. Report schema 2 adds evidence-resolution records; source data and older
+reports are not rewritten. Generator and evaluator template hashes, the evaluator
+template version, protocol version and settings are retained without keys.
 The optional CSV is an occurrence evidence table with alignment state; the JSON
 contains the full evidence. The CLI labels unresolved totals as provisional
 occurrence evidence groups.

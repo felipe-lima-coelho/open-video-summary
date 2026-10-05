@@ -228,6 +228,19 @@ class InformationCandidate:
 
 
 @dataclass(frozen=True)
+class EvidenceResolution:
+    """Trace a unique literal match without changing the generator's raw output."""
+
+    evidence_index: int
+    segment_id: str
+    supplied_start_char: int
+    supplied_end_char: int
+    resolved_start_char: int
+    resolved_end_char: int
+    method: str = "unique_exact_quote"
+
+
+@dataclass(frozen=True)
 class CandidateRecord:
     id: str
     target_segment_id: str
@@ -241,6 +254,7 @@ class CandidateRecord:
     granularity: str | None = None
     granularity_probability: float | None = None
     granularity_confidence: float | None = None
+    evidence_resolutions: tuple[EvidenceResolution, ...] = ()
 
 
 @dataclass(frozen=True)

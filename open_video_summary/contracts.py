@@ -1,6 +1,7 @@
 """Provider-independent requests and results used by the research pipeline."""
 
 from dataclasses import dataclass, field
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -131,7 +132,7 @@ class Evaluator(Protocol):
         self,
         context: str,
         noul: dict[str, str] | None = None,
-        choice: dict[str, tuple[str, tuple[str, ...]]] | None = None,
+        choice: dict[str, tuple[str, tuple[str, ...] | Mapping[str, str]]] | None = None,
     ) -> EvaluationResult: ...
 
 

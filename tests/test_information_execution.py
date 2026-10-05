@@ -23,7 +23,7 @@ from open_video_summary.core.summarizers.information_contracts import AnalysisPr
 from open_video_summary.errors import AuthenticationError, ConfigurationError, ProviderConfigurationError, ServiceTimeoutError
 from open_video_summary.utils.providers import LLMConfig
 from open_video_summary.utils.retry import retry_after, retry_delay
-from tests.test_information_analysis import ScriptedGenerator, SyntheticEvaluator, candidate, videos
+from tests.test_information_analysis import ScriptedGenerator, SyntheticEvaluator, candidate, evaluation_state, videos
 from tests.test_llm_adapters import ExternalStatusError, response
 
 
@@ -79,7 +79,7 @@ class _Requests:
 
     def evaluate(self, url, *, headers, body, timeout):
         payload = json.loads(body)
-        state = json.loads(payload["state"])
+        state = evaluation_state(payload["state"])
         with self.lock:
             if "candidate_id" in state:
                 self.evaluation_ids.append((state["target_id"], state["candidate_id"]))

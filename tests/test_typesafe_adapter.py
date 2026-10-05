@@ -147,6 +147,29 @@ class TypeSafeAdapterTests(unittest.TestCase):
         self.assertNotIn(self.key, repr(self.config))
         self.assertEqual(DEFAULT_TYPESAFE_MODEL, no_key.model)
 
+    def test_choice_descriptions_preserve_stable_ids_and_probability_mapping(self):
+        criteria = {
+            "atomic": "One contextual proposition, including its condition.",
+            "compound": "Two independent properties.",
+        }
+        transport = FakeTransport(response({"q": {
+            "type": "choice", "choice": "atomic",
+            "probabilities": {"compound": 0.03, "atomic": 0.97},
+            "confidence": 0.9,
+        }}))
+        result = TypeSafeEvaluator(self.config, transport=transport).evaluate(
+            "A conditional rule.", choice={"q": ("Classify.", criteria)}
+        )
+        question = json.loads(transport.calls[0]["body"])["questions"]["q"]
+        self.assertEqual(criteria, question["criteria"])
+        self.assertEqual("atomic", result.choice[0].selected)
+        self.assertEqual((("atomic", 0.97), ("compound", 0.03)), result.choice[0].probabilities)
+        for invalid in ({}, {"atomic": ""}, {"atomic": 1}, {1: "description"}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                TypeSafeEvaluator(self.config, transport=FakeTransport()).evaluate(
+                    "text", choice={"q": ("Classify.", invalid)}
+                )
+
     def test_preflight_checks_key_without_network_call(self):
         transport = FakeTransport()
         evaluator = TypeSafeEvaluator(TypeSafeConfig(), transport=transport)
