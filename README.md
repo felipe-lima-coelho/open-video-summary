@@ -378,6 +378,7 @@ are described in [models](https://docs.typesafe.ai/models) and
 | CLI option | Environment setting | Default |
 | --- | --- | --- |
 | `--no-information-qa` | `OVS_INFORMATION_QA` (`true`/`false`) | QA enabled |
+| `--information-concurrency` | `OVS_INFORMATION_CONCURRENCY` | 2 independent source targets (range 1–8) |
 | `--information-max-calls` | `OVS_INFORMATION_MAX_CALLS` | 256 logical calls |
 | `--information-rounds` | `OVS_INFORMATION_ROUNDS` | 2 recovery rounds per target |
 | `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | 160 semantic pair comparisons |
@@ -408,10 +409,27 @@ currency cost is inferred. Large original targets are not truncated to fit a
 request: they become pending work. Pair-budget exhaustion prevents further
 automatic merges and marks unique-unit counts provisional.
 
+Configured CLI analyses process independent source segments concurrently, using
+separate provider clients for each worker. The default is two targets; set
+`--information-concurrency 4` or `OVS_INFORMATION_CONCURRENCY=4` to increase it,
+up to eight. Operations within each target keep their dependency order, and pair
+consolidation runs after target analysis; report entries are assembled in source
+order. All workers share the logical-call cap, so target coverage at cap exhaustion
+can depend on scheduling. Provider retries remain bounded by their attempt limits;
+`Retry-After` delays are capped at 30 seconds, with capped jittered backoff when the
+service supplies no usable delay.
+
+The CLI prints target, operation, provider-attempt, retry, and elapsed-time updates
+while analysis runs, plus a ten-second heartbeat during long provider calls. For
+`summarize --analyze-information`, it prints the saved report path before selection
+starts so the inventory result is visible even while the summary continues.
+
 Library callers can pass `information_analyzer=InformationAnalyzer(generator,
 evaluator, config)` to the existing `Summarizer.summarize(...)`. Optional
 `information_output_path`, `information_csv_path` and `information_input_path`
-control exports and protected dataset identity. With `save_output=False` and no
+control exports and protected dataset identity. An optional
+`information_report_observer(report, path)` receives the finished report after
+its export and before selection criteria run. With `save_output=False` and no
 explicit report path, inspect the immutable `last_information_report` in memory.
 The return type remains `Video`, and report state is reset for every invocation.
 

@@ -7,11 +7,15 @@ import sys
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
+from threading import Lock
 
 from open_video_summary.errors import ConfigurationError
 from open_video_summary.utils.config import PROJECT_DIR, ModelPaths
 from open_video_summary.utils.paths import project_path, portable_path
 from open_video_summary.utils.providers import load_thread_count, load_visual_scope
+
+
+_INFORMATION_PROGRESS_LOCK = Lock()
 
 
 def _cpu_settings(threads: int) -> None:
@@ -70,10 +74,13 @@ def _summarize(args) -> None:
         from open_video_summary.core.summarizers.information_config import configured_information_analyzer
 
         information_kwargs = {
-            "information_analyzer": configured_information_analyzer(vars(args)),
+            "information_analyzer": configured_information_analyzer(
+                vars(args), progress=_print_information_progress
+            ),
             "information_output_path": args.information_report,
             "information_csv_path": getattr(args, "information_csv", None),
             "information_input_path": args.dataset,
+            "information_report_observer": _print_information_report,
         }
     summary = HSMVideoSumm.summarize(
         videos=videos,
@@ -83,8 +90,6 @@ def _summarize(args) -> None:
         audit_output_path=audit_path.as_posix(),
         **information_kwargs,
     )
-    if information_kwargs:
-        _print_information_report(HSMVideoSumm.last_information_report, HSMVideoSumm.last_information_path)
     visual_profile_path = output.with_name(f"{output.stem}_visual_profile.json")
     visual_profile = next(
         criterion.last_profile
@@ -130,6 +135,87 @@ def _print_information_report(report, path):
         print(f"Information report: {portable_path(path)}")
 
 
+def _print_information_progress(progress):
+    """Print safe, concise CLI progress without exposing request content."""
+    event = progress.event
+    segment = f" {progress.segment_id}" if progress.segment_id else ""
+    target = ""
+    if progress.target_index is not None:
+        target = f"target {progress.target_index + 1}/{progress.target_total}"
+        if segment:
+            target += f" ({progress.segment_id})"
+        target += ": "
+    calls = f"logical calls {progress.logical_calls}/{progress.call_limit}"
+
+    if event == "analysis_started":
+        message = (
+            f"Information analysis started: {progress.target_total} targets, "
+            f"concurrency {progress.concurrency}, call limit {progress.call_limit}."
+        )
+    elif event == "target_started":
+        message = f"Information {target}started."
+    elif event == "call_started":
+        message = (
+            f"Information {target}{progress.operation} via {progress.provider} "
+            f"started ({calls})."
+        )
+    elif event == "provider_attempt":
+        service = progress.service
+        service_event = getattr(service, "event", "provider update")
+        provider = getattr(service, "provider", None) or progress.provider or "provider"
+        attempt = getattr(service, "attempt", None)
+        maximum = getattr(service, "max_attempts", None)
+        attempt_label = (
+            f" attempt {attempt}/{maximum}" if attempt is not None and maximum else ""
+        )
+        if service_event == "retry_scheduled":
+            delay = getattr(service, "delay_seconds", None)
+            delay_label = f" in {delay:.1f}s" if isinstance(delay, (int, float)) else ""
+            error = getattr(service, "error_type", None)
+            error_label = f" after {error}" if error else ""
+            message = (
+                f"Information {target}{progress.operation}: {provider} retry "
+                f"scheduled after attempt {attempt}/{maximum}{delay_label}{error_label}."
+            )
+        elif service_event in {"attempt_started", "attempt_failed"}:
+            error = getattr(service, "error_type", None)
+            error_label = f" ({error})" if error else ""
+            message = (
+                f"Information {target}{progress.operation}: {provider}{attempt_label} "
+                f"{service_event.replace('_', ' ')}{error_label}."
+            )
+        else:
+            return
+    elif event == "waiting":
+        duration = progress.operation_seconds or 0.0
+        message = (
+            f"Information {target}{progress.operation} via {progress.provider} "
+            f"still running ({duration:.0f}s; {calls})."
+        )
+    elif event in {"call_completed", "call_failed"}:
+        duration = progress.operation_seconds or 0.0
+        outcome = "completed" if event == "call_completed" else "failed"
+        error = f" ({progress.error_type})" if progress.error_type else ""
+        message = (
+            f"Information {target}{progress.operation} via {progress.provider} "
+            f"{outcome}{error} in {duration:.1f}s ({calls})."
+        )
+    elif event == "target_completed":
+        message = f"Information {target}finished with status {progress.status}."
+    elif event == "consolidation_started":
+        message = f"Information pair consolidation started ({calls})."
+    elif event == "analysis_completed":
+        message = (
+            f"Information analysis {progress.status} after "
+            f"{progress.elapsed_seconds:.1f}s ({calls})."
+        )
+    else:
+        return
+
+    with _INFORMATION_PROGRESS_LOCK:
+        print(message, flush=True)
+
+
 def _analyze_information(args):
     from open_video_summary.core.summarizers.information_config import configured_information_analyzer
     from open_video_summary.core.summarizers.information_contracts import capture_snapshot
@@ -139,7 +225,9 @@ def _analyze_information(args):
     # This text-only path needs neither video files nor an HSM classifier.
     videos = VideoLoader.load_videos_from_json(args.dataset)
     snapshot = capture_snapshot(videos, stage_id="source_inventory")
-    report = configured_information_analyzer(vars(args)).analyze(snapshot)
+    report = configured_information_analyzer(
+        vars(args), progress=_print_information_progress
+    ).analyze(snapshot)
     reserved = [args.dataset]
     reserved.extend(video.path for video in videos)
     reserved.extend(segment.video_path for video in videos for segment in video.segments)
@@ -325,6 +413,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _information_arguments(parser):
     parser.add_argument("--information-csv", default=None, help="Optional occurrence table in a new CSV under outputs/.")
     parser.add_argument("--no-information-qa", dest="information_qa", action="store_false", default=None)
+    parser.add_argument("--information-concurrency", type=int, default=None, help="Parallel source targets (default: OVS_INFORMATION_CONCURRENCY or 2; 1-8).")
     parser.add_argument("--information-max-calls", type=int, default=None)
     parser.add_argument("--information-rounds", type=int, default=None)
     parser.add_argument("--information-max-pairs", type=int, default=None)
