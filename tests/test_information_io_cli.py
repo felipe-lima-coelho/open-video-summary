@@ -8,6 +8,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -74,6 +75,9 @@ class InformationIOTests(unittest.TestCase):
         )
         self.assertIn("O prazo é", csv_path.read_text(encoding="utf-8"))
         self.assertFalse(exported["counts"]["occurrences_provisional"])
+        self.assertFalse(exported["counts"]["counts_provisional"])
+        row = next(csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8"))))
+        self.assertEqual("False", row["counts_provisional"])
         self.assertEqual(
             "source_anchor_group", exported["occurrences"][0]["alignment_state"]
         )
@@ -141,6 +145,7 @@ class InformationIOTests(unittest.TestCase):
         self.assertEqual(1, exported["counts"]["unique_units"])
         self.assertEqual(2, exported["counts"]["occurrences"])
         self.assertTrue(exported["counts"]["occurrences_provisional"])
+        self.assertTrue(exported["counts"]["counts_provisional"])
         self.assertTrue(exported["counts"]["by_segment"][0]["occurrences_provisional"])
         self.assertTrue(exported["counts"]["by_video"][0]["occurrences_provisional"])
         self.assertEqual(
@@ -155,9 +160,46 @@ class InformationIOTests(unittest.TestCase):
         )
         with contextlib.redirect_stdout(io.StringIO()) as output:
             cli._print_information_report(report, path)
-        self.assertIn("1 identified units", output.getvalue())
+        self.assertIn("1 provisional unit", output.getvalue())
         self.assertIn("2 provisional occurrence evidence groups", output.getvalue())
         self.assertIn("alignment pending", output.getvalue())
+
+    def test_unexamined_pair_count_state_is_consistent_in_json_csv_and_cli(self):
+        text = "Backup is performed daily."
+        raw = [
+            candidate("v0:s0", text, text=claim, quote=text)
+            for claim in (text, "The backup runs every day.")
+        ]
+        report = InformationAnalyzer(
+            ScriptedGenerator({("v0:s0", "direct"): raw}),
+            SyntheticEvaluator(),
+            InformationAnalysisConfig(qa_enabled=False, max_pair_comparisons=0),
+        ).analyze(capture_snapshot(videos([text])))
+        path, csv_path = self.root / "unexamined.json", self.root / "unexamined.csv"
+        save_information_report(report, path, csv_path=csv_path)
+        exported = json.loads(path.read_text(encoding="utf-8"))
+        rows = list(csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8"))))
+
+        self.assertEqual("partial", exported["status"])
+        self.assertTrue(exported["counts"]["counts_provisional"])
+        self.assertFalse(exported["counts"]["occurrences_provisional"])
+        self.assertFalse(exported["counts"]["by_segment"][0]["occurrences_provisional"])
+        self.assertEqual(
+            ["source_anchor_group", "source_anchor_group"],
+            [item["alignment_state"] for item in exported["occurrences"]],
+        )
+        self.assertEqual(2, len(rows))
+        self.assertTrue(all(row["counts_provisional"] == "True" for row in rows))
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            cli._print_information_report(report, path)
+        self.assertIn("2 provisional units", output.getvalue())
+        self.assertIn("2 provisional occurrence evidence groups", output.getvalue())
+        self.assertNotIn("alignment pending", output.getvalue())
+
+    def test_noncompleted_report_status_forces_aggregate_counts_provisional(self):
+        partial = replace(self.report, status="partial")
+        self.assertTrue(partial.counts.counts_provisional)
+        self.assertTrue(partial.to_dict()["counts"]["counts_provisional"])
 
     def test_aliases_to_dataset_audit_video_and_handler_are_protected(self):
         path = self.root / "dataset.json"

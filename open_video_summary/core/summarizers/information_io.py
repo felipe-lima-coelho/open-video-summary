@@ -67,6 +67,7 @@ def information_csv(report) -> str:
     stream = io.StringIO(newline="")
     names = [
         "status",
+        "counts_provisional",
         "unit_id",
         "text",
         "unit_type",
@@ -91,6 +92,7 @@ def information_csv(report) -> str:
         writer.writerow(
             {
                 "status": report.status,
+                "counts_provisional": report.counts.counts_provisional,
                 "unit_id": unit.id,
                 "text": unit.text,
                 "unit_type": unit.unit_type,
@@ -117,7 +119,12 @@ def information_csv(report) -> str:
             }
         )
     if not report.occurrences:
-        writer.writerow({"status": report.status})
+        writer.writerow(
+            {
+                "status": report.status,
+                "counts_provisional": report.counts.counts_provisional,
+            }
+        )
     return stream.getvalue()
 
 

@@ -679,6 +679,7 @@ class InformationProtocolTests(unittest.TestCase):
         self.assertEqual(1, report.counts.unique_units)
         self.assertEqual(1, report.counts.occurrences)
         self.assertFalse(report.counts.occurrences_provisional)
+        self.assertFalse(report.counts.counts_provisional)
         self.assertEqual(1, len(report.occurrences[0].assertion_evidence))
         self.assertEqual(2, len(report.occurrences[0].context_evidence))
         self.assertEqual(("direct", "qa"), report.occurrences[0].routes)
@@ -1272,6 +1273,33 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         self.assertEqual("complementary", report.relations[0].relation)
         self.assertFalse(report.relations[0].merged)
         self.assertEqual(4, report.counts.unique_units)
+        self.assertIn("pair_budget_exhausted", [issue.kind for issue in report.issues])
+
+    def test_unexamined_same_anchor_pair_makes_aggregate_occurrence_count_provisional(self):
+        source = "Backup is performed daily."
+        raw = [
+            candidate("v0:s0", source, text=claim, quote=source)
+            for claim in (source, "The backup runs every day.")
+        ]
+        report = analyze(
+            videos([source]),
+            ScriptedGenerator({("v0:s0", "direct"): raw}),
+            qa_enabled=False,
+            max_pair_comparisons=0,
+        )
+
+        self.assertEqual("partial", report.status)
+        self.assertEqual(2, report.counts.accepted_candidates)
+        self.assertEqual(2, report.counts.unique_units)
+        self.assertEqual(2, report.counts.occurrences)
+        self.assertTrue(report.counts.counts_provisional)
+        self.assertFalse(report.counts.occurrences_provisional)
+        self.assertFalse(report.counts.by_segment[0].occurrences_provisional)
+        self.assertFalse(report.counts.by_video[0].occurrences_provisional)
+        self.assertEqual(
+            ["source_anchor_group", "source_anchor_group"],
+            [item.alignment_state for item in report.occurrences],
+        )
         self.assertIn("pair_budget_exhausted", [issue.kind for issue in report.issues])
 
     def test_anchor_binding_cannot_borrow_an_unrelated_source_assertion(self):

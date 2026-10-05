@@ -3,7 +3,7 @@
 import hashlib
 import json
 import math
-from dataclasses import asdict, dataclass, fields, is_dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 
 from open_video_summary.contracts import ProviderProgress
 from open_video_summary.errors import ConfigurationError
@@ -317,6 +317,8 @@ class AnalysisIssue:
 
 @dataclass(frozen=True)
 class ScopeCount:
+    """Counts for one source scope; occurrence provisionality is alignment-only."""
+
     id: str
     occurrences: int
     unique_units: int
@@ -325,6 +327,13 @@ class ScopeCount:
 
 @dataclass(frozen=True)
 class InformationCounts:
+    """Report totals and their completeness independently from anchor alignment.
+
+    ``counts_provisional`` covers whole-input and scoped aggregates when analysis
+    is incomplete. ``occurrences_provisional`` only reports unresolved occurrence
+    alignment from overlapping, nonidentical assertion anchors.
+    """
+
     candidates: int
     accepted_candidates: int
     occurrences: int
@@ -333,6 +342,7 @@ class InformationCounts:
     by_video: tuple[ScopeCount, ...]
     valid_zero: bool
     occurrences_provisional: bool = False
+    counts_provisional: bool = False
 
 
 @dataclass(frozen=True)
@@ -381,6 +391,17 @@ class InformationReport:
     issues: tuple[AnalysisIssue, ...]
     calls: tuple[AnalysisCall, ...]
     metadata_json: str
+
+    def __post_init__(self):
+        # Keep the aggregate flag consistent even for manually assembled partial
+        # or failed reports. Completed reports can still carry a more specific
+        # provisional signal supplied by their count producer.
+        if self.status != "completed" and not self.counts.counts_provisional:
+            object.__setattr__(
+                self,
+                "counts",
+                replace(self.counts, counts_provisional=True),
+            )
 
     def to_dict(self) -> dict:
         def export(value):

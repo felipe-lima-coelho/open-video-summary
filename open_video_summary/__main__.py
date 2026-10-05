@@ -121,14 +121,21 @@ def _print_information_report(report, path):
     if report is None:
         print("Information analysis: failed before a snapshot report could be built.", flush=True)
         return
-    occurrence_label = (
-        "provisional occurrence evidence groups (alignment pending)"
-        if report.counts.occurrences_provisional
-        else "identified occurrences"
-    )
+    unit_state = "provisional" if report.counts.counts_provisional else "identified"
+    unit_kind = "unit" if report.counts.unique_units == 1 else "units"
+    if report.counts.occurrences_provisional:
+        occurrence_label = "provisional occurrence evidence groups (alignment pending)"
+    elif report.counts.counts_provisional:
+        occurrence_label = "provisional occurrence evidence groups"
+    else:
+        occurrence_label = (
+            "identified occurrence"
+            if report.counts.occurrences == 1
+            else "identified occurrences"
+        )
     print(
         f"Information analysis: {report.status}; "
-        f"{report.counts.unique_units} identified units, "
+        f"{report.counts.unique_units} {unit_state} {unit_kind}, "
         f"{report.counts.occurrences} {occurrence_label}; {len(report.issues)} issues.",
         flush=True,
     )

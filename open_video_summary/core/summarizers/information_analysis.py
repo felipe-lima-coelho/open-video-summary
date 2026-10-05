@@ -1115,7 +1115,16 @@ class _AnalysisRun:
             "timestamp_resolution": "source_segment",
             "completeness_proven": False,
             "thresholds_calibrated": False,
-            "count_semantics": "Unique units count accepted semantic groups. Occurrences count exact assertion-anchor groups; overlapping nonidentical anchors remain separate with occurrences_provisional=true and may overcount utterances. Other pending work can also make partial counts provisional.",
+            "count_semantics": (
+                "Unique units count accepted semantic groups. Occurrences count "
+                "exact assertion-anchor groups. counts_provisional covers "
+                "whole-input and scoped aggregates whenever status is partial or "
+                "failed, including unexamined semantic pairs that can leave one "
+                "utterance represented by multiple units. occurrences_provisional "
+                "and scope occurrences_provisional flags report only unresolved "
+                "alignment from overlapping nonidentical assertion anchors within "
+                "semantic units."
+            ),
         }
         report = InformationReport(
             3,
@@ -1189,6 +1198,7 @@ class _AnalysisRun:
             by_video,
             status == "completed" and not units,
             any(item.alignment_state == "unresolved_overlap" for item in occurrences),
+            status != "completed",
         )
 
 
@@ -1202,6 +1212,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         tuple(ScopeCount(item, 0, 0) for item in snapshot.current_order),
         tuple(ScopeCount(video.id, 0, 0) for video in snapshot.source),
         False,
+        counts_provisional=True,
     )
     return InformationReport(
         3,

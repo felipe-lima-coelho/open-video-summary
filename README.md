@@ -373,7 +373,15 @@ evidence can be deduplicated in code, independently of auxiliary annotations.
 These free duplicate checks run before paid comparisons even if the logical-call
 budget is exhausted. Shared assertion anchors and textual similarity prioritize
 the remaining comparisons; priority alone never establishes equivalence.
-Unexamined pairs remain explicit and unique-unit counts remain provisional.
+Unexamined pairs remain explicit and can leave one utterance in multiple units.
+The report-level `counts.counts_provisional` flag marks both whole-input totals
+and the by-segment/by-video aggregates provisional whenever analysis is partial
+or failed. The CSV repeats this flag on each row. The per-scope
+`occurrences_provisional` flags and aggregate `counts.occurrences_provisional`
+have a narrower meaning: they identify unresolved alignment from overlapping,
+nonidentical assertion anchors retained within a semantic unit. A false
+alignment flag therefore does not make counts final while `counts_provisional`
+is true.
 Occurrence deduplication requires the same
 set of literal assertion anchors (source identity, segment and character offsets);
 context citations do not determine identity. Repetitions retain distinct
@@ -381,9 +389,10 @@ positional source identities and assertion spans. Different overlapping anchors,
 including contained quotes, remain separate evidence groups with
 `alignment_state="unresolved_overlap"` and an alignment issue. Their total is
 provisional and may overcount utterances; `counts.occurrences_provisional=true`
-and the corresponding segment/video flags expose this uncertainty. Overlap alone
-never merges occurrences. These groups can still belong to one semantic unit, so
-the distinct unit count remains separate from occurrence alignment.
+and the corresponding segment/video flags expose this alignment uncertainty.
+Overlap alone never merges occurrences. These groups can still belong to one
+semantic unit, so the distinct unit count remains separate from occurrence
+alignment.
 
 JSON is the canonical report. It includes the frozen source snapshot, source and
 current-input fingerprints, source/current order, selection stage order,
@@ -396,10 +405,12 @@ attempts. Report schema 3 retains schema 2 evidence-resolution records, separate
 content validation from annotation audit, and makes canonical qualifiers nullable.
 Source data and older reports are not rewritten. Generator and evaluator template hashes, the evaluator
 template version, protocol version and settings are retained without keys.
-The optional CSV is an occurrence evidence table with alignment state, canonical
-qualifier state, nullable qualifiers and representative candidate ID; the JSON
-contains the full evidence. The CLI labels unresolved totals as provisional
-occurrence evidence groups.
+The optional CSV is an occurrence evidence table with alignment state, report
+count provisionality, canonical qualifier state, nullable qualifiers and
+representative candidate ID; the JSON contains the full evidence. When counts
+are provisional, the CLI labels both unit and occurrence totals provisional.
+It adds “alignment pending” to occurrence groups when anchor alignment is the
+specific unresolved evidence issue.
 
 `completed` means the configured operations finished without recorded pending
 issues. It is **not proof of complete extraction or calibrated semantic accuracy**.
