@@ -558,9 +558,13 @@ resolved inventory counts provisional. Genuine equivalence uncertainty still
 blocks merges and keeps counts provisional. The follow-up is one fixed request,
 with no repeated wording search until a preferred answer appears.
 The primary distribution also records `primary_equivalent_probability`,
-`primary_distinct_probability` and `primary_uncertain_probability`. The distinct
-family sums the six mutually exclusive known non-equivalence classes, excluding
-the uncertain class. This sum can reach the existing equivalence threshold while
+`primary_distinct_probability` and `primary_uncertain_probability`. Primary
+subtype and family decisions divide by the complete raw distribution total,
+recorded as `primary_probability_total`, to account for provider rounding.
+`initial_probability` and the call's Choice record retain the original scores.
+The distinct family sums the six mutually exclusive known non-equivalence
+classes; the uncertain class contributes to the denominator but not that family.
+This normalized sum can reach the existing equivalence threshold while
 the descriptive subtype remains unresolved. Follow-up checks still run within
 their limits; a decisive contradiction between primary family and follow-up
 evidence keeps the result uncertain. Family mass is a model output aggregate,

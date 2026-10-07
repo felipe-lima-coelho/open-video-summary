@@ -919,7 +919,7 @@ class _AnalysisRun:
             used += 1
             try:
                 self._validate(raw, target, "literal_recovery", 0, permitted, literal_repair_of=record.id)
-            except (ServiceTimeoutError, RequestDeadlineError, InvalidResponseError) as exc:
+            except (ServiceTimeoutError, RequestDeadlineError, InvalidResponseError, _ContextLimitReached) as exc:
                 self.issue("literal_repair_failed", type(exc).__name__, (target.id,), (record.id,))
 
     @staticmethod
@@ -1155,17 +1155,19 @@ class _AnalysisRun:
         return relation, worker, reservation.consumed
 
     def _primary_relation(self, left, right, result, origin="evaluator"):
-        probability = dict(result.probabilities).get(result.selected, 0.0)
-        label = result.selected if passes_probability_cutoff(probability, self.config.equivalence_threshold) else "uncertain"
         equivalent, distinct, uncertain = relation_family_probabilities(result.probabilities)
+        total = math.fsum(value for _, value in result.probabilities)
+        raw_probability = dict(result.probabilities)[result.selected]
+        probability = raw_probability / total
+        label = result.selected if passes_probability_cutoff(probability, self.config.equivalence_threshold) else "uncertain"
         family_resolved = label == "uncertain" and passes_probability_cutoff(distinct, self.config.equivalence_threshold)
         return InformationRelation(left.id, right.id, label, probability, result.confidence,
-            origin=origin, initial_relation=result.selected, initial_probability=probability,
+            origin=origin, initial_relation=result.selected, initial_probability=raw_probability,
             equivalence_state="distinct" if family_resolved else None,
             equivalence_strength=distinct if family_resolved else None,
             equivalence_origin="primary_relation_family" if family_resolved else None,
             primary_equivalent_probability=equivalent, primary_distinct_probability=distinct,
-            primary_uncertain_probability=uncertain)
+            primary_uncertain_probability=uncertain, primary_probability_total=total)
 
     def _pair_request(self, pairs):
         return relation_batch_spec(pairs, self.segments, RELATION_INSTRUCTION)
@@ -1350,11 +1352,12 @@ class _AnalysisRun:
                     label = ("equivalent" if state == "equivalent" else
                              "uncertain" if state == "uncertain" else updated.relation)
                     relation = replace(updated, initial_relation=relation.initial_relation or relation.relation,
-                        initial_probability=relation.probability, relation=label,
+                        initial_probability=relation.initial_probability, relation=label,
                         equivalence_state=state, equivalence_strength=strength, equivalence_origin=origin,
                         primary_equivalent_probability=relation.primary_equivalent_probability,
                         primary_distinct_probability=relation.primary_distinct_probability,
-                        primary_uncertain_probability=relation.primary_uncertain_probability)
+                        primary_uncertain_probability=relation.primary_uncertain_probability,
+                        primary_probability_total=relation.primary_probability_total)
                 finalized.append(relation)
 
         positions = {record.id: index for index, record in enumerate(accepted)}
@@ -1655,7 +1658,7 @@ class _AnalysisRun:
             "validation_reused_candidates": sum(record.validation_reused_from is not None for record in self.candidates),
             "pair_scheduling": "Only exact validated text/type/evidence duplicates reuse representative pair decisions, with explicit reused_from provenance. All other pairs are evaluated: similarity sets order only. Configured bounded batches use independently keyed pair decisions and isolated labelled source scopes; character limits reduce batch size. The pair cap includes every paid pair-decision attempt and individual follow-up; the global cap counts actual requests. No transitive equivalence shortcut is used; complete-link grouping remains required. Unexamined pairs stay provisional.",
             "relation_resolution": "A low-probability eight-class Choice triggers at most one individual source-scoped follow-up with six binary checks: directional entailment, incompatible scope, explicit corrections and same complete meaning. Equivalence certainty is separate from the descriptive subtype. Decisive non-entailment in either direction establishes distinctness; subtype ambiguity alone does not make inventory counts provisional. Conflicting complete-meaning/directional signals or unresolved equivalence remain uncertain and provisional. Cutoffs are inclusive within two machine representation steps, with unchanged thresholds. Initial probabilities and all follow-up signals are preserved; derived strengths are not calibrated relation probabilities.",
-            "relation_families": "Primary equivalent, known-distinct and uncertain probabilities partition the validated Choice distribution. Known-distinct probability sums complementary, both specificity directions, contradiction and both correction directions; uncertain probability is excluded. The unchanged equivalence threshold can establish distinctness from this family even when no subtype reaches it. Follow-ups still run when budget permits; decisive cross-stage disagreement and internal follow-up conflicts retain uncertainty. Family mass is a model distribution aggregate, not an empirically calibrated accuracy estimate.",
+            "relation_families": "Primary equivalent, known-distinct and uncertain probabilities partition the validated Choice distribution after division by its complete raw total, recorded as primary_probability_total. All primary subtype decisions use this normalization too; initial_probability and call decisions retain the raw provider scores. Known-distinct probability sums complementary, both specificity directions, contradiction and both correction directions; uncertain probability contributes to the denominator but is excluded from known distinctness. The unchanged equivalence threshold can establish distinctness from this family even when no subtype reaches it. Follow-ups still run when budget permits; decisive cross-stage disagreement and internal follow-up conflicts retain uncertainty. Family mass is a model distribution aggregate, not an empirically calibrated accuracy estimate.",
             "recovery_state_projection": "Recovery retains complete original source/context, all accepted meanings and verified qualifiers, and all essential literal evidence in a deduplicated evidence table. Exact projected duplicate records share ids; repair reasons remain while repeated provenance, timestamps and numerical evaluator diagnostics stay in the full report. Source text and report records are not truncated or overwritten. Requests still obey the context-character cap, separately from the logical-call cap.",
             "literal_source_repairs": "After independent direct and QA discovery, up to max_literal_repairs candidates per target copy one complete own-target assertion sentence verbatim, retaining its cited context and original candidate via literal_repair_of. Each exact source assertion is attempted at most once, independent of route context or annotation variations, and already accepted exact assertions are skipped. Fragments, unchanged proposals and outside-window candidates are ineligible. All six source-fidelity gates, unresolved-reference checks and atomicity run again; copied source text does not imply acceptance. Repairs share the global call cap and stop while one remaining call can still audit coverage.",
             "discovery_window_provenance": "Source windows use trusted Python Unicode offsets and exact source slices. Generator declarations are retained separately; claims that the trusted request bounds mismatch its own source slice do not replace those bounds or reject in-window candidates. Resolved assertion evidence still determines ownership, and actual outside-window proposals remain unresolved with their supplied and resolved offsets retained.",

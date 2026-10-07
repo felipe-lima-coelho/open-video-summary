@@ -87,10 +87,24 @@ def passes_probability_cutoff(probability, threshold):
 
 
 def relation_family_probabilities(probabilities):
-    """Sum mutually exclusive known-distinct classes, excluding unknown mass."""
-    values = dict(probabilities)
-    return (values["equivalent"], math.fsum(values[label] for label in DISTINCT_RELATION_LABELS),
-            values["uncertain"])
+    """Normalize the complete distribution before summing known-distinct mass.
+
+    The adapter retains rounded provider scores whose total can differ from one.
+    Unknown mass contributes to the denominator, never to known distinctness.
+    """
+    pairs = tuple(probabilities)
+    values = dict(pairs)
+    if len(values) != len(pairs) or set(values) != set(RELATION_CRITERIA):
+        raise ValueError("Relation probabilities must contain every class exactly once.")
+    if any(isinstance(value, bool) or not isinstance(value, (int, float))
+           or not math.isfinite(value) or not 0 <= value <= 1 for value in values.values()):
+        raise ValueError("Relation probabilities must be finite values between zero and one.")
+    total = math.fsum(values.values())
+    if total <= 0:
+        raise ValueError("Relation probabilities must have positive total mass.")
+    return (values["equivalent"] / total,
+            math.fsum(values[label] for label in DISTINCT_RELATION_LABELS) / total,
+            values["uncertain"] / total)
 
 
 def reconcile_equivalence(signals, threshold, primary_equivalent=None, primary_distinct=None):

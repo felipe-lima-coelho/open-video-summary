@@ -307,6 +307,7 @@ class InformationRelation:
     primary_equivalent_probability: float | None = None
     primary_distinct_probability: float | None = None
     primary_uncertain_probability: float | None = None
+    primary_probability_total: float | None = None
 
     def __post_init__(self):
         if self.equivalence_state is None:
