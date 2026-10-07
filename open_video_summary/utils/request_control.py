@@ -240,12 +240,14 @@ class RequestController:
                     if remaining is not None:
                         reset = _reset_seconds(values.get(f"x-ratelimit-reset-{resource}"))
                         reset_at = now + (reset if reset is not None else self.limits.window_seconds)
-                        # Headers can arrive out of order. Reserve all currently
-                        # in-flight work again rather than assuming which sends
-                        # the provider already included in this response.
-                        later = sum(self._pending.values())
+                        # Headers can arrive out of order. Deduct later sends
+                        # even if they already completed without headers, plus
+                        # older in-flight work whose server accounting is unknown.
+                        outstanding = [item for item in self._reservations
+                                       if item[1] > sequence or item[1] in self._pending]
+                        later = sum(item[2] for item in outstanding)
                         if resource == "requests":
-                            later = len(self._pending)
+                            later = len(outstanding)
                         allowance = max(0, remaining - later)
                         rem_attr = "_header_requests" if resource == "requests" else "_header_tokens"
                         reset_attr = "_request_reset" if resource == "requests" else "_token_reset"

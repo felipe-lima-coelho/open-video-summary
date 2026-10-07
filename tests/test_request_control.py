@@ -176,6 +176,29 @@ class RequestControlTests(unittest.TestCase):
             self.assertIsNot(one, scope.controller(changed, limits))
         self.assertNotIn("private", repr(one.snapshot()))
 
+    def test_late_success_never_clears_other_workers_cooldown_or_terminal_stop(self):
+        control, clock = self.controller()
+        late, failing = self.admit(control, clock), self.admit(control, clock)
+        control.complete(failing, error=RateLimitError(), cooldown=60)
+        control.complete(late)
+        self.assertEqual(60, self.admit(control, clock).wait_seconds)
+        control.complete(None, error=AuthenticationError("sanitized"))
+        control.complete(late)
+        with self.assertRaises(AuthenticationError):
+            self.admit(control, clock)
+
+    def test_older_header_deducts_later_sends_already_completed_without_headers(self):
+        control, clock = self.controller(learn_headers=True)
+        older = self.admit(control, clock, 100)
+        later = self.admit(control, clock, 100)
+        control.complete(later)
+        control.complete(older, headers={"x-ratelimit-limit-requests": "100",
+            "x-ratelimit-limit-tokens": "1000", "x-ratelimit-remaining-requests": "10",
+            "x-ratelimit-remaining-tokens": "300", "x-ratelimit-reset-requests": "60s",
+            "x-ratelimit-reset-tokens": "60s"})
+        self.assertEqual(9, control._header_requests)
+        self.assertEqual(200, control._header_tokens)
+
 
 class AdapterAdmissionTests(unittest.TestCase):
     def openai(self, outputs, **config):
