@@ -599,7 +599,11 @@ windows do not receive QA output, and QA does not receive direct output.
 `discovery_window_declarations` retains the generator's reported window issues
 beside trusted request bounds, source-slice hashes and lengths. A generator's
 incorrect echo of the input bounds does not replace the code-owned source slice
-or reject a valid in-window assertion. Actual outside-window assertions remain
+or reject a valid in-window assertion. This includes the generator's
+`discovery_window_offset_mismatch` and `inconsistent_window_offsets` diagnostics
+when the supplied bounds and literal slice verify against the original target.
+The rule applies only to that target's window metadata; evidence and reference
+problems remain operative. Actual outside-window assertions remain
 unresolved, with their original and resolved offsets preserved.
 
 Recovery requests share repeated literal citations through one `evidence_table`.

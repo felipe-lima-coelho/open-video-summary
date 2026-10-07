@@ -18,7 +18,7 @@ from open_video_summary.core.summarizers.information_analysis import (
     InformationAnalyzer, _AnalysisRun, _LimitReached, _ProviderStopped,
 )
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
-from open_video_summary.core.summarizers.information_contracts import capture_snapshot
+from open_video_summary.core.summarizers.information_contracts import capture_snapshot, fingerprint
 from open_video_summary.core.summarizers.information_evaluation import (
     RELATION_ADJUDICATION_QUESTIONS, RELATION_CRITERIA, anchor_binding_spec, resolve_relation, resolve_equivalence,
     passes_probability_cutoff,
@@ -696,6 +696,70 @@ class InformationRecoveryTests(unittest.TestCase):
         self.assertEqual(source.index(second),record.evidence_resolutions[0].resolved_start_char)
         self.assertFalse(any(c.route == "literal_recovery" for c in report.candidates))
         self.assertEqual((record.id,),next(i for i in report.issues if i.kind == "direct_window_evidence_outside").candidate_ids)
+
+    def test_final_report_window_offset_complaints_are_audit_only_for_verified_slices(self):
+        # Original slices from google_huawei_recovery_20261007T104032Z.json.
+        cases = [
+            (("Durante muito tempo, eles cresceram se ajudando. Mas agora o presidente Donald Trump pode ter acabado com essa parceria. "
+              "O governo proibiu empresas americanas de fazer negócios com a empresa chinesa. "
+              "A Google, dona do Android, chegou a anunciar que, pra cumprir a ordem, não ia mais atualizar o sistema operacional em telefones da Huawei. "
+              "Mas agora, no fim do dia, o governo americano voltou atrás e baixou uma regra provisória permitindo as atualizações dos celulares por mais noventa dias."),
+             (339, 491), "direct", "inconsistent_window_offsets", 152),
+            (("O Google suspendeu o uso do sistema Android em celulares da marca Huawei. "
+              "A decisão segue uma ordem do presidente dos Estados Unidos. A briga é entre os Estados Unidos e a China, mas a repercussão mundial. "
+              '"Acho um absurdo porque o telefone funciona bem e é eficiente", disse o italiano que usa um smartphone da marca chinesa.'),
+             (0, 206), "direct", "discovery_window_offset_mismatch", 206),
+            (("O porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos espalham informações falsas para conseguir vantagens comerciais e não mostram qualquer evidência que provem as acusações. "
+              "A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras."),
+             (211, 325), "qa", "discovery_window_offset_mismatch", 114),
+        ]
+        for source, window, route, kind, length in cases:
+            with self.subTest(window=window, kind=kind):
+                declared = {"kind":kind, "detail":"The model claims different request offsets.", "segment_ids":["v0:s0"]}
+                class EchoGenerator(ScriptedGenerator):
+                    def generate(self, request):
+                        result = super().generate(request)
+                        return replace(result, value=dict(result.value, issues=[declared]))
+                generator = EchoGenerator()
+                run = _AnalysisRun(InformationAnalyzer(generator, SyntheticEvaluator()), capture_snapshot(videos([source])))
+                run._extract(run.segments["v0:s0"], route, 0, window=window)
+                supplied = json.loads(generator.requests[0].prompt.split("\nInput:\n", 1)[1])["discovery_window"]
+                self.assertEqual({"start_char":window[0], "end_char":window[1], "text":source[slice(*window)]}, supplied)
+                self.assertEqual(length, len(supplied["text"]))
+                self.assertEqual([], run.issues)
+                row = run.window_declarations[0]
+                self.assertTrue(row["request_slice_verified"])
+                self.assertEqual([declared], row["declared_issues"])
+                self.assertEqual(fingerprint(source[slice(*window)]), row["trusted_text_hash"])
+                self.assertEqual(source, run.segments["v0:s0"].content)
+
+    def test_window_metadata_echo_rule_does_not_hide_evidence_or_reference_failures(self):
+        first = "Uma informação importante sobre o prazo."
+        second = "Outra informação independente sobre a cópia."
+        source = first + " " + second
+        raw = candidate("v0:s0", source, quote=second)
+        known = {"kind":"discovery_window_offset_mismatch", "detail":"Reported input mismatch.", "segment_ids":["v0:s0"]}
+        reference = {"kind":"unresolved_reference", "detail":"A reference still needs evidence.", "segment_ids":["v0:s0"]}
+        other_target = dict(known, kind="inconsistent_window_offsets", segment_ids=["v0:s1"])
+        class MixedGenerator(ScriptedGenerator):
+            def generate(self, request):
+                result = super().generate(request)
+                return replace(result, value=dict(result.value, issues=[known, reference, other_target]))
+        def run_with(window):
+            run = _AnalysisRun(InformationAnalyzer(MixedGenerator({("v0:s0", "direct"):[raw]}),
+                SyntheticEvaluator()), capture_snapshot(videos([source, "Outro alvo da mesma fonte."])))
+            run._extract(run.segments["v0:s0"], "direct", 0, window=window)
+            return run
+        bounded = run_with((0, len(first)+1))
+        self.assertEqual("needs_review", bounded.candidates[0].validation)
+        self.assertEqual(("direct_window_evidence_outside",), bounded.candidates[0].reasons)
+        self.assertEqual({"direct_window_evidence_outside", "generator_unresolved_reference",
+                         "generator_inconsistent_window_offsets"}, {issue.kind for issue in bounded.issues})
+        self.assertEqual([known, reference, other_target], bounded.window_declarations[0]["declared_issues"])
+        # No supplied window means there is no verified metadata contradiction.
+        unbounded = run_with(None)
+        self.assertIn("generator_discovery_window_offset_mismatch", [issue.kind for issue in unbounded.issues])
+        self.assertEqual([], unbounded.window_declarations)
 
     def test_literal_repairs_keep_originals_provenance_qualifiers_and_global_bounds(self):
         source = "Trump pode ter acabado com essa parceria. A empresa pode mudar a regra."

@@ -117,6 +117,11 @@ RELATIONS = (
     "correction_right",
     "uncertain",
 )
+WINDOW_METADATA_ISSUES = frozenset({
+    "discovery_window_mismatch", "discovery_window_range_mismatch",
+    "discovery_window_bounds_mismatch", "discovery_window_offset_mismatch",
+    "inconsistent_window_offsets",
+})
 
 
 class _LimitReached(Exception):
@@ -563,17 +568,25 @@ class _AnalysisRun:
             "generator",
         )
         value = validate_information(result.value, spec)
+        verified_window = False
         if window is not None:
+            supplied_window = data["discovery_window"]
+            verified_window = (
+                supplied_window["start_char"] == window[0]
+                and supplied_window["end_char"] == window[1]
+                and supplied_window["text"] == target.content[window[0]:window[1]]
+            )
             self.window_declarations.append({
                 "segment_id": target.id, "route": route,
                 "trusted_start_char": window[0], "trusted_end_char": window[1],
                 "trusted_text_hash": fingerprint(target.content[window[0]:window[1]]),
                 "trusted_text_characters": window[1] - window[0],
-                "request_slice_verified": data["discovery_window"]["text"] == target.content[window[0]:window[1]],
+                "request_slice_verified": verified_window,
                 "declared_issues": value["issues"],
             })
         for item in value["issues"]:
-            if window is not None and re.fullmatch(r"discovery_window_(?:(?:range|bounds)_)?mismatch", item["kind"]):
+            if (verified_window and item["kind"] in WINDOW_METADATA_ISSUES
+                    and set(item["segment_ids"]) <= {target.id}):
                 # The request's Python source slice is authoritative. Preserve the
                 # model's contradictory echo above without treating it as source loss.
                 continue
