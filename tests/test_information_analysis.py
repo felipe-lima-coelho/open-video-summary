@@ -245,6 +245,7 @@ def analyze(source, generator=None, evaluator=None, **settings):
     settings.setdefault("max_relation_adjudications", 0)
     settings.setdefault("qa_window_chars", 4000)
     settings.setdefault("direct_window_chars", 4000)
+    settings.setdefault("max_literal_repairs", 0)
     return InformationAnalyzer(
         generator or ScriptedGenerator(),
         evaluator or SyntheticEvaluator(),
@@ -1040,7 +1041,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         resolution = record.evidence_resolutions[0]
         self.assertEqual((76, 154, 76, 155), (resolution.supplied_start_char, resolution.supplied_end_char, resolution.resolved_start_char, resolution.resolved_end_char))
         self.assertEqual("unique_exact_quote", resolution.method)
-        self.assertEqual(5, report.to_dict()["schema_version"])
+        self.assertEqual(6, report.to_dict()["schema_version"])
         self.assertEqual(155, report.to_dict()["candidates"][0]["evidence_resolutions"][0]["resolved_end_char"])
         self.assertEqual(text, report.snapshot.current_segments[0].content)
 
@@ -1125,7 +1126,9 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         recovery = next(data for data, route in inputs if route == "recovery")
         repair = recovery["repair_candidates"][0]
         self.assertEqual("literal_rejected", repair["validation"])
-        self.assertEqual(bad, repair["proposal"])
+        restored = dict(repair["proposal"], evidence=[recovery["evidence_table"][ref]
+                        for ref in repair["proposal"]["evidence"]])
+        self.assertEqual(bad, restored)
         self.assertIn("does not occur literally", repair["reasons"][0])
         self.assertEqual(1, report.counts.accepted_candidates)
 

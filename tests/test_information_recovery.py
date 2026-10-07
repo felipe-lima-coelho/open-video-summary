@@ -4,7 +4,7 @@ import copy
 import json
 import socket
 import unittest
-from dataclasses import replace
+from dataclasses import asdict, replace
 from unittest.mock import patch
 
 from test_information_analysis import (
@@ -18,6 +18,7 @@ from open_video_summary.core.summarizers.information_contracts import capture_sn
 from open_video_summary.core.summarizers.information_evaluation import (
     RELATION_ADJUDICATION_QUESTIONS, anchor_binding_spec, resolve_relation, resolve_equivalence,
     passes_probability_cutoff,
+    relation_family_probabilities, reconcile_equivalence,
 )
 from open_video_summary.errors import ServiceTimeoutError
 
@@ -28,7 +29,7 @@ class InformationRecoveryTests(unittest.TestCase):
         self.network.start()
         self.addCleanup(self.network.stop)
 
-    def evaluator(self, *, low=False, signals=None, labels=None, malformed=False):
+    def evaluator(self, *, low=False, signals=None, labels=None, malformed=False, distribution=None):
         requests = []
         def transport(url, *, headers, body, timeout):
             request = json.loads(body)
@@ -46,11 +47,15 @@ class InformationRecoveryTests(unittest.TestCase):
                     self.assertIn(f"Evaluate only {identifier}", question["instructions"])
                 left = scope.split("Left candidate id: ", 1)[1].split("\n", 1)[0]
                 right = scope.split("Right candidate id: ", 1)[1].split("\n", 1)[0]
-                label = (labels or {}).get((left, right), "complementary")
+                # A borderline equivalence class leaves the family genuinely open.
+                label = (labels or {}).get((left, right), "equivalent" if low else "complementary")
                 mass = 0.89 if low else 0.99
                 options = question["criteria"]
+                probabilities = distribution or {option: mass if option == label else (1-mass)/(len(options)-1) for option in options}
+                if distribution:
+                    label = max(distribution, key=distribution.get)
                 answers[identifier] = {"type": "choice", "choice": label,
-                    "probabilities": {option: mass if option == label else (1-mass)/(len(options)-1) for option in options},
+                    "probabilities": probabilities,
                     "confidence": mass}
             if malformed:
                 answers = {"wrong_pair": next(iter(answers.values()))}
@@ -116,7 +121,7 @@ class InformationRecoveryTests(unittest.TestCase):
         relation = report.relations[0]
         self.assertEqual("complementary", relation.relation)
         self.assertEqual("focused_entailment_adjudication", relation.origin)
-        self.assertEqual("complementary", relation.initial_relation)
+        self.assertEqual("equivalent", relation.initial_relation)
         self.assertEqual(0.89, relation.initial_probability)
         self.assertEqual(signals, dict(relation.adjudication_signals))
         self.assertIsNone(relation.probability)
@@ -386,6 +391,158 @@ class InformationRecoveryTests(unittest.TestCase):
                     self.assertEqual(1, json.loads(report.metadata_json)["logical_calls"])
                 else:
                     self.assertEqual(1, len(report.coverage))
+
+    def test_known_distinct_family_excludes_uncertain_mass_and_retains_conflicts(self):
+        distribution = {"equivalent":.02, "complementary":.30, "more_specific_left":.33,
+                        "more_specific_right":.08, "contradiction":.12, "correction_left":.12,
+                        "correction_right":.01, "uncertain":.02}
+        signals = {"left_entails_right":.43, "right_entails_left":.18, "incompatible":.23,
+                   "correction_left":.10, "correction_right":.06, "same_complete_meaning":.13}
+        self.assertEqual((.02, .96, .02), relation_family_probabilities(distribution.items()))
+        for checks, expected in ((signals, "distinct"),
+                                 (signals | {"same_complete_meaning":.96}, "uncertain"),
+                                 (signals | {"left_entails_right":.02,"same_complete_meaning":.98}, "uncertain")):
+            with self.subTest(checks=checks):
+                run = make_run(["Google anunciou que não ia atualizar o sistema.", "Google suspendeu o sistema."])
+                run.config = replace(run.config, max_relation_adjudications=1)
+                run.evaluator, requests = self.evaluator(distribution=distribution, signals=checks)
+                report = run.run()
+                relation = report.relations[0]
+                self.assertEqual(expected, relation.equivalence_state)
+                self.assertEqual(.96, relation.primary_distinct_probability)
+                self.assertEqual(.02, relation.primary_uncertain_probability)
+                self.assertEqual(checks, dict(relation.adjudication_signals))
+                self.assertEqual(2, len(requests))
+                if expected == "distinct":
+                    self.assertEqual("uncertain", relation.relation)
+                    self.assertEqual("primary_relation_family", relation.equivalence_origin)
+                    self.assertFalse(report.counts.counts_provisional)
+                else:
+                    self.assertTrue(report.counts.counts_provisional)
+        unknown = distribution | {"uncertain":.94, "more_specific_left":.01,
+            "complementary":.01, "more_specific_right":.00,"contradiction":.00,
+            "correction_left":.01,"correction_right":.01}
+        equivalent, distinct, _ = relation_family_probabilities(unknown.items())
+        self.assertEqual("uncertain", reconcile_equivalence(signals,.90,equivalent,distinct)[0])
+        boundary = distribution | {"uncertain":.08,"more_specific_left":.27}
+        self.assertTrue(passes_probability_cutoff(relation_family_probabilities(boundary.items())[1],.90))
+        self.assertEqual("uncertain", reconcile_equivalence(signals,.90,.02,.89999)[0])
+
+    def test_recovery_projection_deduplicates_literal_evidence_and_preserves_meanings(self):
+        source = "Se houver falha, a cópia não é feita. A retenção é de 30 dias."
+        raw = candidate("v0:s0", source, quote="Se houver falha, a cópia não é feita.",
+                        conditions=("Se houver falha",), negated=True)
+        report = analyze(videos([source]), ScriptedGenerator({("v0:s0","direct"):[raw]}), qa_enabled=False)
+        base = report.candidates[0]
+        run = _AnalysisRun(InformationAnalyzer(ScriptedGenerator(),SyntheticEvaluator()),report.snapshot)
+        run.candidates = [replace(base,id=f"a{i}") for i in range(10)]
+        run.candidates += [replace(base,id=f"r{i}",validation="needs_review",reasons=("modality",)) for i in range(20)]
+        target = run.segments["v0:s0"]
+        projection = run._recovery_projection(target)
+        self.assertEqual(1,len(projection["accepted"]))
+        self.assertEqual(1,len(projection["repair_candidates"]))
+        self.assertEqual(1,len(projection["evidence_table"]))
+        accepted = projection["accepted"][0]
+        self.assertEqual(raw["text"], accepted["text"])
+        self.assertEqual(asdict(base.candidate.qualifiers), accepted["qualifiers"])
+        self.assertEqual(10,len(accepted["ids"]))
+        self.assertEqual(20,len(projection["repair_candidates"][0]["ids"]))
+        evidence = projection["evidence_table"][accepted["evidence"][0]]
+        self.assertEqual(raw["evidence"][0],evidence)
+        self.assertEqual(source,target.content)
+        self.assertLess(len(json.dumps(projection)),3000)
+
+    def test_context_limit_has_operation_size_and_does_not_consume_call_budget(self):
+        report = analyze(videos(["x"*5000]), ScriptedGenerator(), qa_enabled=False,
+                         max_context_chars=4000, max_calls=99)
+        self.assertEqual(0,json.loads(report.metadata_json)["logical_calls"])
+        failures = [issue for issue in report.issues if issue.kind == "context_budget_exceeded"]
+        self.assertTrue(any("extract_direct requires" in issue.detail and "limit is 4000" in issue.detail
+                            and "99 logical calls" in issue.detail for issue in failures))
+        self.assertTrue(all(issue.segment_ids == ("v0:s0",) for issue in failures))
+        self.assertIn("target_context_limited",[issue.kind for issue in report.issues])
+        self.assertNotIn("_LimitReached",[issue.detail for issue in report.issues])
+
+    def test_model_window_mismatch_is_audited_without_replacing_trusted_ownership(self):
+        source = "Uma informação importante sobre o prazo. Outra informação independente sobre a cópia."
+        class EchoGenerator(ScriptedGenerator):
+            def generate(self, request):
+                result = super().generate(request)
+                return replace(result, value=dict(result.value, issues=[{
+                    "kind":"discovery_window_bounds_mismatch", "detail":"The model counted different offsets.",
+                    "segment_ids":["v0:s0"]}]))
+        def generate(data, route):
+            window = data["discovery_window"]
+            return [candidate("v0:s0", source, quote=sentence) for sentence in
+                    ("Uma informação importante sobre o prazo.", "Outra informação independente sobre a cópia.")
+                    if window["start_char"] <= source.index(sentence) < window["end_char"]]
+        report = analyze(videos([source]), EchoGenerator(callback=generate),qa_enabled=False,direct_window_chars=80)
+        self.assertEqual("completed",report.status)
+        self.assertEqual(2,report.counts.accepted_candidates)
+        rows=json.loads(report.metadata_json)["discovery_window_declarations"]
+        self.assertEqual(2,len(rows))
+        self.assertTrue(all(row["request_slice_verified"] for row in rows))
+        self.assertTrue(all(row["declared_issues"][0]["kind"] == "discovery_window_bounds_mismatch" for row in rows))
+
+    def test_actual_outside_window_retains_declared_and_resolved_offsets(self):
+        first = "Uma informação importante sobre o prazo."
+        second = "Outra informação independente sobre a cópia."
+        source = first + " " + second
+        raw = candidate("v0:s0",source,quote=second,offset=source.index(second)-1)
+        def generate(data,route):
+            return [raw] if data["discovery_window"]["start_char"] == 0 else []
+        report=analyze(videos([source]),ScriptedGenerator(callback=generate),qa_enabled=False,
+                       direct_window_chars=80,max_literal_repairs=4)
+        record=report.candidates[0]
+        self.assertEqual("needs_review",record.validation)
+        self.assertEqual(("direct_window_evidence_outside",),record.reasons)
+        self.assertEqual(source.index(second),record.candidate.evidence[0].start_char)
+        self.assertEqual(source.index(second)-1,record.evidence_resolutions[0].supplied_start_char)
+        self.assertEqual(source.index(second),record.evidence_resolutions[0].resolved_start_char)
+        self.assertFalse(any(c.route == "literal_recovery" for c in report.candidates))
+        self.assertEqual((record.id,),next(i for i in report.issues if i.kind == "direct_window_evidence_outside").candidate_ids)
+
+    def test_literal_repairs_keep_originals_provenance_qualifiers_and_global_bounds(self):
+        source = "Trump pode ter acabado com essa parceria. A empresa pode mudar a regra."
+        raw = candidate("v0:s0",source,quote="Trump pode ter acabado com essa parceria.",
+                        text="Trump pode ter acabado com a parceria entre as empresas.",modality="possibilidade")
+        evaluator = SyntheticEvaluator(validation={raw["text"]:.5})
+        other_context = copy.deepcopy(raw)
+        context_quote = "A empresa pode mudar a regra."
+        other_context["evidence"].append({"segment_id":"v0:s0","quote":context_quote,
+            "start_char":source.index(context_quote),"end_char":len(source),"role":"context"})
+        report = analyze(videos([source]),ScriptedGenerator({("v0:s0","direct"):[raw,raw,other_context]}),
+                         evaluator,qa_enabled=False,max_literal_repairs=4)
+        repairs = [record for record in report.candidates if record.route == "literal_recovery"]
+        self.assertEqual(1,len(repairs))
+        repair=repairs[0]
+        self.assertEqual("c0",repair.literal_repair_of)
+        self.assertEqual(raw["evidence"][0]["quote"],repair.candidate.text)
+        self.assertEqual(raw, json.loads(report.candidates[0].raw_json))
+        self.assertEqual("accepted",repair.validation)
+        self.assertTrue({"support","conditions","negation","quantities","modality","attribution"} <= set(dict(repair.signals)))
+        limited = analyze(videos([source]),ScriptedGenerator({("v0:s0","direct"):[raw]}),
+                          SyntheticEvaluator(validation={raw["text"]:.5}),qa_enabled=False,
+                          max_literal_repairs=4,max_calls=3)
+        self.assertFalse(any(record.route == "literal_recovery" for record in limited.candidates))
+        self.assertEqual(3,json.loads(limited.metadata_json)["logical_calls"])
+        self.assertEqual(1,len(limited.coverage))
+
+    def test_literal_repair_limit_does_not_bypass_atomicity_or_fragment_ownership(self):
+        compound="Os backups são feitos a cada 24 horas e guardados por 30 dias."
+        condition="Se a conexão cair, o backup não é realizado."
+        source=compound+" "+condition
+        expanded=candidate("v0:s0",source,quote=compound,text="O sistema faz backups diários.")
+        fragment=candidate("v0:s0",source,quote="o backup não é realizado.",text="O sistema não realiza backup.")
+        evaluator=SyntheticEvaluator(validation={expanded["text"]:.5,fragment["text"]:.5},
+                                      granularity={compound:"compound"})
+        report=analyze(videos([source]),ScriptedGenerator({("v0:s0","direct"):[expanded,fragment]}),
+                       evaluator,qa_enabled=False,max_literal_repairs=1)
+        repairs=[c for c in report.candidates if c.route == "literal_recovery"]
+        self.assertEqual(1,len(repairs))
+        self.assertEqual("needs_repair",repairs[0].validation)
+        self.assertEqual("compound",repairs[0].granularity)
+        self.assertEqual(0,report.counts.accepted_candidates)
 
 
 if __name__ == "__main__":

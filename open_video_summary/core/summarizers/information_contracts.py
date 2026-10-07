@@ -260,6 +260,7 @@ class CandidateRecord:
     annotation_signals: tuple[tuple[str, float], ...] = ()
     anchor_binding_origin: str | None = None
     validation_reused_from: str | None = None
+    literal_repair_of: str | None = None
 
 
 @dataclass(frozen=True)
@@ -303,6 +304,9 @@ class InformationRelation:
     equivalence_state: str | None = None
     equivalence_strength: float | None = None
     equivalence_origin: str | None = None
+    primary_equivalent_probability: float | None = None
+    primary_distinct_probability: float | None = None
+    primary_uncertain_probability: float | None = None
 
     def __post_init__(self):
         if self.equivalence_state is None:

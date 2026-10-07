@@ -345,6 +345,19 @@ other content still require every source-fidelity and atomicity check; context
 alone never creates an occurrence. Reports distinguish this binding origin as
 `literal_assertion_sentence`.
 
+After both independent discovery routes, a bounded source-literal repair can
+copy a complete selected assertion sentence into a new candidate when an
+expanded or paraphrased proposal remains unresolved. The original proposal is
+retained and the new `literal_recovery` record identifies it through
+`literal_repair_of`. The copy keeps its cited reference context, passes every
+fidelity and atomicity check, and cannot omit governing wording from that
+sentence. Fragments, unchanged proposals, exact duplicates and candidates from
+outside their discovery window are skipped. Compound sentences remain subject to
+repair; source copying alone never establishes a valid unit. At most four such
+repairs run per target by default, sharing the global call cap. Each complete
+source assertion gets at most one attempt even when routes cite different
+reference context or propose different annotations for that same assertion.
+
 Auxiliary annotation quality is audited separately from content acceptance at the
 same threshold. Candidate `proposed_qualifiers` and raw generator fields remain
 proposals, with `annotation_state`, reasons and signals. A supported proposition
@@ -463,6 +476,7 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--information-relation-adjudications` | `OVS_INFORMATION_RELATION_ADJUDICATIONS` | Up to 256 individual source-scoped follow-ups for uncertain relations, at most one per pair |
 | `--information-direct-window-chars` | `OVS_INFORMATION_DIRECT_WINDOW_CHARS` | 240 original-source characters per direct discovery window for longer targets (range 80–4000) |
 | `--information-max-direct-windows` | `OVS_INFORMATION_MAX_DIRECT_WINDOWS` | At most 16 direct generation invocations per long target, including failed-window decomposition (range 1–64) |
+| `--information-literal-repairs` | `OVS_INFORMATION_LITERAL_REPAIRS` | At most 4 complete source-sentence repairs per target after discovery (range 0–64; 0 disables) |
 | `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | `auto`: remaining global calls times bounded batch capacity; an integer caps paid pair decisions, including follow-ups and 0 |
 | `--information-qa-window-chars` | `OVS_INFORMATION_QA_WINDOW_CHARS` | 240 original-source characters per independent QA discovery window (range 80–4000) |
 | `--information-max-qa-windows` | `OVS_INFORMATION_MAX_QA_WINDOWS` | At most 16 QA generation invocations per target, including failed-window decomposition (range 1–64) |
@@ -534,7 +548,7 @@ Initial selected class/probability and all follow-up signals are retained;
 `equivalence_strength` records the decisive equivalence criterion. Neither is
 a calibrated relation probability.
 
-Schema 5 records `equivalence_state` separately as `equivalent`, `distinct` or
+Schema 6 records `equivalence_state` separately as `equivalent`, `distinct` or
 `uncertain`. Because equivalence requires entailment in both directions, a decisive
 negative in either direction establishes distinctness even when complementary
 versus more-specific remains unknown. A decisive same-complete-meaning check can
@@ -543,6 +557,15 @@ uncertainty stays in the relation, metadata and CLI; it does not make otherwise
 resolved inventory counts provisional. Genuine equivalence uncertainty still
 blocks merges and keeps counts provisional. The follow-up is one fixed request,
 with no repeated wording search until a preferred answer appears.
+The primary distribution also records `primary_equivalent_probability`,
+`primary_distinct_probability` and `primary_uncertain_probability`. The distinct
+family sums the six mutually exclusive known non-equivalence classes, excluding
+the uncertain class. This sum can reach the existing equivalence threshold while
+the descriptive subtype remains unresolved. Follow-up checks still run within
+their limits; a decisive contradiction between primary family and follow-up
+evidence keeps the result uncertain. Family mass is a model output aggregate,
+not a measured accuracy rate, and its use is identified by
+`equivalence_origin: "primary_relation_family"`.
 Primary comparisons run in waves that keep up to one-third of remaining calls,
 capped by the remaining follow-up allowance, available for those checks. Later
 waves reclaim unused reserve. The report records the final representative-pair
@@ -569,6 +592,20 @@ Both discovery routes retain the complete original target and use source-owned
 offsets, including when a sentence or its governing condition crosses a window
 boundary. They share the existing global call cap and provider controls; direct
 windows do not receive QA output, and QA does not receive direct output.
+`discovery_window_declarations` retains the generator's reported window issues
+beside trusted request bounds, source-slice hashes and lengths. A generator's
+incorrect echo of the input bounds does not replace the code-owned source slice
+or reject a valid in-window assertion. Actual outside-window assertions remain
+unresolved, with their original and resolved offsets preserved.
+
+Recovery requests share repeated literal citations through one `evidence_table`.
+Exact duplicate projected candidates share an `ids` list. Every accepted claim,
+verified qualifier and essential citation is retained, together with the full
+original source and repair reasons. Repeated provenance, timestamps and numeric
+diagnostics remain in the report. This bounds repeated state without truncating
+research content. A request still exceeding the configured context cap records
+its operation, size, limit and remaining call budget separately from call
+exhaustion.
 
 Configured CLI analyses process independent source segments concurrently, using
 separate provider clients for each worker. The default is two targets; set

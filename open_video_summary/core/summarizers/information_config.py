@@ -11,6 +11,7 @@ class InformationAnalysisConfig:
     qa_enabled: bool = True
     max_calls: int = 256
     max_coverage_rounds: int = 2
+    max_literal_repairs: int = 4
     max_pair_comparisons: int | None = None
     pair_concurrency: int = 8
     pair_batch_size: int = 4
@@ -41,6 +42,7 @@ class InformationAnalysisConfig:
             "max_qa_windows": (1, 64),
             "max_calls": (1, 10000),
             "max_coverage_rounds": (0, 10),
+            "max_literal_repairs": (0, 64),
             "max_pair_comparisons": (0, 10000),
             "max_candidates_per_route": (1, 256),
             "max_context_chars": (4000, 200000),
@@ -118,6 +120,7 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
         max_qa_windows=get("information_max_qa_windows", "OVS_INFORMATION_MAX_QA_WINDOWS", 16, int),
         max_calls=get("information_max_calls", "OVS_INFORMATION_MAX_CALLS", 256, int),
         max_coverage_rounds=get("information_rounds", "OVS_INFORMATION_ROUNDS", 2, int),
+        max_literal_repairs=get("information_literal_repairs", "OVS_INFORMATION_LITERAL_REPAIRS", 4, int),
         max_pair_comparisons=get(
             "information_max_pairs", "OVS_INFORMATION_MAX_PAIRS", None, pair_limit
         ),

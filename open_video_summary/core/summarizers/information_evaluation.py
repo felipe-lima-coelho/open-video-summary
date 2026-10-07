@@ -10,7 +10,7 @@ import json
 import math
 
 
-EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v6"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v7"
 SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
 ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
 VALIDATION_QUESTIONS = {
@@ -71,6 +71,8 @@ RELATION_ADJUDICATION_QUESTIONS = {
 }
 RELATION_SUBTYPE_CHECKS = ("left_entails_right", "right_entails_left", "incompatible",
                            "correction_left", "correction_right")
+DISTINCT_RELATION_LABELS = tuple(label for label in RELATION_CRITERIA
+                                if label not in {"equivalent", "uncertain"})
 RELATION_BATCH_QUESTION = (
     "Evaluate only {pair_id}, Left candidate {left_id} and Right candidate {right_id}. "
     "Only their own marked source scopes and cited reference context may be used; "
@@ -82,6 +84,30 @@ def passes_probability_cutoff(probability, threshold):
     """Include finite-precision boundary equality, within two representation steps."""
     return probability >= threshold or math.isclose(probability, threshold,
         rel_tol=0.0, abs_tol=2 * max(math.ulp(probability), math.ulp(threshold)))
+
+
+def relation_family_probabilities(probabilities):
+    """Sum mutually exclusive known-distinct classes, excluding unknown mass."""
+    values = dict(probabilities)
+    return (values["equivalent"], math.fsum(values[label] for label in DISTINCT_RELATION_LABELS),
+            values["uncertain"])
+
+
+def reconcile_equivalence(signals, threshold, primary_equivalent=None, primary_distinct=None):
+    """Retain disagreements between decisive primary families and follow-up checks."""
+    state, strength, origin = resolve_equivalence(signals, threshold)
+    if origin == "conflicting_adjudication_signals":
+        return state, strength, origin
+    equivalent = primary_equivalent is not None and passes_probability_cutoff(primary_equivalent, threshold)
+    distinct = primary_distinct is not None and passes_probability_cutoff(primary_distinct, threshold)
+    if (equivalent and (distinct or state == "distinct")) or (distinct and state == "equivalent"):
+        return "uncertain", None, "conflicting_primary_adjudication_signals"
+    if state == "uncertain":
+        if distinct:
+            return "distinct", primary_distinct, "primary_relation_family"
+        if equivalent:
+            return "equivalent", primary_equivalent, "primary_relation_family"
+    return state, strength, origin
 
 
 def resolve_equivalence(signals, threshold):

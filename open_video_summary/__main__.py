@@ -443,6 +443,8 @@ def _information_arguments(parser):
     parser.add_argument("--information-max-qa-windows", type=int, default=None,
                         help="Bounded QA generations per target, including failed-window recovery (default 16).")
     parser.add_argument("--information-rounds", type=int, default=None)
+    parser.add_argument("--information-literal-repairs", type=int, default=None,
+                        help="Maximum full-source-sentence repairs per target after discovery (default 4; 0 disables).")
     parser.add_argument("--information-max-pairs", default=None,
                         help="Paid pair-decision cap including follow-ups, or auto for remaining calls times batch capacity.")
     parser.add_argument("--information-max-candidates", type=int, default=None)

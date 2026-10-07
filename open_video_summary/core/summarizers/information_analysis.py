@@ -56,6 +56,8 @@ from open_video_summary.core.summarizers.information_evaluation import (
     relation_batch_spec,
     resolve_relation,
     resolve_equivalence,
+    relation_family_probabilities,
+    reconcile_equivalence,
     passes_probability_cutoff,
     validation_spec,
 )
@@ -102,6 +104,7 @@ QA_INSTRUCTION = "Independently traverse target contents; for each distinct cont
 QA_WINDOW_INSTRUCTION = " Discover only assertions whose first assertion evidence starts in the discovery window. The complete original target remains reference scope; keep governing qualifiers even if outside the window. Evidence quotes and offsets always refer to the ORIGINAL target. Do not copy other routes: this is independent source-based QA discovery."
 DIRECT_WINDOW_INSTRUCTION = " Discover only assertions whose first assertion evidence starts in the discovery window. The complete original target remains reference scope; keep governing qualifiers even if outside the window. Evidence quotes and offsets always refer to the ORIGINAL target. Traverse the window directly without questions or candidates from another route."
 RECOVERY_INSTRUCTION = "Re-examine the ORIGINAL target for omissions or qualifier/granularity defects flagged in the audit. Propose additional atomic propositions or repaired candidates; do not repeat accepted content."
+RECOVERY_STATE_INSTRUCTION = " In recovery state, evidence references point to the literal evidence_table. Entries sharing an ids list are exact duplicates of the projected state. All accepted meanings, verified qualifiers and essential evidence are retained. Proposed annotations in repair candidates remain unverified; reasons identify checks needing repair. Use the original target for every new assertion."
 RELATION_INSTRUCTION = "Compare complete meaning and original evidence: entities, attribution, quantities, negation, modality, conditions and scope. Equivalent requires mutual entailment; topical similarity is insufficient. Preserve corrections and contradictions as distinct communicated units."
 RELATIONS = (
     "equivalent",
@@ -116,6 +119,10 @@ RELATIONS = (
 
 
 class _LimitReached(Exception):
+    pass
+
+
+class _ContextLimitReached(Exception):
     pass
 
 
@@ -276,6 +283,7 @@ class _AnalysisRun:
         self.relation_adjudications = 0
         self.qa_windows = []
         self.direct_windows = []
+        self.window_declarations = []
 
     @property
     def call_count(self):
@@ -294,17 +302,19 @@ class _AnalysisRun:
         if item not in self.issues:
             self.issues.append(item)
 
-    def _permit(self, context, instructions=(), *, reservation=None):
+    def _permit(self, context, instructions=(), *, reservation=None, operation=None):
         check_cancelled(self.budget.cancel_event)
-        if (
-            len(context) + sum(len(item) for item in instructions)
-            > self.config.max_context_chars
-        ):
+        size = len(context) + sum(len(item) for item in instructions)
+        if size > self.config.max_context_chars:
+            target = getattr(self, "active_target", None)
+            detail = (f"{operation or 'request'} requires {size} characters; limit is "
+                      f"{self.config.max_context_chars}. Source text was not truncated; "
+                      f"{self.budget.remaining} logical calls remain available.")
             self.issue(
                 "context_budget_exceeded",
-                "A request exceeded the character budget; original text was not truncated.",
+                detail, (target,) if target is not None else (),
             )
-            raise _LimitReached()
+            raise _ContextLimitReached(detail)
         try:
             if reservation is None:
                 self.budget.claim()
@@ -388,6 +398,7 @@ class _AnalysisRun:
             tuple(noul.values())
             + tuple(value[0] + canonical_json(value[1]) for value in choice.values()),
             reservation=reservation,
+            operation=operation,
         )
         result = self._invoke(
             self.evaluator,
@@ -452,6 +463,55 @@ class _AnalysisRun:
             "segment_index": segment.segment_index,
         }
 
+    def _recovery_projection(self, target):
+        """Deduplicate prompt state without deleting source meaning or evidence."""
+        evidence_table, evidence_ids = {}, {}
+
+        def evidence_ref(item):
+            essential = {key: item[key] for key in
+                         ("segment_id", "quote", "start_char", "end_char", "role")}
+            key = canonical_json(essential)
+            if key not in evidence_ids:
+                identifier = f"e{len(evidence_ids)}"
+                evidence_ids[key] = identifier
+                evidence_table[identifier] = essential
+            return evidence_ids[key]
+
+        def append_unique(rows, indexes, value, identifier):
+            key = canonical_json(value)
+            if key in indexes:
+                rows[indexes[key]]["ids"].append(identifier)
+            else:
+                indexes[key] = len(rows)
+                rows.append({"ids": [identifier], **value})
+
+        accepted, repairs, accepted_indexes, repair_indexes = [], [], {}, {}
+        for record in self.candidates:
+            if record.target_segment_id != target.id:
+                continue
+            candidate = record.candidate
+            if record.validation == "accepted":
+                value = {
+                    "text": candidate.text, "unit_type": candidate.unit_type,
+                    "evidence": [evidence_ref(asdict(item)) for item in candidate.evidence],
+                    "qualifiers": asdict(candidate.qualifiers) if record.annotation_state == "verified" else None,
+                    "annotation_state": record.annotation_state,
+                }
+                append_unique(accepted, accepted_indexes, value, record.id)
+            elif record.validation in {"literal_rejected", "needs_repair", "needs_review"}:
+                proposal = json.loads(record.raw_json)
+                # Retain malformed literal proposals; otherwise use the recorded exact
+                # resolution rather than asking the generator to repair old offsets again.
+                evidence = ([asdict(item) for item in candidate.evidence]
+                            if candidate is not None else proposal["evidence"])
+                proposal["evidence"] = [evidence_ref(item) for item in evidence]
+                value = {"proposal": proposal, "validation": record.validation,
+                         "reasons": record.reasons, "granularity": record.granularity,
+                         "annotation_state": record.annotation_state,
+                         "annotation_reasons": record.annotation_reasons}
+                append_unique(repairs, repair_indexes, value, record.id)
+        return {"accepted": accepted, "repair_candidates": repairs, "evidence_table": evidence_table}
+
     def _extract(self, target, route, round_number, audit=None, *, window=None):
         context = self._context(target)
         spec = OutputSpec(
@@ -471,6 +531,8 @@ class _AnalysisRun:
         }
         if window is not None:
             start, end = window
+            if not 0 <= start <= end <= len(target.content):
+                raise ConfigurationError("Discovery-window bounds must belong to the original target.")
             data["discovery_window"] = {
                 "start_char": start, "end_char": end,
                 "text": target.content[start:end],
@@ -478,32 +540,8 @@ class _AnalysisRun:
             instruction += QA_WINDOW_INSTRUCTION if route == "qa" else DIRECT_WINDOW_INSTRUCTION
         if audit is not None:
             data["coverage_audit"] = asdict(audit)
-            data["accepted"] = [
-                {
-                    "text": record.candidate.text,
-                    "unit_type": record.candidate.unit_type,
-                    "evidence": [asdict(item) for item in record.candidate.evidence],
-                    "qualifiers": (asdict(record.candidate.qualifiers)
-                                   if record.annotation_state == "verified" else None),
-                    "annotation_state": record.annotation_state,
-                }
-                for record in self._accepted(target.id)
-            ]
-            data["repair_candidates"] = [
-                {
-                    "proposal": json.loads(record.raw_json),
-                    "validation": record.validation,
-                    "reasons": record.reasons,
-                    "signals": dict(record.signals),
-                    "granularity": record.granularity,
-                    "annotation_state": record.annotation_state,
-                    "annotation_reasons": record.annotation_reasons,
-                    "annotation_signals": dict(record.annotation_signals),
-                }
-                for record in self.candidates
-                if record.target_segment_id == target.id
-                and record.validation in {"literal_rejected", "needs_repair", "needs_review"}
-            ]
+            data.update(self._recovery_projection(target))
+            instruction += RECOVERY_STATE_INSTRUCTION
         prompt = (
             PROTOCOL
             + "\n"
@@ -513,7 +551,7 @@ class _AnalysisRun:
             + "\nInput:\n"
             + canonical_json(data)
         )
-        self._permit(prompt)
+        self._permit(prompt, operation=f"extract_{route}")
         result = self._invoke(
             self.generator,
             f"extract_{route}",
@@ -524,25 +562,38 @@ class _AnalysisRun:
             "generator",
         )
         value = validate_information(result.value, spec)
+        if window is not None:
+            self.window_declarations.append({
+                "segment_id": target.id, "route": route,
+                "trusted_start_char": window[0], "trusted_end_char": window[1],
+                "trusted_text_hash": fingerprint(target.content[window[0]:window[1]]),
+                "trusted_text_characters": window[1] - window[0],
+                "request_slice_verified": data["discovery_window"]["text"] == target.content[window[0]:window[1]],
+                "declared_issues": value["issues"],
+            })
         for item in value["issues"]:
+            if window is not None and re.fullmatch(r"discovery_window_(?:(?:range|bounds)_)?mismatch", item["kind"]):
+                # The request's Python source slice is authoritative. Preserve the
+                # model's contradictory echo above without treating it as source loss.
+                continue
             self.issue("generator_" + item["kind"], item["detail"], item["segment_ids"])
         for raw in value["candidates"]:
             if window is not None:
                 # Resolve against the original source before enforcing window ownership.
                 try:
-                    candidate, _ = self._literal_candidate(raw, target, spec.segment_ids)
+                    candidate, resolutions = self._literal_candidate(raw, target, spec.segment_ids)
                 except ValueError:
                     candidate = None
                 if candidate is not None:
                     first = min(item.start_char for item in candidate.evidence if item.role == "assertion")
                     if not window[0] <= first < window[1]:
                         issue_kind = route + "_window_evidence_outside"
-                        self.issue(issue_kind, f"{route} proposed an assertion outside its discovery window; the proposal was retained as unresolved.",
-                                   (target.id,))
                         identifier = f"{self.candidate_prefix}c{len(self.candidates)}"
+                        self.issue(issue_kind, f"Resolved assertion starts at {first}, outside trusted {route} window [{window[0]},{window[1]}); retained as unresolved.",
+                                   (target.id,), (identifier,))
                         self.candidates.append(CandidateRecord(identifier, target.id, route,
                             round_number, candidate, canonical_json(raw), "needs_review",
-                            reasons=(issue_kind,)))
+                            reasons=(issue_kind,), evidence_resolutions=resolutions))
                         continue
             self._validate(raw, target, route, round_number, spec.segment_ids)
 
@@ -661,7 +712,7 @@ class _AnalysisRun:
             tuple(raw["unresolved_references"]),
         ), tuple(resolutions)
 
-    def _validate(self, raw, target, route, round_number, permitted_ids):
+    def _validate(self, raw, target, route, round_number, permitted_ids, *, literal_repair_of=None):
         identifier = f"{self.candidate_prefix}c{len(self.candidates)}"
         record = CandidateRecord(
             identifier,
@@ -671,6 +722,7 @@ class _AnalysisRun:
             None,
             canonical_json(raw),
             "literal_rejected",
+            literal_repair_of=literal_repair_of,
         )
         try:
             candidate, resolutions = self._literal_candidate(raw, target, permitted_ids)
@@ -695,6 +747,7 @@ class _AnalysisRun:
                 previous, id=record.id, target_segment_id=record.target_segment_id,
                 route=route, round=round_number, raw_json=record.raw_json,
                 evidence_resolutions=resolutions, validation_reused_from=previous.id,
+                literal_repair_of=literal_repair_of,
             )
             return
         state, questions, granularity = validation_spec(
@@ -832,6 +885,43 @@ class _AnalysisRun:
             and (target_id is None or record.target_segment_id == target_id)
         ]
 
+    def _literal_repairs(self, target):
+        """Validate bounded extractive repairs after independent discovery."""
+        proposals = {(record.candidate.text, tuple(item for item in record.candidate.evidence
+                       if item.role == "assertion")) for record in self._accepted(target.id)}
+        used = 0
+        permitted = (target.id,) + tuple(item.id for item in self._context(target))
+        for record in tuple(self.candidates):
+            if used >= self.config.max_literal_repairs or self.budget.remaining <= 1:
+                break
+            if (record.target_segment_id != target.id or record.candidate is None
+                    or record.validation not in {"needs_review", "needs_repair"}
+                    or any(reason.endswith("window_evidence_outside") for reason in record.reasons)):
+                continue
+            candidate = record.candidate
+            assertions = tuple(item for item in candidate.evidence if item.role == "assertion")
+            if len(assertions) != 1 or candidate.text == assertions[0].quote:
+                continue
+            quote = assertions[0].quote
+            if not self._literal_sentence_retained(quote, target.content, assertions):
+                continue
+            raw = json.loads(record.raw_json)
+            raw.update(text=quote, question=None, answer=None,
+                       evidence=[{key: getattr(item, key) for key in
+                           ("segment_id", "quote", "start_char", "end_char", "role")}
+                           for item in candidate.evidence])
+            # One attempt per complete source assertion, even if routes propose
+            # different context citations or auxiliary annotations for that span.
+            key = (quote, assertions)
+            if key in proposals:
+                continue
+            proposals.add(key)
+            used += 1
+            try:
+                self._validate(raw, target, "literal_recovery", 0, permitted, literal_repair_of=record.id)
+            except (ServiceTimeoutError, RequestDeadlineError, InvalidResponseError) as exc:
+                self.issue("literal_repair_failed", type(exc).__name__, (target.id,), (record.id,))
+
     @staticmethod
     def _markers(text):
         pattern = r"\b\d+(?:[.,]\d+)?(?:\s+(?:horas?|dias?|hours?|days?|meses|anos|%))?|\b(?:não|nunca|not|never|se|if|exceto|unless|esse|essa|isso|this|that)\b"
@@ -869,8 +959,9 @@ class _AnalysisRun:
         for route, discover in routes:
             try:
                 discover()
-            except (ServiceTimeoutError, RequestDeadlineError, InvalidResponseError) as exc:
+            except (ServiceTimeoutError, RequestDeadlineError, InvalidResponseError, _ContextLimitReached) as exc:
                 self.issue("route_analysis_failed", f"{route}: {type(exc).__name__}; original-source coverage will still be audited.", (target.id,))
+        self._literal_repairs(target)
         for round_number in range(self.config.max_coverage_rounds + 1):
             audit = self._audit(target, round_number)
             self.evaluated_targets.add(target.id)
@@ -911,6 +1002,8 @@ class _AnalysisRun:
             worker._notify("target_started", segment_id=target.id)
             try:
                 worker._target(target)
+            except _ContextLimitReached as exc:
+                worker.issue("target_context_limited", str(exc), (target.id,))
             except Exception as exc:
                 worker.issue("target_analysis_failed", type(exc).__name__, (target.id,))
             worker._notify("target_completed", segment_id=target.id,
@@ -961,6 +1054,7 @@ class _AnalysisRun:
             self.calls.extend(worker.calls)
             self.qa_windows.extend(worker.qa_windows)
             self.direct_windows.extend(worker.direct_windows)
+            self.window_declarations.extend(worker.window_declarations)
             self.evaluated_targets.update(worker.evaluated_targets)
             for item in worker.issues:
                 self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
@@ -1042,16 +1136,7 @@ class _AnalysisRun:
                 reservation=reservation,
             )
             result = decisions["relation"]
-            probability = dict(result.probabilities).get(result.selected, 0.0)
-            label = (
-                result.selected
-                if passes_probability_cutoff(probability, self.config.equivalence_threshold)
-                else "uncertain"
-            )
-            relation = InformationRelation(
-                left.id, right.id, label, probability, result.confidence,
-                initial_relation=result.selected, initial_probability=probability,
-            )
+            relation = self._primary_relation(left, right, result)
         except Exception as exc:
             worker.issue(
                 "pair_evaluation_failed",
@@ -1068,6 +1153,19 @@ class _AnalysisRun:
                     except Exception as exc:
                         worker.issue("adapter_cleanup_failed", type(exc).__name__)
         return relation, worker, reservation.consumed
+
+    def _primary_relation(self, left, right, result, origin="evaluator"):
+        probability = dict(result.probabilities).get(result.selected, 0.0)
+        label = result.selected if passes_probability_cutoff(probability, self.config.equivalence_threshold) else "uncertain"
+        equivalent, distinct, uncertain = relation_family_probabilities(result.probabilities)
+        family_resolved = label == "uncertain" and passes_probability_cutoff(distinct, self.config.equivalence_threshold)
+        return InformationRelation(left.id, right.id, label, probability, result.confidence,
+            origin=origin, initial_relation=result.selected, initial_probability=probability,
+            equivalence_state="distinct" if family_resolved else None,
+            equivalence_strength=distinct if family_resolved else None,
+            equivalence_origin="primary_relation_family" if family_resolved else None,
+            primary_equivalent_probability=equivalent, primary_distinct_probability=distinct,
+            primary_uncertain_probability=uncertain)
 
     def _pair_request(self, pairs):
         return relation_batch_spec(pairs, self.segments, RELATION_INSTRUCTION)
@@ -1125,11 +1223,7 @@ class _AnalysisRun:
                     choice=choices, reservation=reservation)
                 for index, (left, right) in enumerate(pairs):
                     result = decisions[f"pair{index}"]
-                    probability = dict(result.probabilities).get(result.selected, 0.0)
-                    label = result.selected if passes_probability_cutoff(probability, self.config.equivalence_threshold) else "uncertain"
-                    relations.append(InformationRelation(left.id, right.id, label,
-                        probability, result.confidence, origin="keyed_pair_batch",
-                        initial_relation=result.selected, initial_probability=probability))
+                    relations.append(self._primary_relation(left, right, result, "keyed_pair_batch"))
         except Exception as exc:
             for left, right in pairs:
                 worker.issue("relation_adjudication_failed" if adjudicate else "pair_evaluation_failed",
@@ -1250,8 +1344,17 @@ class _AnalysisRun:
             for relation in primary:
                 updated = replacements.get((relation.left_candidate_id, relation.right_candidate_id))
                 if updated is not None:
+                    state, strength, origin = reconcile_equivalence(dict(updated.adjudication_signals),
+                        self.config.equivalence_threshold, relation.primary_equivalent_probability,
+                        relation.primary_distinct_probability)
+                    label = ("equivalent" if state == "equivalent" else
+                             "uncertain" if state == "uncertain" else updated.relation)
                     relation = replace(updated, initial_relation=relation.initial_relation or relation.relation,
-                                       initial_probability=relation.probability)
+                        initial_probability=relation.probability, relation=label,
+                        equivalence_state=state, equivalence_strength=strength, equivalence_origin=origin,
+                        primary_equivalent_probability=relation.primary_equivalent_probability,
+                        primary_distinct_probability=relation.primary_distinct_probability,
+                        primary_uncertain_probability=relation.primary_uncertain_probability)
                 finalized.append(relation)
 
         positions = {record.id: index for index, record in enumerate(accepted)}
@@ -1526,6 +1629,7 @@ class _AnalysisRun:
             "pair_concurrency": self.pair_concurrency,
             "qa_source_windows": self.qa_windows,
             "direct_source_windows": self.direct_windows,
+            "discovery_window_declarations": self.window_declarations,
             **attempt_audit,
             "permanent_provider_failure": self.budget.permanent_failure,
             "budget_allocation": "A shared logical-call cap includes all targets and consolidation. With concurrent targets, work completed before cap exhaustion can depend on scheduling; report records are assembled in source order. Provider retries are additional bounded physical attempts.",
@@ -1541,6 +1645,7 @@ class _AnalysisRun:
                 "qa_window": fingerprint(QA_WINDOW_INSTRUCTION),
                 "direct_window": fingerprint(DIRECT_WINDOW_INSTRUCTION),
                 "recovery": fingerprint(RECOVERY_INSTRUCTION),
+                "recovery_state": fingerprint(RECOVERY_STATE_INSTRUCTION),
                 "relations": fingerprint(RELATION_INSTRUCTION),
                 **{name: fingerprint(value) for name, value in evaluation_templates().items()},
             },
@@ -1550,6 +1655,10 @@ class _AnalysisRun:
             "validation_reused_candidates": sum(record.validation_reused_from is not None for record in self.candidates),
             "pair_scheduling": "Only exact validated text/type/evidence duplicates reuse representative pair decisions, with explicit reused_from provenance. All other pairs are evaluated: similarity sets order only. Configured bounded batches use independently keyed pair decisions and isolated labelled source scopes; character limits reduce batch size. The pair cap includes every paid pair-decision attempt and individual follow-up; the global cap counts actual requests. No transitive equivalence shortcut is used; complete-link grouping remains required. Unexamined pairs stay provisional.",
             "relation_resolution": "A low-probability eight-class Choice triggers at most one individual source-scoped follow-up with six binary checks: directional entailment, incompatible scope, explicit corrections and same complete meaning. Equivalence certainty is separate from the descriptive subtype. Decisive non-entailment in either direction establishes distinctness; subtype ambiguity alone does not make inventory counts provisional. Conflicting complete-meaning/directional signals or unresolved equivalence remain uncertain and provisional. Cutoffs are inclusive within two machine representation steps, with unchanged thresholds. Initial probabilities and all follow-up signals are preserved; derived strengths are not calibrated relation probabilities.",
+            "relation_families": "Primary equivalent, known-distinct and uncertain probabilities partition the validated Choice distribution. Known-distinct probability sums complementary, both specificity directions, contradiction and both correction directions; uncertain probability is excluded. The unchanged equivalence threshold can establish distinctness from this family even when no subtype reaches it. Follow-ups still run when budget permits; decisive cross-stage disagreement and internal follow-up conflicts retain uncertainty. Family mass is a model distribution aggregate, not an empirically calibrated accuracy estimate.",
+            "recovery_state_projection": "Recovery retains complete original source/context, all accepted meanings and verified qualifiers, and all essential literal evidence in a deduplicated evidence table. Exact projected duplicate records share ids; repair reasons remain while repeated provenance, timestamps and numerical evaluator diagnostics stay in the full report. Source text and report records are not truncated or overwritten. Requests still obey the context-character cap, separately from the logical-call cap.",
+            "literal_source_repairs": "After independent direct and QA discovery, up to max_literal_repairs candidates per target copy one complete own-target assertion sentence verbatim, retaining its cited context and original candidate via literal_repair_of. Each exact source assertion is attempted at most once, independent of route context or annotation variations, and already accepted exact assertions are skipped. Fragments, unchanged proposals and outside-window candidates are ineligible. All six source-fidelity gates, unresolved-reference checks and atomicity run again; copied source text does not imply acceptance. Repairs share the global call cap and stop while one remaining call can still audit coverage.",
+            "discovery_window_provenance": "Source windows use trusted Python Unicode offsets and exact source slices. Generator declarations are retained separately; claims that the trusted request bounds mismatch its own source slice do not replace those bounds or reject in-window candidates. Resolved assertion evidence still determines ownership, and actual outside-window proposals remain unresolved with their supplied and resolved offsets retained.",
             "equivalence_uncertain_relations": sum(item.equivalence_state == "uncertain" for item in self.relations),
             "subtype_uncertain_relations": sum(item.relation == "uncertain" for item in self.relations),
             "descriptive_relations_complete": all(item.relation != "uncertain" for item in self.relations),
@@ -1574,7 +1683,7 @@ class _AnalysisRun:
             ),
         }
         report = InformationReport(
-            5,
+            6,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -1734,7 +1843,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         counts_provisional=True,
     )
     return InformationReport(
-        5,
+        6,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",
