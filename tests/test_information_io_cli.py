@@ -99,7 +99,7 @@ class InformationIOTests(unittest.TestCase):
         save_information_report(report, path, csv_path=csv_path)
         exported = json.loads(path.read_text(encoding="utf-8"))
         unit, record = exported["units"][0], exported["candidates"][0]
-        self.assertEqual(4, exported["schema_version"])
+        self.assertEqual(5, exported["schema_version"])
         self.assertIsNone(unit["qualifiers"])
         self.assertEqual("unknown", unit["qualifier_state"])
         self.assertEqual(record["id"], unit["representative_candidate_id"])
@@ -200,6 +200,34 @@ class InformationIOTests(unittest.TestCase):
         partial = replace(self.report, status="partial")
         self.assertTrue(partial.counts.counts_provisional)
         self.assertTrue(partial.to_dict()["counts"]["counts_provisional"])
+
+    def test_distinct_units_with_unknown_subtype_remain_identified_in_json_csv_and_cli(self):
+        signals = {"left_entails_right": .46, "right_entails_left": .08, "incompatible": .08,
+                   "correction_left": .03, "correction_right": .04, "same_complete_meaning": .03}
+        class SubtypeEvaluator(SyntheticEvaluator):
+            def evaluate(self, context, noul=None, choice=None):
+                result = super().evaluate(context, noul=noul, choice=choice)
+                if "same_complete_meaning" in (noul or {}):
+                    return replace(result, noul=tuple(replace(item, probability=signals[item.id]) for item in result.noul))
+                return result
+        claims = ("O italiano acha a medida absurda.", "O italiano usa um smartphone chinês.")
+        text = " ".join(claims)
+        report = InformationAnalyzer(
+            ScriptedGenerator({("v0:s0", "direct"): [candidate("v0:s0", text, quote=claim) for claim in claims]}),
+            SubtypeEvaluator(relation_probability=.89), InformationAnalysisConfig(qa_enabled=False),
+        ).analyze(capture_snapshot(videos([text])))
+        path, csv_path = self.root / "subtype.json", self.root / "subtype.csv"
+        save_information_report(report, path, csv_path=csv_path)
+        exported = json.loads(path.read_text(encoding="utf-8"))
+        rows = list(csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8"))))
+        self.assertEqual("uncertain", exported["relations"][0]["relation"])
+        self.assertEqual("distinct", exported["relations"][0]["equivalence_state"])
+        self.assertFalse(exported["counts"]["counts_provisional"])
+        self.assertTrue(all(row["counts_provisional"] == "False" for row in rows))
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            cli._print_information_report(report, path)
+        self.assertIn("2 identified units", output.getvalue())
+        self.assertIn("Descriptive relation subtypes pending: 1", output.getvalue())
 
     def test_aliases_to_dataset_audit_video_and_handler_are_protected(self):
         path = self.root / "dataset.json"

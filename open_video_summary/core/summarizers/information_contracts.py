@@ -300,6 +300,18 @@ class InformationRelation:
     initial_probability: float | None = None
     adjudication_signals: tuple[tuple[str, float], ...] = ()
     adjudication_strength: float | None = None
+    equivalence_state: str | None = None
+    equivalence_strength: float | None = None
+    equivalence_origin: str | None = None
+
+    def __post_init__(self):
+        if self.equivalence_state is None:
+            object.__setattr__(self, "equivalence_state", (
+                "equivalent" if self.relation == "equivalent" else
+                "distinct" if self.relation in {"complementary", "more_specific_left", "more_specific_right",
+                                                "contradiction", "correction_left", "correction_right"}
+                else "uncertain"
+            ))
 
 
 @dataclass(frozen=True)

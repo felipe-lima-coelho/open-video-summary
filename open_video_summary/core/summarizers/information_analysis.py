@@ -55,6 +55,8 @@ from open_video_summary.core.summarizers.information_evaluation import (
     relation_state,
     relation_batch_spec,
     resolve_relation,
+    resolve_equivalence,
+    passes_probability_cutoff,
     validation_spec,
 )
 from open_video_summary.errors import (
@@ -1006,7 +1008,7 @@ class _AnalysisRun:
             probability = dict(result.probabilities).get(result.selected, 0.0)
             label = (
                 result.selected
-                if probability >= self.config.equivalence_threshold
+                if passes_probability_cutoff(probability, self.config.equivalence_threshold)
                 else "uncertain"
             )
             relation = InformationRelation(
@@ -1070,9 +1072,16 @@ class _AnalysisRun:
                     relation_state(left, right, self.segments),
                     noul=RELATION_ADJUDICATION_QUESTIONS, reservation=reservation)
                 label, strength = resolve_relation(signals, self.config.equivalence_threshold)
+                equivalence, equivalence_strength, equivalence_origin = resolve_equivalence(
+                    signals, self.config.equivalence_threshold)
+                if equivalence == "equivalent":
+                    label = "equivalent"
+                elif equivalence == "uncertain":
+                    label = "uncertain"
                 relations.append(InformationRelation(left.id, right.id, label, None, None,
                     origin="focused_entailment_adjudication", adjudication_signals=tuple(signals.items()),
-                    adjudication_strength=strength))
+                    adjudication_strength=strength, equivalence_state=equivalence,
+                    equivalence_strength=equivalence_strength, equivalence_origin=equivalence_origin))
             else:
                 context, choices = self._pair_request(pairs)
                 _, decisions = worker._evaluate("compare_candidate_batch", context,
@@ -1080,7 +1089,7 @@ class _AnalysisRun:
                 for index, (left, right) in enumerate(pairs):
                     result = decisions[f"pair{index}"]
                     probability = dict(result.probabilities).get(result.selected, 0.0)
-                    label = result.selected if probability >= self.config.equivalence_threshold else "uncertain"
+                    label = result.selected if passes_probability_cutoff(probability, self.config.equivalence_threshold) else "uncertain"
                     relations.append(InformationRelation(left.id, right.id, label,
                         probability, result.confidence, origin="keyed_pair_batch",
                         initial_relation=result.selected, initial_probability=probability))
@@ -1237,8 +1246,8 @@ class _AnalysisRun:
                         reused_from=(relation.left_candidate_id, relation.right_candidate_id) if reused else None))
                     self.reused_pair_relations += int(reused)
         for relation in self.relations:
-            compatible[frozenset((relation.left_candidate_id, relation.right_candidate_id))] = relation.relation == "equivalent"
-            if relation.relation == "uncertain":
+            compatible[frozenset((relation.left_candidate_id, relation.right_candidate_id))] = relation.equivalence_state == "equivalent"
+            if relation.equivalence_state == "uncertain":
                 self.issue("relation_uncertain",
                     "Meaning remained unresolved after bounded source-scoped checks; candidates were kept distinct and counts remain provisional.",
                     candidates=(relation.left_candidate_id, relation.right_candidate_id))
@@ -1291,7 +1300,7 @@ class _AnalysisRun:
             for item in self.relations
         ]
         for relation in self.relations:
-            if relation.relation == "equivalent" and not relation.merged:
+            if relation.equivalence_state == "equivalent" and not relation.merged:
                 self.issue(
                     "equivalence_inconsistent",
                     "Pairwise equivalence conflicts with another group member; groups remain separate and counts are provisional.",
@@ -1501,7 +1510,11 @@ class _AnalysisRun:
             "validation_reuse": "Within each immutable target worker, identical resolved candidates, QA fields, proposed annotations and source scopes reuse completed decisions with validation_reused_from. Errors are never cached; changed content or evidence requires new validation.",
             "validation_reused_candidates": sum(record.validation_reused_from is not None for record in self.candidates),
             "pair_scheduling": "Only exact validated text/type/evidence duplicates reuse representative pair decisions, with explicit reused_from provenance. All other pairs are evaluated: similarity sets order only. Configured bounded batches use independently keyed pair decisions and isolated labelled source scopes; character limits reduce batch size. The pair cap includes every paid pair-decision attempt and individual follow-up; the global cap counts actual requests. No transitive equivalence shortcut is used; complete-link grouping remains required. Unexamined pairs stay provisional.",
-            "relation_resolution": "A low-probability eight-class Choice triggers at most one individual source-scoped follow-up with five binary checks for directional entailment, incompatible scope and explicit corrections. Both positive and negative defining signals must meet the unchanged equivalence threshold; undecidable relations remain uncertain. Initial probabilities and follow-up signals are preserved; derived strength is not a calibrated relation probability.",
+            "relation_resolution": "A low-probability eight-class Choice triggers at most one individual source-scoped follow-up with six binary checks: directional entailment, incompatible scope, explicit corrections and same complete meaning. Equivalence certainty is separate from the descriptive subtype. Decisive non-entailment in either direction establishes distinctness; subtype ambiguity alone does not make inventory counts provisional. Conflicting complete-meaning/directional signals or unresolved equivalence remain uncertain and provisional. Cutoffs are inclusive within two machine representation steps, with unchanged thresholds. Initial probabilities and all follow-up signals are preserved; derived strengths are not calibrated relation probabilities.",
+            "equivalence_uncertain_relations": sum(item.equivalence_state == "uncertain" for item in self.relations),
+            "subtype_uncertain_relations": sum(item.relation == "uncertain" for item in self.relations),
+            "descriptive_relations_complete": all(item.relation != "uncertain" for item in self.relations),
+            "equivalence_decisions_complete": not self.unexamined_pair_count and all(item.equivalence_state != "uncertain" for item in self.relations),
             "relation_budget_reserve": "Primary comparisons run in bounded waves, retaining up to one-third of remaining logical calls, capped by remaining configured follow-ups, for focused relation adjudication. Unused reserve is reclaimed by subsequent primary waves. Every paid decision and request still obeys the explicit pair and global call caps; a reserve does not prove the total remaining work fits.",
             "qa_discovery": "Independent QA traverses disjoint original-source windows, with at most four candidates per generation and original target/context retained for reference and governing qualifiers. Bounded timeout recovery splits only the failed window. Calls and windows, including failed attempts, remain recorded. Route failures do not bypass the original-source coverage audit. No coverage or semantic completeness is proven by a successful window.",
             "literal_alignment": "Matching supplied offsets are retained. Otherwise only a unique exact quote within the same permitted segment is resolved, with raw offsets and evidence_resolutions retained; ambiguous and nonliteral evidence is rejected.",
@@ -1521,7 +1534,7 @@ class _AnalysisRun:
             ),
         }
         report = InformationReport(
-            4,
+            5,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -1681,7 +1694,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         counts_provisional=True,
     )
     return InformationReport(
-        4,
+        5,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",

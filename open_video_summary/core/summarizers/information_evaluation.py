@@ -7,9 +7,10 @@ annotation never disables a source-based check.
 """
 
 import json
+import math
 
 
-EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v4"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v5"
 SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
 ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
 VALIDATION_QUESTIONS = {
@@ -66,7 +67,10 @@ RELATION_ADJUDICATION_QUESTIONS = {
     "incompatible": "Do the claims make incompatible assertions about the same entities, event or property and temporal scope? Different compatible or unrelated properties are not a contradiction. Preserve modal possibilities as possibilities.",
     "correction_left": "Does the original source explicitly present the Left assertion as a correction of the Right assertion? Chronological order or different quantities alone do not establish a correction.",
     "correction_right": "Does the original source explicitly present the Right assertion as a correction of the Left assertion? Chronological order or different quantities alone do not establish a correction.",
+    "same_complete_meaning": "After resolving references using only each claim's cited evidence, do the Left and Right claims state exactly the same complete informational proposition? Each must entail every detail expressed by the other. Preserve who makes an allegation, the asserted action and its actor, quantities, negation, modality, conditions, time and scope. A fact present only in surrounding source and not expressed by a claim is not represented by that claim. Sharing an underlying allegation or topic is insufficient when one claim additionally states an actor, reporting source or action. Synonymous wording may be equivalent; additional communicated details are not.",
 }
+RELATION_SUBTYPE_CHECKS = ("left_entails_right", "right_entails_left", "incompatible",
+                           "correction_left", "correction_right")
 RELATION_BATCH_QUESTION = (
     "Evaluate only {pair_id}, Left candidate {left_id} and Right candidate {right_id}. "
     "Only their own marked source scopes and cited reference context may be used; "
@@ -74,10 +78,38 @@ RELATION_BATCH_QUESTION = (
 )
 
 
+def passes_probability_cutoff(probability, threshold):
+    """Include finite-precision boundary equality, within two representation steps."""
+    return probability >= threshold or math.isclose(probability, threshold,
+        rel_tol=0.0, abs_tol=2 * max(math.ulp(probability), math.ulp(threshold)))
+
+
+def resolve_equivalence(signals, threshold):
+    """Separate mutual-entailment certainty from descriptive relation subtypes."""
+    yes = lambda key: key in signals and passes_probability_cutoff(signals[key], threshold)
+    no = lambda key: key in signals and passes_probability_cutoff(1 - signals[key], threshold)
+    mutual = yes("left_entails_right") and yes("right_entails_left")
+    negative = [key for key in ("left_entails_right", "right_entails_left") if no(key)]
+    if ((negative and yes("same_complete_meaning"))
+            or (mutual and no("same_complete_meaning"))
+            or ((mutual or yes("same_complete_meaning"))
+                and any(yes(key) for key in ("incompatible", "correction_left", "correction_right")))):
+        return "uncertain", None, "conflicting_adjudication_signals"
+    if negative:
+        return "distinct", max(1 - signals[key] for key in negative), "directional_non_entailment"
+    if no("same_complete_meaning"):
+        return "distinct", 1 - signals["same_complete_meaning"], "complete_meaning_check"
+    if mutual:
+        return "equivalent", min(signals["left_entails_right"], signals["right_entails_left"]), "mutual_entailment"
+    if yes("same_complete_meaning"):
+        return "equivalent", signals["same_complete_meaning"], "complete_meaning_check"
+    return "uncertain", None, "unresolved_adjudication_signals"
+
+
 def resolve_relation(signals, threshold):
-    """Require positive and negative evidence for every defining distinction."""
-    yes = lambda key: signals[key] >= threshold
-    no = lambda key: signals[key] <= 1 - threshold
+    """Require all defining checks for a subtype, independently of equivalence."""
+    yes = lambda key: passes_probability_cutoff(signals[key], threshold)
+    no = lambda key: passes_probability_cutoff(1 - signals[key], threshold)
     if yes("correction_left") and no("correction_right"):
         label = "correction_left"
         defining = ("correction_left", "correction_right")
@@ -85,7 +117,7 @@ def resolve_relation(signals, threshold):
         label = "correction_right"
         defining = ("correction_left", "correction_right")
     elif no("correction_left") and no("correction_right"):
-        defining = tuple(signals)
+        defining = RELATION_SUBTYPE_CHECKS
         if yes("incompatible") and no("left_entails_right") and no("right_entails_left"):
             label = "contradiction"
         elif no("incompatible"):

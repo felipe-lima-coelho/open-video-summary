@@ -16,7 +16,8 @@ from open_video_summary.core.summarizers.information_analysis import Information
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
 from open_video_summary.core.summarizers.information_contracts import capture_snapshot
 from open_video_summary.core.summarizers.information_evaluation import (
-    RELATION_ADJUDICATION_QUESTIONS, anchor_binding_spec, resolve_relation,
+    RELATION_ADJUDICATION_QUESTIONS, anchor_binding_spec, resolve_relation, resolve_equivalence,
+    passes_probability_cutoff,
 )
 from open_video_summary.errors import ServiceTimeoutError
 
@@ -121,7 +122,7 @@ class InformationRecoveryTests(unittest.TestCase):
         self.assertIsNone(relation.probability)
         self.assertEqual(.99, relation.adjudication_strength)
         self.assertEqual(2, len(requests))
-        self.assertEqual(5, len(requests[1]["questions"]))
+        self.assertEqual(6, len(requests[1]["questions"]))
         self.assertEqual(1, json.loads(report.metadata_json)["relation_adjudications"])
 
     def test_binary_relation_definitions_preserve_direction_scope_and_real_uncertainty(self):
@@ -136,7 +137,8 @@ class InformationRecoveryTests(unittest.TestCase):
                 self.assertEqual(expected, resolve_relation(negative | changes, .90)[0])
         run = make_run(["A regra é temporária", "A regra foi publicada"])
         run.config = replace(run.config, max_relation_adjudications=1)
-        run.evaluator, _ = self.evaluator(low=True, signals=negative | {"left_entails_right": .45})
+        run.evaluator, _ = self.evaluator(low=True, signals=negative | {
+            "left_entails_right": .45, "right_entails_left": .45, "same_complete_meaning": .45})
         report = run.run()
         self.assertEqual("uncertain", report.relations[0].relation)
         self.assertTrue(report.counts.counts_provisional)
@@ -161,7 +163,7 @@ class InformationRecoveryTests(unittest.TestCase):
         report = run.run()
         self.assertEqual(5, len(requests))
         self.assertEqual(1, json.loads(report.metadata_json)["relation_adjudications"])
-        self.assertEqual(5, len(requests[-1]["questions"]))
+        self.assertEqual(6, len(requests[-1]["questions"]))
         self.assertEqual(2, json.loads(report.metadata_json)["unexamined_pair_count"])
 
         run = make_run(["A regra é azul", "O backup é diário", "A retenção é curta", "O prazo é fixo", "O suporte é local"])
@@ -173,6 +175,69 @@ class InformationRecoveryTests(unittest.TestCase):
         self.assertEqual(10, len(report.relations))
         self.assertEqual(0, json.loads(report.metadata_json)["unexamined_pair_count"])
         self.assertEqual(0, json.loads(report.metadata_json)["relation_adjudications"])
+
+    def test_native_float_boundary_and_unknown_subtype_do_not_create_count_uncertainty(self):
+        native_false_info = {"left_entails_right": .07, "right_entails_left": .06,
+            "incompatible": .10000000000000001, "correction_left": .04, "correction_right": .04,
+            "same_complete_meaning": .04}
+        self.assertEqual("complementary", resolve_relation(native_false_info, .90)[0])
+        self.assertEqual("distinct", resolve_equivalence(native_false_info, .90)[0])
+        self.assertFalse(passes_probability_cutoff(.89999, .90))
+        boundary_above = native_false_info | {"incompatible": .10001}
+        self.assertEqual("uncertain", resolve_relation(boundary_above, .90)[0])
+
+        native_opinion_detail = {"left_entails_right": .46, "right_entails_left": .08,
+            "incompatible": .08, "correction_left": .03, "correction_right": .04,
+            "same_complete_meaning": .03}
+        self.assertEqual("uncertain", resolve_relation(native_opinion_detail, .90)[0])
+        self.assertEqual("distinct", resolve_equivalence(native_opinion_detail, .90)[0])
+        run = make_run(["O italiano acha a medida absurda", "O italiano usa um smartphone chinês"])
+        run.config = replace(run.config, max_relation_adjudications=1)
+        run.evaluator, requests = self.evaluator(low=True, signals=native_opinion_detail)
+        report = run.run()
+        self.assertEqual("uncertain", report.relations[0].relation)
+        self.assertEqual("distinct", report.relations[0].equivalence_state)
+        self.assertEqual("completed", report.status)
+        self.assertFalse(report.counts.counts_provisional)
+        self.assertEqual(2, report.counts.unique_units)
+        self.assertNotIn("relation_uncertain", [issue.kind for issue in report.issues])
+        self.assertEqual(1, json.loads(report.metadata_json)["subtype_uncertain_relations"])
+        self.assertFalse(json.loads(report.metadata_json)["descriptive_relations_complete"])
+
+    def test_genuine_native_ambiguity_and_conflicting_checks_remain_provisional(self):
+        native = {"left_entails_right": .52, "right_entails_left": .74,
+            "incompatible": .07, "correction_left": .04, "correction_right": .05,
+            "same_complete_meaning": .33}
+        self.assertEqual("uncertain", resolve_equivalence(native, .90)[0])
+        conflicts = [native | {"left_entails_right": .04, "same_complete_meaning": .99},
+                     native | {"left_entails_right": .99, "right_entails_left": .99,
+                               "same_complete_meaning": .04},
+                     native | {"same_complete_meaning": .99, "incompatible": .99}]
+        for conflicting in conflicts:
+            with self.subTest(signals=conflicting):
+                self.assertEqual(("uncertain", None, "conflicting_adjudication_signals"),
+                                 resolve_equivalence(conflicting, .90))
+        run = make_run(["O decreto alegava emergência nacional", "Trump alegou emergência nacional ao assinar o decreto"])
+        run.config = replace(run.config, max_relation_adjudications=1)
+        run.evaluator, _ = self.evaluator(low=True, signals=native)
+        report = run.run()
+        self.assertEqual("uncertain", report.relations[0].equivalence_state)
+        self.assertEqual("partial", report.status)
+        self.assertTrue(report.counts.counts_provisional)
+        self.assertEqual(native, dict(report.relations[0].adjudication_signals))
+
+    def test_complete_meaning_resolves_gray_directional_checks_without_repeating_requests(self):
+        signals = dict.fromkeys(RELATION_ADJUDICATION_QUESTIONS, .01) | {
+            "left_entails_right": .50, "right_entails_left": .60, "same_complete_meaning": .94}
+        run = make_run(["O presidente relata a regra", "Donald Trump relata a regra"])
+        run.config = replace(run.config, max_relation_adjudications=1)
+        run.evaluator, requests = self.evaluator(low=True, signals=signals)
+        report = run.run()
+        self.assertEqual(2, len(requests))
+        self.assertEqual(6, len(requests[1]["questions"]))
+        self.assertEqual("equivalent", report.relations[0].equivalence_state)
+        self.assertEqual("complete_meaning_check", report.relations[0].equivalence_origin)
+        self.assertEqual(1, report.counts.unique_units)
 
     def test_qa_timeout_decomposes_original_source_and_coverage_still_runs(self):
         sentences = ["A primeira regra estabelece backup automático diário com uma cópia no servidor.",

@@ -139,6 +139,9 @@ def _print_information_report(report, path):
         f"{report.counts.occurrences} {occurrence_label}; {len(report.issues)} issues.",
         flush=True,
     )
+    subtype_pending = json.loads(report.metadata_json).get("subtype_uncertain_relations", 0)
+    if subtype_pending:
+        print(f"Descriptive relation subtypes pending: {subtype_pending}; equivalence certainty is recorded separately.", flush=True)
     if path:
         print(f"Information report: {portable_path(path)}", flush=True)
 

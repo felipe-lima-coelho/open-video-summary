@@ -513,12 +513,24 @@ member pair, including reused exact-proposition decisions; contradictory edges
 prevent transitive merges.
 
 A borderline eight-class Choice receives at most one individual follow-up,
-within the same global and paid-pair limits. Five binary checks distinguish
-mutual entailment, directional detail, incompatible scope and explicit correction.
-All defining positive and negative signals must satisfy the unchanged equivalence
-threshold. Initial selected class/probability and follow-up signals are retained;
-`adjudication_strength` is the weakest defining signal, not a calibrated relation
-probability. Unresolved relations remain visible and counts remain provisional.
+within the same global and paid-pair limits. Six binary questions jointly check
+directional entailment, incompatible scope, explicit correction and same complete
+meaning. The cutoff remains unchanged and is inclusive within two floating-point
+representation steps, so arithmetic at 0.10/0.90 does not create false uncertainty.
+Initial selected class/probability and all follow-up signals are retained;
+`adjudication_strength` describes the subtype's weakest defining signal, while
+`equivalence_strength` records the decisive equivalence criterion. Neither is
+a calibrated relation probability.
+
+Schema 5 records `equivalence_state` separately as `equivalent`, `distinct` or
+`uncertain`. Because equivalence requires entailment in both directions, a decisive
+negative in either direction establishes distinctness even when complementary
+versus more-specific remains unknown. A decisive same-complete-meaning check can
+resolve gray directional signals; conflicting checks remain uncertain. Subtype
+uncertainty stays in the relation, metadata and CLI; it does not make otherwise
+resolved inventory counts provisional. Genuine equivalence uncertainty still
+blocks merges and keeps counts provisional. The follow-up is one fixed request,
+with no repeated wording search until a preferred answer appears.
 Primary comparisons run in waves that keep up to one-third of remaining calls,
 capped by the remaining follow-up allowance, available for those checks. Later
 waves reclaim unused reserve. The report records the final representative-pair
