@@ -133,6 +133,16 @@ class EvaluationMetadata:
     request_limit: float | None = None
     token_limit: int | None = None
     rate_window_seconds: float | None = None
+    base_estimated_input_tokens: int | None = None
+    estimation_multiplier: float = 1.0
+    estimation_multiplier_after: float = 1.0
+    estimation_adjusted: bool = False
+    accounted_tokens: int | None = None
+    token_adjustment: int = 0
+    usage_status: str = "unknown"
+    token_request_overhead: int = 0
+    token_question_overhead: int = 0
+    question_count: int | None = None
 
 
 @dataclass(frozen=True)

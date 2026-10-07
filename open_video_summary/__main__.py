@@ -446,6 +446,8 @@ def _information_arguments(parser):
     parser.add_argument("--evaluator-token-limit", type=int, default=None)
     parser.add_argument("--evaluator-rate-window", type=float, default=None)
     parser.add_argument("--evaluator-limit-group", default=None)
+    parser.add_argument("--evaluator-token-request-overhead", type=int, default=None)
+    parser.add_argument("--evaluator-token-question-overhead", type=int, default=None)
     parser.add_argument("--llm-provider", default=None)
     parser.add_argument("--llm-model", default=None)
     parser.add_argument("--llm-reasoning-effort", dest="reasoning_effort", default=None)

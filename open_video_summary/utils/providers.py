@@ -61,6 +61,8 @@ class EvaluatorConfig:
     token_limit: int = 80000
     rate_window_seconds: float = 1.0
     limit_group: str | None = None
+    token_request_overhead: int = 256
+    token_question_overhead: int = 128
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,18 @@ def _positive(value, name: str, *, integer: bool = False):
 
 def _optional_positive(value, name, *, integer=False):
     return None if _optional(value) is None else _positive(value, name, integer=integer)
+
+
+def _token_overhead(value, name):
+    if isinstance(value, (bool, float)):
+        raise ConfigurationError(f"{name} must be an integer from 0 to 100000.")
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        raise ConfigurationError(f"{name} must be an integer from 0 to 100000.") from None
+    if not 0 <= result <= 100000:
+        raise ConfigurationError(f"{name} must be an integer from 0 to 100000.")
+    return result
 
 
 def _boolean(value, name):
@@ -298,6 +312,12 @@ def load_evaluator_config(
             get("evaluator_rate_window", "OVS_EVALUATOR_RATE_WINDOW_SECONDS", "1"),
             "OVS_EVALUATOR_RATE_WINDOW_SECONDS"),
         limit_group=get("evaluator_limit_group", "OVS_EVALUATOR_LIMIT_GROUP"),
+        token_request_overhead=_token_overhead(
+            get("evaluator_token_request_overhead", "OVS_EVALUATOR_TOKEN_REQUEST_OVERHEAD", "256"),
+            "OVS_EVALUATOR_TOKEN_REQUEST_OVERHEAD"),
+        token_question_overhead=_token_overhead(
+            get("evaluator_token_question_overhead", "OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD", "128"),
+            "OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD"),
     )
     try:
         endpoint = urlsplit(config.base_url)

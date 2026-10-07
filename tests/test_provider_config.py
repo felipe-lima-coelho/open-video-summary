@@ -78,6 +78,22 @@ class ProviderConfigurationTests(unittest.TestCase):
         self.assertEqual(75000, selected.token_limit)
         self.assertEqual(80, selected.operation_timeout_seconds)
 
+    def test_evaluator_token_overhead_precedence_and_bounds(self):
+        defaults = load_evaluator_config(environ={}, env_file=self.env)
+        self.assertEqual((256, 128), (defaults.token_request_overhead, defaults.token_question_overhead))
+        self.env.write_text("OVS_EVALUATOR_TOKEN_REQUEST_OVERHEAD=300\n"
+            "OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD=150\n", encoding="utf-8")
+        selected = load_evaluator_config({"evaluator_token_request_overhead": 0},
+            environ={"OVS_EVALUATOR_TOKEN_REQUEST_OVERHEAD": "400",
+                     "OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD": "200"}, env_file=self.env)
+        self.assertEqual((0, 200), (selected.token_request_overhead, selected.token_question_overhead))
+        evaluator = create_evaluator(selected)
+        self.assertEqual((0, 200), (evaluator.config.token_request_overhead, evaluator.config.token_question_overhead))
+        for name in ("OVS_EVALUATOR_TOKEN_REQUEST_OVERHEAD", "OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD"):
+            for value in ("-1", "100001", "0.5", "NaN"):
+                with self.subTest(name=name, value=value), self.assertRaises(ConfigurationError):
+                    load_evaluator_config(environ={name: value}, env_file=self.env)
+
     def test_cli_process_file_and_default_precedence(self):
         self.env.write_text(
             "OVS_LLM_PROVIDER=openai\nOVS_LLM_MODEL=file-model\n"

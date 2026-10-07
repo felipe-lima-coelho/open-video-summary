@@ -62,6 +62,8 @@ def _typesafe(config: EvaluatorConfig) -> Evaluator:
             token_limit=config.token_limit,
             rate_window_seconds=config.rate_window_seconds,
             limit_group=config.limit_group,
+            token_request_overhead=config.token_request_overhead,
+            token_question_overhead=config.token_question_overhead,
         )
     )
 

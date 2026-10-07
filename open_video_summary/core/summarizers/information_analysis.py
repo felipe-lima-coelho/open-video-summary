@@ -1361,6 +1361,8 @@ class _AnalysisRun:
             "request_limit",
             "token_limit",
             "rate_window_seconds",
+            "token_request_overhead",
+            "token_question_overhead",
             "learn_rate_limits",
             "limit_group",
             "organization",

@@ -385,10 +385,13 @@ class ExecutionConfigurationAndCLITests(unittest.TestCase):
             args = cli.build_parser().parse_args(["analyze-information",
                 "--information-max-pairs", "auto", "--information-pair-concurrency", "8",
                 "--llm-operation-timeout", "400", "--llm-max-output-tokens", "12000",
-                "--evaluator-request-limit", "60", "--evaluator-token-limit", "80000"])
+                "--evaluator-request-limit", "60", "--evaluator-token-limit", "80000",
+                "--evaluator-token-request-overhead", "300", "--evaluator-token-question-overhead", "150"])
             self.assertEqual("auto", args.information_max_pairs)
             self.assertEqual(8, args.information_pair_concurrency)
             self.assertEqual(400, args.llm_operation_timeout)
+            self.assertEqual(300, args.evaluator_token_request_overhead)
+            self.assertEqual(150, args.evaluator_token_question_overhead)
 
     def test_concurrency_defaults_bounds_and_explicit_process_file_precedence(self):
         with tempfile.TemporaryDirectory() as temporary:

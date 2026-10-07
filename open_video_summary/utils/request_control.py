@@ -47,14 +47,27 @@ class Admission:
     reserved_tokens: int
     wait_seconds: float
     wait_reasons: tuple[str, ...]
+    base_estimated_input_tokens: int | None = None
+    estimation_multiplier: float = 1.0
+    reserved_output_tokens: int = 0
+    adaptive_estimate: bool = False
+
+
+@dataclass(frozen=True)
+class UsageFeedback:
+    accounted_tokens: int | None = None
+    token_adjustment: int = 0
+    estimation_multiplier_after: float = 1.0
+    estimation_adjusted: bool = False
+    usage_status: str = "unknown"
 
 
 def estimate_input_tokens(payload: bytes) -> int:
-    """Conservatively reserve UTF-8 bytes plus envelope allowance, not exact tokens.
+    """Predict input from UTF-8 bytes and an envelope allowance, not exact tokens.
 
     The complete serialized request includes state, questions, schema and model
-    settings. This intentionally overestimates common text tokenization; service
-    usage remains the source for actual token counts.
+    settings. Provider templates and accounting can exceed this prediction;
+    role-specific overhead and actual usage feedback must account for that.
     """
     return len(payload) + 64
 
@@ -69,6 +82,10 @@ def _number(value):
         return number if math.isfinite(number) and number >= 0 else None
     except (TypeError, ValueError):
         return None
+
+
+def _usage_count(value):
+    return type(value) is int and 0 <= value <= 2 ** 63 - 1
 
 
 def _reset_seconds(value):
@@ -108,6 +125,8 @@ class RequestController:
         self._request_reset = self._token_reset = 0.0
         self._bootstrap_done = not limits.learn_headers
         self._virtual_offset = 0.0
+        self._input_multiplier = 1.0
+        self._usage_charges = {}
 
     def _now(self):
         return self._clock() + self._virtual_offset
@@ -152,14 +171,17 @@ class RequestController:
             raise kind(message)
 
     def admit(self, estimated_input_tokens, output_tokens=0, *, deadline,
-              sleep=time.sleep, cancel_event=None):
-        reserved = estimated_input_tokens + output_tokens
+              sleep=time.sleep, cancel_event=None, adaptive_estimate=False):
+        base_estimate = estimated_input_tokens
         waited, reasons = 0.0, []
         while True:
             check_cancelled(cancel_event)
             with self._lock:
                 self._raise_terminal()
                 now = self._now()
+                multiplier = self._input_multiplier if adaptive_estimate else 1.0
+                predicted_input = math.ceil(base_estimate * multiplier)
+                reserved = predicted_input + output_tokens
                 if now >= deadline:
                     raise RequestDeadlineError("The request operation deadline was reached before sending.")
                 window = self.limits.window_seconds
@@ -176,12 +198,14 @@ class RequestController:
                     waits.append((self._pause_until - now, self._pause_reason or "shared_cooldown"))
                 if now < self._next_send:
                     waits.append((self._next_send - now, "request_pacing"))
-                if self._requests is not None and len(self._reservations) + 1 > self._requests:
-                    waits.append((self._reservations[0][0] + window - now, "request_window"))
+                request_count = sum(item[3] for item in self._reservations)
+                if self._requests is not None and request_count + 1 > self._requests:
+                    oldest_request = next(item for item in self._reservations if item[3])
+                    waits.append((oldest_request[0] + window - now, "request_window"))
                 token_sum = sum(item[2] for item in self._reservations)
                 if self._tokens is not None and token_sum + reserved > self._tokens:
                     excess = token_sum + reserved - self._tokens
-                    for sent_at, _, tokens in self._reservations:
+                    for sent_at, _, tokens, _ in self._reservations:
                         excess -= tokens
                         if excess <= 0:
                             waits.append((sent_at + window - now, "token_window"))
@@ -193,7 +217,7 @@ class RequestController:
                 if not waits:
                     self._sequence += 1
                     sequence = self._sequence
-                    self._reservations.append((now, sequence, reserved))
+                    self._reservations.append([now, sequence, reserved, True])
                     self._pending[sequence] = reserved
                     if self._header_requests is not None:
                         self._header_requests -= 1
@@ -208,7 +232,8 @@ class RequestController:
                         fraction = max(0.0, (now - self._ramp_start) / self.limits.recovery_seconds)
                         spacing = max(spacing, .25 * (1.0 - fraction))
                     self._next_send = now + spacing
-                    return Admission(sequence, estimated_input_tokens, reserved, waited, tuple(reasons))
+                    return Admission(sequence, predicted_input, reserved, waited, tuple(reasons),
+                                     base_estimate, multiplier, output_tokens, adaptive_estimate)
                 delay, reason = max(waits)
                 for _, waiting_reason in waits:
                     if waiting_reason not in reasons:
@@ -217,7 +242,47 @@ class RequestController:
             self.wait(delay, sleep, cancel_event, deadline)
             waited += delay
 
-    def complete(self, admission, *, headers=None, error=None, cooldown=0.0):
+    def _reconcile_usage(self, admission, input_tokens, output_tokens, now):
+        """Keep reservations or add observed debt; actual usage never refunds capacity."""
+        if admission is None:
+            return UsageFeedback(estimation_multiplier_after=self._input_multiplier)
+        if input_tokens is None:
+            return UsageFeedback(admission.reserved_tokens,
+                estimation_multiplier_after=self._input_multiplier)
+        if not _usage_count(input_tokens) or (output_tokens is not None and not _usage_count(output_tokens)):
+            return UsageFeedback(admission.reserved_tokens,
+                estimation_multiplier_after=self._input_multiplier, usage_status="invalid")
+        # Jev has an input-only token window. Other callers may reserve output;
+        # unknown output retains that reservation instead of returning credit.
+        actual = input_tokens
+        if admission.reserved_output_tokens:
+            actual += output_tokens if output_tokens is not None else admission.reserved_output_tokens
+        previous, _ = self._usage_charges.get(admission.sequence, (admission.reserved_tokens, now))
+        charged = max(previous, actual)
+        additional = charged - previous
+        if additional:
+            reservation = next((item for item in self._reservations
+                if item[1] == admission.sequence and item[0] > now - self.limits.window_seconds), None)
+            if reservation is None:
+                # A late response must not make excess usage disappear merely
+                # because its original admission has expired from the window.
+                self._reservations.append([now, admission.sequence, additional, False])
+            else:
+                reservation[2] += additional
+            if self._header_tokens is not None:
+                self._header_tokens = max(0, self._header_tokens - additional)
+        adjusted = False
+        if admission.adaptive_estimate and input_tokens > admission.estimated_input_tokens:
+            base = admission.base_estimated_input_tokens or admission.estimated_input_tokens
+            updated = max(self._input_multiplier, 1.25 * input_tokens / max(1, base))
+            adjusted = updated > self._input_multiplier
+            self._input_multiplier = updated
+        self._usage_charges[admission.sequence] = charged, now
+        return UsageFeedback(charged, charged - admission.reserved_tokens,
+            self._input_multiplier, adjusted, "reported")
+
+    def complete(self, admission, *, headers=None, error=None, cooldown=0.0,
+                 input_tokens=None, output_tokens=None):
         """Publish service feedback before another retry or worker can send."""
         with self._lock:
             now = self._now()
@@ -225,6 +290,9 @@ class RequestController:
                 self._header_requests = None
             if now >= self._token_reset:
                 self._header_tokens = None
+            feedback = self._reconcile_usage(admission, input_tokens, output_tokens, now)
+            self._usage_charges = {key: value for key, value in self._usage_charges.items()
+                                  if value[1] > now - self.limits.window_seconds}
             sequence = admission.sequence if admission else -1
             self._pending.pop(sequence, None)
             values = _headers(headers)
@@ -247,7 +315,7 @@ class RequestController:
                                        if item[1] > sequence or item[1] in self._pending]
                         later = sum(item[2] for item in outstanding)
                         if resource == "requests":
-                            later = len(outstanding)
+                            later = sum(item[3] for item in outstanding)
                         allowance = max(0, remaining - later)
                         rem_attr = "_header_requests" if resource == "requests" else "_header_tokens"
                         reset_attr = "_request_reset" if resource == "requests" else "_token_reset"
@@ -271,12 +339,14 @@ class RequestController:
                     self._pause_reason = "service_error_cooldown"
                     self._ramp_start = self._pause_until
                     self._next_send = max(self._next_send, self._pause_until)
+            return feedback
 
     def snapshot(self):
         with self._lock:
             return {"request_limit": self._requests, "token_limit": self._tokens,
                     "window_seconds": self.limits.window_seconds,
                     "header_learning": self.limits.learn_headers,
+                    "input_estimation_multiplier": self._input_multiplier,
                     "terminal_error": self._terminal[0].__name__ if self._terminal else None,
                     "scope": "process-local explicitly shared request scope"}
 

@@ -467,6 +467,8 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--evaluator-token-limit` | `OVS_EVALUATOR_TOKEN_LIMIT` | 80000 estimated input tokens per window |
 | `--evaluator-rate-window` | `OVS_EVALUATOR_RATE_WINDOW_SECONDS` | 1 second |
 | `--evaluator-limit-group` | `OVS_EVALUATOR_LIMIT_GROUP` | Model identifier; explicitly group models sharing a service limit |
+| `--evaluator-token-request-overhead` | `OVS_EVALUATOR_TOKEN_REQUEST_OVERHEAD` | 256 predicted input tokens for unknown request templates (range 0–100000) |
+| `--evaluator-token-question-overhead` | `OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD` | 128 predicted input tokens per question for unknown question templates (range 0–100000) |
 | `--llm-operation-timeout` | `OVS_LLM_OPERATION_TIMEOUT_SECONDS` | 360 seconds for the complete generation operation |
 | `--llm-max-output-tokens` | `OVS_LLM_MAX_OUTPUT_TOKENS` | 16384 OpenAI output tokens, including reasoning; Ollama generation remains unchanged |
 | `--llm-request-limit` | `OVS_LLM_REQUEST_LIMIT` | Unset; optional physical request ceiling per window |
@@ -526,14 +528,28 @@ requests/s while allowing concurrent in-flight calls. This fallback is not a
 guarantee about unknown account limits. Header learning uses minute windows;
 disable it when configuring another OpenAI window duration.
 
-Token reservations use the complete serialized UTF-8 request length plus an
-envelope allowance, including questions, criteria, state and output schema. This
-is a conservative estimate, not exact tokenization. OpenAI additionally reserves
-its explicit `max_output_tokens` ceiling (including reasoning); incomplete
-responses are rejected and recorded. A request estimated larger than a configured
-or learned token window fails visibly before sending, without truncating source
-text. Adjust the output budget or limit explicitly when appropriate. Actual
-provider usage remains separate from estimated admission reservations.
+Token predictions use the complete serialized UTF-8 request length plus a
+64-token envelope allowance, including questions, criteria, state and output
+schema. Provider templates are unknown, so this is not an upper bound or exact
+tokenization. Jev also predicts 256 tokens per request and 128 per question for
+unknown template overhead; both allowances are configurable. If reported input
+usage exceeds its prediction, the shared controller raises future predictions to
+125% of that observed ratio. Queued sends and retries use the current multiplier.
+Reported excess is charged to the shared window, including for invalid decisions
+with valid usage. Late excess feedback adds debt for a full window after arrival;
+lower usage never refunds capacity. Actual Jev output usage is reported separately
+and does not consume its input-only token window. Records expose base prediction,
+multiplier before/after feedback, original reservation, accounted tokens, excess
+adjustment and whether usage is reported, unknown or invalid.
+
+OpenAI additionally reserves its explicit `max_output_tokens` ceiling (including
+reasoning); incomplete responses are rejected and recorded. A request predicted
+larger than a configured or learned token window fails visibly before sending,
+without truncating source text. Adjust the output budget, overhead or limit
+explicitly when appropriate. Actual provider usage remains separate from admission
+predictions. Prediction error can affect already sent requests before feedback
+arrives, and neither prediction headroom nor feedback controls other account
+consumers; these local controls are not an account-wide usage guarantee.
 
 A temporary 429 publishes a cooldown for both new requests and retries in the
 affected controller. Already sent requests finish; recovery is paced gradually

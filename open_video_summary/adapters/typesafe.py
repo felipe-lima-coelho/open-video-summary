@@ -36,7 +36,9 @@ from open_video_summary.errors import (
 )
 from open_video_summary.utils.progress import notify
 from open_video_summary.utils.retry import check_cancelled, retry_after, retry_delay
-from open_video_summary.utils.request_control import RequestLimits, RequestScope, estimate_input_tokens
+from open_video_summary.utils.request_control import (
+    RequestLimits, RequestScope, UsageFeedback, _usage_count, estimate_input_tokens,
+)
 
 DEFAULT_TYPESAFE_MODEL = "jev-1.13.0"
 _ENDPOINT_PATH = "/v1/systemone"
@@ -64,6 +66,8 @@ class TypeSafeConfig:
     token_limit: int = 80000
     rate_window_seconds: float = 1.0
     limit_group: str | None = None
+    token_request_overhead: int = 256
+    token_question_overhead: int = 128
     provider: str = field(default="typesafe", init=False)
 
     def __post_init__(self) -> None:
@@ -126,6 +130,10 @@ class TypeSafeConfig:
             raise ConfigurationError("TypeSafe operation_timeout_seconds must be positive and finite.")
         RequestLimits(requests=self.request_limit, tokens=self.token_limit,
                       window_seconds=self.rate_window_seconds)
+        for name in ("token_request_overhead", "token_question_overhead"):
+            value = getattr(self, name)
+            if type(value) is not int or not 0 <= value <= 100000:
+                raise ConfigurationError(f"TypeSafe {name} must be an integer from 0 to 100000.")
 
 
 @dataclass(frozen=True)
@@ -265,7 +273,9 @@ class TypeSafeEvaluator:
         }
         started = time.monotonic()
         deadline = self.controller.deadline(self.config.operation_timeout_seconds)
-        estimated = estimate_input_tokens(request_body)
+        self._question_count = len(question_specs)
+        estimated = (estimate_input_tokens(request_body) + self.config.token_request_overhead
+                     + self._question_count * self.config.token_question_overhead)
         self._estimated_input = estimated
         previous_error = None
         pending_retry_wait = 0.0
@@ -273,18 +283,25 @@ class TypeSafeEvaluator:
             check_cancelled(self.cancel_event)
             request_started = time.monotonic()
             admission, sent, response_headers = None, False, None
+            self._usage, self._usage_status = (None, None), "unknown"
+            self._feedback = UsageFeedback()
             self._retry_wait, pending_retry_wait = pending_retry_wait, 0.0
             notify(self.progress, ProviderProgress("attempt_started", self.config.provider,
                 attempt, self.config.max_attempts))
             try:
                 admission = self.controller.admit(estimated, deadline=deadline,
-                    sleep=self.sleep, cancel_event=self.cancel_event)
+                    sleep=self.sleep, cancel_event=self.cancel_event, adaptive_estimate=True)
                 timeout = min(self.config.timeout_seconds, self.controller.remaining(deadline))
                 check_cancelled(self.cancel_event)
                 sent = True
                 response = self.transport(url, headers=headers.copy(), body=request_body, timeout=timeout)
                 if not isinstance(response, TransportResponse):
                     raise InvalidResponseError("TypeSafe transport returned an invalid response.")
+                document = None
+                if type(response.status_code) is int and 200 <= response.status_code < 300:
+                    # Capture trustworthy usage before header, deadline or domain
+                    # validation can fail. Rejected decisions still cost tokens.
+                    document = self._read_document(response)
                 if (type(response.status_code) is not int or not 100 <= response.status_code <= 599
                         or not isinstance(response.headers, Mapping)
                         or any(not isinstance(key, str) or not isinstance(value, str)
@@ -296,8 +313,9 @@ class TypeSafeEvaluator:
                 if not 200 <= response.status_code < 300:
                     raise self._http_error(response.status_code, response.body)
                 answers, returned_model, input_tokens, output_tokens = self._parse_response(
-                    response, noul_ids, choice_options)
-                self.controller.complete(admission, headers=response_headers)
+                    response, noul_ids, choice_options, document=document)
+                self._feedback = self.controller.complete(admission, headers=response_headers,
+                    input_tokens=input_tokens, output_tokens=output_tokens)
                 metadata = EvaluationMetadata(requested_model=self.config.model,
                     returned_model=returned_model, duration_seconds=max(0.0, time.monotonic() - started),
                     attempts=attempt, status="success", input_tokens=input_tokens, output_tokens=output_tokens,
@@ -318,9 +336,11 @@ class TypeSafeEvaluator:
                 delay = retry_delay(attempt, self.config.retry_backoff_seconds,
                     backoff_cap=_MAX_BACKOFF_SECONDS,
                     retry_after_seconds=retry_after(response_headers), jitter=self.jitter)
-                self.controller.complete(admission, headers=response_headers, error=error, cooldown=delay)
+                self._feedback = self.controller.complete(admission, headers=response_headers,
+                    error=error, cooldown=delay, input_tokens=self._usage[0], output_tokens=self._usage[1])
                 self._record(replace(self._failed_metadata(attempt,
                     time.monotonic() - request_started, error),
+                    input_tokens=self._usage[0], output_tokens=self._usage[1],
                     **self._attempt_fields(admission, sent, type(error).__name__)))
                 # Invalid structured responses were never retried by this adapter.
                 retryable = isinstance(error, (RateLimitError, ServiceUnavailableError, ServiceTimeoutError))
@@ -336,15 +356,25 @@ class TypeSafeEvaluator:
 
     def _attempt_fields(self, admission, sent, retry_reason):
         limits = self.controller.snapshot()
+        predicted = (admission.estimated_input_tokens if admission else
+                     math.ceil(self._estimated_input * limits["input_estimation_multiplier"]))
+        feedback = self._feedback
         return dict(request_sent=sent,
-            estimated_input_tokens=admission.estimated_input_tokens if admission else self._estimated_input,
-            reserved_tokens=admission.reserved_tokens if admission else self._estimated_input,
+            estimated_input_tokens=predicted,
+            reserved_tokens=admission.reserved_tokens if admission else predicted,
             wait_seconds=(admission.wait_seconds if admission else 0.0) + self._retry_wait,
             wait_reasons=(admission.wait_reasons if admission else ())
                         + (("individual_retry_backoff",) if self._retry_wait else ()), retry_reason=retry_reason,
             operation_timeout_seconds=self.config.operation_timeout_seconds,
             request_limit=limits["request_limit"], token_limit=limits["token_limit"],
-            rate_window_seconds=limits["window_seconds"])
+            rate_window_seconds=limits["window_seconds"],
+            base_estimated_input_tokens=self._estimated_input,
+            estimation_multiplier=admission.estimation_multiplier if admission else limits["input_estimation_multiplier"],
+            estimation_multiplier_after=feedback.estimation_multiplier_after,
+            estimation_adjusted=feedback.estimation_adjusted,
+            accounted_tokens=feedback.accounted_tokens, token_adjustment=feedback.token_adjustment,
+            usage_status=self._usage_status, token_request_overhead=self.config.token_request_overhead,
+            token_question_overhead=self.config.token_question_overhead, question_count=self._question_count)
 
     def _build_questions(
         self,
@@ -417,26 +447,39 @@ class TypeSafeEvaluator:
             choice_options[identifier] = options
         return questions, noul_ids, choice_options
 
+    def _read_document(self, response):
+        """Capture valid input usage independently of decision validation."""
+        if not isinstance(response.body, bytes):
+            raise InvalidResponseError("TypeSafe returned a nonbinary response body.")
+        try:
+            document = json.loads(response.body.decode("utf-8"), object_pairs_hook=_unique_object_pairs)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            raise InvalidResponseError("TypeSafe returned malformed JSON.") from None
+        if not isinstance(document, dict):
+            raise InvalidResponseError("TypeSafe returned an invalid response envelope.")
+        usage = document.get("usage")
+        if usage is None:
+            self._usage, self._usage_status = (None, None), "unknown"
+        elif not isinstance(usage, dict):
+            self._usage, self._usage_status = (None, None), "invalid"
+        else:
+            values = tuple(usage.get(name) for name in ("input_tokens", "output_tokens"))
+            self._usage = tuple(value if _usage_count(value) else None for value in values)
+            invalid = any(value is not None and not _usage_count(value) for value in values)
+            self._usage_status = "invalid" if invalid else "reported" if self._usage[0] is not None else "unknown"
+        return document
+
     def _parse_response(
         self,
         response: TransportResponse,
         noul_ids: tuple[str, ...],
         choice_options: Mapping[str, tuple[str, ...]],
+        *, document=None,
     ) -> tuple[
         dict[str, NoulResult | ChoiceResult], str | None, int | None, int | None
     ]:
-        if not isinstance(response.body, bytes):
-            raise InvalidResponseError("TypeSafe returned a nonbinary response body.")
-        try:
-            document = json.loads(
-                response.body.decode("utf-8"), object_pairs_hook=_unique_object_pairs
-            )
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-            raise InvalidResponseError("TypeSafe returned malformed JSON.") from None
-        if not isinstance(document, dict):
-            raise InvalidResponseError(
-                "TypeSafe returned an invalid response envelope."
-            )
+        if document is None:
+            document = self._read_document(response)
         answers = document.get("answers")
         expected_ids = set(noul_ids).union(choice_options)
         if not isinstance(answers, dict) or set(answers) != expected_ids:
@@ -586,7 +629,7 @@ def _read_usage(value: object) -> tuple[int | None, int | None]:
         count = value.get(field_name)
         if count is None:
             values.append(None)
-        elif isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        elif _usage_count(count):
             values.append(count)
         else:
             raise InvalidResponseError("TypeSafe returned invalid usage metadata.")

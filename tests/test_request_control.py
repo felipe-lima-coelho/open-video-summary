@@ -249,7 +249,8 @@ class AdapterAdmissionTests(unittest.TestCase):
         evaluator.evaluate("state", noul={"q": "A long question " * 10})
         payload = transport.call_args.kwargs["body"]
         metadata = evaluator.records[0]
-        self.assertEqual(estimate_input_tokens(payload), metadata.reserved_tokens)
+        self.assertEqual(estimate_input_tokens(payload) + 256 + 128, metadata.reserved_tokens)
+        self.assertEqual("unknown", metadata.usage_status)
         self.assertGreater(metadata.reserved_tokens, len("state") + 100)
         self.assertEqual(60, metadata.request_limit)
         self.assertEqual(80000, metadata.token_limit)
