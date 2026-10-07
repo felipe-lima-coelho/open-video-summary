@@ -28,6 +28,17 @@ class ServiceMetadata:
     temperature_sent: float | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    request_sent: bool = False
+    estimated_input_tokens: int | None = None
+    reserved_tokens: int | None = None
+    wait_seconds: float = 0.0
+    wait_reasons: tuple[str, ...] = ()
+    retry_reason: str | None = None
+    max_output_tokens: int | None = None
+    operation_timeout_seconds: float | None = None
+    request_limit: float | None = None
+    token_limit: int | None = None
+    rate_window_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -112,6 +123,16 @@ class EvaluationMetadata:
     sdk_version: str | None = None
     provider: str = "unknown"
     adapter_version: str = "1"
+    request_sent: bool = False
+    estimated_input_tokens: int | None = None
+    reserved_tokens: int | None = None
+    wait_seconds: float = 0.0
+    wait_reasons: tuple[str, ...] = ()
+    retry_reason: str | None = None
+    operation_timeout_seconds: float | None = None
+    request_limit: float | None = None
+    token_limit: int | None = None
+    rate_window_seconds: float | None = None
 
 
 @dataclass(frozen=True)

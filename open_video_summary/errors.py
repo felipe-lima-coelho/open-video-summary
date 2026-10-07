@@ -17,6 +17,10 @@ class RequestCancelledError(ProviderError):
     """No further provider attempt may start after analysis interruption."""
 
 
+class RequestDeadlineError(ProviderError):
+    """A bounded operation cannot send or wait within its remaining deadline."""
+
+
 class AuthenticationError(ProviderError):
     pass
 

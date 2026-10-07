@@ -57,6 +57,11 @@ def _typesafe(config: EvaluatorConfig) -> Evaluator:
             timeout_seconds=config.timeout_seconds,
             max_attempts=config.max_attempts,
             retry_backoff_seconds=config.retry_backoff_seconds,
+            operation_timeout_seconds=config.operation_timeout_seconds,
+            request_limit=config.request_limit,
+            token_limit=config.token_limit,
+            rate_window_seconds=config.rate_window_seconds,
+            limit_group=config.limit_group,
         )
     )
 

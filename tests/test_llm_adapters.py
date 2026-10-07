@@ -50,6 +50,7 @@ class LLMAdapterTests(unittest.TestCase):
             reasoning_effort=effort,
             max_attempts=attempts,
             retry_backoff_seconds=0,
+            learn_rate_limits=False,
         )
         create = Mock(side_effect=outputs)
         adapter = OpenAIAdapter(
@@ -422,6 +423,49 @@ class ResponseInterpreterTests(unittest.TestCase):
     importlib.util.find_spec("httpx2"), "Pinned OpenAI SDK transport is not installed."
 )
 class InstalledOpenAISDKTests(unittest.TestCase):
+    def test_actual_sdk_raw_headers_teach_limits_and_output_cap_is_sent(self):
+        import httpx2
+        from openai import OpenAI
+        sent = []
+        def handle(request):
+            sent.append(json.loads(request.content))
+            fixture = response("ok")
+            fixture.update({"id": "resp_offline", "object": "response", "created_at": 0})
+            return httpx2.Response(200, json=fixture, headers={
+                "x-ratelimit-limit-requests": "1000",
+                "x-ratelimit-limit-tokens": "1000000",
+                "x-ratelimit-limit-project-tokens": "500000",
+                "x-ratelimit-remaining-requests": "999",
+                "x-ratelimit-reset-requests": "60s"})
+        with httpx2.Client(transport=httpx2.MockTransport(handle)) as transport:
+            with OpenAI(api_key="synthetic-offline-key", http_client=transport) as client:
+                adapter = OpenAIAdapter(config=LLMConfig(provider="openai"), client=client)
+                result = adapter.generate(GenerationRequest("synthetic"))
+        self.assertEqual("ok", result.value)
+        self.assertEqual(16384, sent[0]["max_output_tokens"])
+        self.assertEqual(900, result.metadata.request_limit)
+        self.assertEqual(450000, result.metadata.token_limit)
+        self.assertTrue(result.metadata.request_sent)
+
+    def test_injected_sdk_default_retries_are_disabled_and_long_wait_obeys_deadline(self):
+        import httpx2
+        from openai import OpenAI
+        from open_video_summary.errors import RequestDeadlineError
+        sent = []
+        def handle(request):
+            sent.append(request)
+            return httpx2.Response(429, headers={"Retry-After": "60"},
+                json={"error": {"message": "synthetic", "type": "rate_limit_error", "code": "slow_down"}})
+        with httpx2.Client(transport=httpx2.MockTransport(handle)) as transport:
+            with OpenAI(api_key="synthetic-offline-key", max_retries=2, http_client=transport) as client:
+                adapter = OpenAIAdapter(config=LLMConfig(provider="openai",
+                    operation_timeout_seconds=30), client=client, sleep=Mock())
+                with self.assertRaises(RequestDeadlineError):
+                    adapter.generate(GenerationRequest("synthetic"))
+        self.assertEqual(1, len(sent))
+        adapter._sleep.assert_not_called()
+        self.assertFalse(adapter.records[-1].request_sent)
+
     def test_actual_sdk_serializes_responses_request_on_offline_transport(self):
         import httpx2
         from openai import OpenAI

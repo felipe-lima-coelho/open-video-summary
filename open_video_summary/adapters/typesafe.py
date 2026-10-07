@@ -9,7 +9,7 @@ import socket
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from collections.abc import Mapping
 from typing import Callable
 from urllib.parse import urlsplit
@@ -28,15 +28,18 @@ from open_video_summary.errors import (
     ProviderError,
     ProviderConfigurationError,
     RateLimitError,
+    RequestCancelledError,
+    RequestDeadlineError,
     ServiceTimeoutError,
     ServiceUnavailableError,
 )
 from open_video_summary.utils.progress import notify
-from open_video_summary.utils.retry import check_cancelled, retry_after, retry_delay, wait_for_retry
+from open_video_summary.utils.retry import check_cancelled, retry_after, retry_delay
+from open_video_summary.utils.request_control import RequestLimits, RequestScope, estimate_input_tokens
 
 DEFAULT_TYPESAFE_MODEL = "jev-1.13.0"
 _ENDPOINT_PATH = "/v1/systemone"
-_MAX_RETRY_AFTER_SECONDS = 30.0
+_MAX_BACKOFF_SECONDS = 30.0
 _PROBABILITY_SUM_TOLERANCE = 0.02
 
 
@@ -55,6 +58,11 @@ class TypeSafeConfig:
     timeout_seconds: float = 30.0
     max_attempts: int = 2
     retry_backoff_seconds: float = 0.5
+    operation_timeout_seconds: float = 90.0
+    request_limit: float = 60.0
+    token_limit: int = 80000
+    rate_window_seconds: float = 1.0
+    limit_group: str | None = None
     provider: str = field(default="typesafe", init=False)
 
     def __post_init__(self) -> None:
@@ -113,6 +121,10 @@ class TypeSafeConfig:
             raise ConfigurationError(
                 "TypeSafe api_key must be a string when configured."
             )
+        if not _is_finite_number(self.operation_timeout_seconds) or self.operation_timeout_seconds <= 0:
+            raise ConfigurationError("TypeSafe operation_timeout_seconds must be positive and finite.")
+        RequestLimits(requests=self.request_limit, tokens=self.token_limit,
+                      window_seconds=self.rate_window_seconds)
 
 
 @dataclass(frozen=True)
@@ -178,7 +190,7 @@ class TypeSafeEvaluator:
         config: TypeSafeConfig,
         transport: Transport | None = None,
         sleep: Callable[[float], None] = time.sleep,
-        *, progress=None, jitter=random.uniform,
+        *, progress=None, jitter=random.uniform, request_scope=None,
     ) -> None:
         self.config = config
         self.transport = transport or _stdlib_transport
@@ -187,12 +199,20 @@ class TypeSafeEvaluator:
         self.cancel_event = None
         self.can_fork = transport is None
         self.records: list[EvaluationMetadata] = []
+        self.set_request_scope(request_scope or RequestScope())
+
+    def set_request_scope(self, scope):
+        self.request_scope = scope
+        self.controller = scope.controller(self.config, RequestLimits(
+            requests=self.config.request_limit, tokens=self.config.token_limit,
+            window_seconds=self.config.rate_window_seconds))
 
     def fork(self):
         """Keep worker metadata and transport ownership separate."""
         if not self.can_fork:
             raise ConfigurationError("An injected evaluator transport cannot be shared by workers.")
-        return type(self)(self.config, sleep=self.sleep, jitter=self.jitter)
+        return type(self)(self.config, sleep=self.sleep, jitter=self.jitter,
+                          request_scope=self.request_scope)
 
     def _record(self, metadata):
         self.records.append(metadata)
@@ -243,143 +263,87 @@ class TypeSafeEvaluator:
             "Accept": "application/json",
         }
         started = time.monotonic()
-
+        deadline = self.controller.deadline(self.config.operation_timeout_seconds)
+        estimated = estimate_input_tokens(request_body)
+        self._estimated_input = estimated
+        previous_error = None
+        pending_retry_wait = 0.0
         for attempt in range(1, self.config.max_attempts + 1):
             check_cancelled(self.cancel_event)
             request_started = time.monotonic()
+            admission, sent, response_headers = None, False, None
+            self._retry_wait, pending_retry_wait = pending_retry_wait, 0.0
             notify(self.progress, ProviderProgress("attempt_started", self.config.provider,
                 attempt, self.config.max_attempts))
             try:
-                response = self.transport(
-                    url,
-                    headers=headers.copy(),
-                    body=request_body,
-                    timeout=self.config.timeout_seconds,
-                )
-            except (TimeoutError, socket.timeout) as exc:
-                error = ServiceTimeoutError("TypeSafe request timed out.")
-                should_retry = True
-                retry_after = None
-                metadata = self._failed_metadata(
-                    attempt, time.monotonic() - request_started, error
-                )
+                admission = self.controller.admit(estimated, deadline=deadline,
+                    sleep=self.sleep, cancel_event=self.cancel_event)
+                timeout = min(self.config.timeout_seconds, self.controller.remaining(deadline))
+                check_cancelled(self.cancel_event)
+                sent = True
+                response = self.transport(url, headers=headers.copy(), body=request_body, timeout=timeout)
+                if not isinstance(response, TransportResponse):
+                    raise InvalidResponseError("TypeSafe transport returned an invalid response.")
+                if (type(response.status_code) is not int or not 100 <= response.status_code <= 599
+                        or not isinstance(response.headers, Mapping)
+                        or any(not isinstance(key, str) or not isinstance(value, str)
+                               for key, value in response.headers.items())
+                        or not isinstance(response.body, bytes)):
+                    raise InvalidResponseError("TypeSafe returned an invalid HTTP response.")
+                response_headers = response.headers
+                self.controller.remaining(deadline)
+                if not 200 <= response.status_code < 300:
+                    raise self._http_error(response.status_code, response.body)
+                answers, returned_model, input_tokens, output_tokens = self._parse_response(
+                    response, noul_ids, choice_options)
+                self.controller.complete(admission, headers=response_headers)
+                metadata = EvaluationMetadata(requested_model=self.config.model,
+                    returned_model=returned_model, duration_seconds=max(0.0, time.monotonic() - started),
+                    attempts=attempt, status="success", input_tokens=input_tokens, output_tokens=output_tokens,
+                    provider=self.config.provider,
+                    **self._attempt_fields(admission, sent, previous_error))
                 self._record(metadata)
-                if attempt < self.config.max_attempts and should_retry:
-                    self._wait_before_retry(attempt, retry_after)
-                    continue
-                raise error from None
-            except urllib.error.URLError as exc:
-                if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+                return EvaluationResult(tuple(answers[key] for key in noul_ids),
+                    tuple(answers[key] for key in choice_options), metadata)
+            except Exception as exc:
+                if isinstance(exc, ProviderError):
+                    error = exc
+                elif isinstance(exc, (TimeoutError, socket.timeout)) or (
+                        isinstance(exc, urllib.error.URLError)
+                        and isinstance(exc.reason, (TimeoutError, socket.timeout))):
                     error = ServiceTimeoutError("TypeSafe request timed out.")
                 else:
                     error = ServiceUnavailableError("TypeSafe could not be reached.")
-                metadata = self._failed_metadata(
-                    attempt, time.monotonic() - request_started, error
-                )
-                self._record(metadata)
-                if attempt < self.config.max_attempts:
-                    self._wait_before_retry(attempt, None)
-                    continue
-                raise error from None
-            except OSError as exc:
-                error = ServiceUnavailableError("TypeSafe could not be reached.")
-                metadata = self._failed_metadata(
-                    attempt, time.monotonic() - request_started, error
-                )
-                self._record(metadata)
-                if attempt < self.config.max_attempts:
-                    self._wait_before_retry(attempt, None)
-                    continue
-                raise error from None
-            except Exception as exc:
-                # Injected transports may wrap low-level failures differently.
-                # Do not retain or expose their exception text.
-                error = ServiceUnavailableError("TypeSafe request failed.")
-                metadata = self._failed_metadata(
-                    attempt, time.monotonic() - request_started, error
-                )
-                self._record(metadata)
-                if attempt < self.config.max_attempts:
-                    self._wait_before_retry(attempt, None)
-                    continue
-                raise error from None
-
-            if not isinstance(response, TransportResponse):
-                error = InvalidResponseError(
-                    "TypeSafe transport returned an invalid response."
-                )
-                self._record(
-                    self._failed_metadata(
-                        attempt, time.monotonic() - request_started, error
-                    )
-                )
-                raise error from None
-            if (
-                not isinstance(response.status_code, int)
-                or isinstance(response.status_code, bool)
-                or not 100 <= response.status_code <= 599
-                or not isinstance(response.headers, Mapping)
-                or any(
-                    not isinstance(key, str) or not isinstance(value, str)
-                    for key, value in response.headers.items()
-                )
-                or not isinstance(response.body, bytes)
-            ):
-                error = InvalidResponseError(
-                    "TypeSafe returned an invalid HTTP response."
-                )
-                self._record(
-                    self._failed_metadata(
-                        attempt, time.monotonic() - request_started, error
-                    )
-                )
-                raise error from None
-            if 200 <= response.status_code < 300:
-                try:
-                    answers, returned_model, input_tokens, output_tokens = (
-                        self._parse_response(response, noul_ids, choice_options)
-                    )
-                except InvalidResponseError as error:
-                    self._record(
-                        self._failed_metadata(
-                            attempt, time.monotonic() - request_started, error
-                        )
-                    )
+                delay = retry_delay(attempt, self.config.retry_backoff_seconds,
+                    backoff_cap=_MAX_BACKOFF_SECONDS,
+                    retry_after_seconds=retry_after(response_headers), jitter=self.jitter)
+                self.controller.complete(admission, headers=response_headers, error=error, cooldown=delay)
+                self._record(replace(self._failed_metadata(attempt,
+                    time.monotonic() - request_started, error),
+                    **self._attempt_fields(admission, sent, type(error).__name__)))
+                # Invalid structured responses were never retried by this adapter.
+                retryable = isinstance(error, (RateLimitError, ServiceUnavailableError, ServiceTimeoutError))
+                if not retryable or attempt == self.config.max_attempts:
                     raise error from None
-                metadata = EvaluationMetadata(
-                    requested_model=self.config.model,
-                    returned_model=returned_model,
-                    duration_seconds=max(0.0, time.monotonic() - started),
-                    attempts=attempt,
-                    status="success",
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    provider=self.config.provider,
-                )
-                self._record(metadata)
-                return EvaluationResult(
-                    noul=tuple(answers[key] for key in noul_ids),
-                    choice=tuple(answers[key] for key in choice_options),
-                    metadata=metadata,
-                )
-
-            error = self._http_error(response.status_code)
-            self._record(
-                self._failed_metadata(
-                    attempt, time.monotonic() - request_started, error
-                )
-            )
-            retryable = isinstance(
-                error,
-                (RateLimitError, ServiceUnavailableError, ServiceTimeoutError),
-            )
-            if attempt < self.config.max_attempts and retryable:
-                self._wait_before_retry(attempt, _retry_after(response.headers))
-                continue
-            raise error from None
-
-        # The loop always returns or raises, but keep static type checkers clear.
+                notify(self.progress, ProviderProgress("retry_scheduled", self.config.provider,
+                    attempt, self.config.max_attempts, delay_seconds=delay, error_type=type(error).__name__))
+                previous_error = type(error).__name__
+                if not isinstance(error, RateLimitError):
+                    self.controller.wait(delay, self.sleep, self.cancel_event, deadline)
+                    pending_retry_wait = delay
         raise ServiceUnavailableError("TypeSafe request failed.")
+
+    def _attempt_fields(self, admission, sent, retry_reason):
+        limits = self.controller.snapshot()
+        return dict(request_sent=sent,
+            estimated_input_tokens=admission.estimated_input_tokens if admission else self._estimated_input,
+            reserved_tokens=admission.reserved_tokens if admission else self._estimated_input,
+            wait_seconds=(admission.wait_seconds if admission else 0.0) + self._retry_wait,
+            wait_reasons=(admission.wait_reasons if admission else ())
+                        + (("individual_retry_backoff",) if self._retry_wait else ()), retry_reason=retry_reason,
+            operation_timeout_seconds=self.config.operation_timeout_seconds,
+            request_limit=limits["request_limit"], token_limit=limits["token_limit"],
+            rate_window_seconds=limits["window_seconds"])
 
     def _build_questions(
         self,
@@ -537,10 +501,19 @@ class TypeSafeEvaluator:
         input_tokens, output_tokens = _read_usage(document.get("usage"))
         return normalized, returned_model, input_tokens, output_tokens
 
-    def _http_error(self, status_code: int) -> ProviderError:
+    def _http_error(self, status_code: int, body: bytes = b"") -> ProviderError:
         if status_code in {401, 403}:
             return AuthenticationError("TypeSafe authentication failed.")
         if status_code == 429:
+            try:
+                detail = json.loads(body)
+                detail = detail.get("error", detail) if isinstance(detail, dict) else None
+                code = detail.get("code") if isinstance(detail, dict) else None
+            except (ValueError, TypeError):
+                code = None
+            if isinstance(code, str) and code in {"insufficient_quota", "billing_hard_limit_reached", "quota_exceeded",
+                        "billing_limit_exceeded", "usage_limit_reached"}:
+                return ProviderConfigurationError("TypeSafe quota or billing limit was reached.")
             return RateLimitError("TypeSafe request limit was reached.")
         if status_code == 408:
             return ServiceTimeoutError("TypeSafe request timed out.")
@@ -565,6 +538,10 @@ class TypeSafeEvaluator:
             status = "timeout"
         elif isinstance(error, ServiceUnavailableError):
             status = "service_unavailable"
+        elif isinstance(error, RequestDeadlineError):
+            status = "deadline_exceeded"
+        elif isinstance(error, RequestCancelledError):
+            status = "cancelled"
         elif isinstance(error, ConfigurationError):
             status = "request_rejected"
         else:
@@ -577,15 +554,6 @@ class TypeSafeEvaluator:
             status=status,
             provider=self.config.provider,
         )
-
-    def _wait_before_retry(self, attempt: int, retry_after: float | None) -> None:
-        delay = retry_delay(attempt, self.config.retry_backoff_seconds,
-            backoff_cap=_MAX_RETRY_AFTER_SECONDS, retry_after_seconds=retry_after,
-            jitter=self.jitter)
-        notify(self.progress, ProviderProgress("retry_scheduled", self.config.provider,
-            attempt, self.config.max_attempts, delay_seconds=delay))
-        wait_for_retry(delay, self.sleep, self.cancel_event)
-
 
 def _validate_identifier(value: object) -> None:
     if not isinstance(value, str) or not value.strip():
@@ -623,4 +591,4 @@ def _read_usage(value: object) -> tuple[int | None, int | None]:
 
 
 def _retry_after(headers: Mapping[str, str]) -> float | None:
-    return retry_after(headers, _MAX_RETRY_AFTER_SECONDS)
+    return retry_after(headers)

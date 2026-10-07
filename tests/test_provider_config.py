@@ -41,6 +41,42 @@ class ProviderConfigurationTests(unittest.TestCase):
         external = self.load(environ={"OVS_LLM_PROVIDER": "openai"})
         self.assertEqual("https://api.openai.com/v1", external.llm.base_url)
         self.assertEqual("gpt-6-luna", external.llm.model)
+        self.assertEqual(360, external.llm.operation_timeout_seconds)
+        self.assertEqual(16384, external.llm.max_output_tokens)
+        self.assertIsNone(external.llm.request_limit)
+        self.assertIsNone(external.llm.token_limit)
+        self.assertTrue(external.llm.learn_rate_limits)
+
+    def test_request_controls_respect_cli_process_file_and_validate_limits(self):
+        self.env.write_text("OVS_LLM_PROVIDER=openai\nOVS_LLM_REQUEST_LIMIT=100\n"
+            "OVS_LLM_TOKEN_LIMIT=100000\nOVS_LLM_OPERATION_TIMEOUT_SECONDS=400\n"
+            "OVS_LLM_MAX_OUTPUT_TOKENS=8000\nOVS_LLM_PROJECT=fixture-project\n"
+            "OVS_LLM_LIMIT_GROUP=fixture-family\n", encoding="utf-8")
+        config = self.load({"llm_request_limit": 50}, {"OVS_LLM_REQUEST_LIMIT": "80"})
+        self.assertEqual(50, config.llm.request_limit)
+        self.assertEqual(100000, config.llm.token_limit)
+        self.assertEqual(400, config.llm.operation_timeout_seconds)
+        self.assertEqual(8000, config.llm.max_output_tokens)
+        self.assertEqual("fixture-project", config.llm.project)
+        self.assertEqual("fixture-family", config.llm.limit_group)
+        for name, value in (("OVS_LLM_REQUEST_LIMIT", "0"), ("OVS_LLM_TOKEN_LIMIT", "NaN"),
+                            ("OVS_LLM_OPERATION_TIMEOUT_SECONDS", "-1"),
+                            ("OVS_LLM_LEARN_RATE_LIMITS", "maybe")):
+            with self.subTest(name=name):
+                with self.assertRaises(ConfigurationError):
+                    self.load(environ={name: value})
+
+    def test_evaluator_window_defaults_and_overrides_are_independent(self):
+        defaults = load_evaluator_config(environ={}, env_file=self.env)
+        self.assertEqual((60, 80000, 1, 90), (defaults.request_limit, defaults.token_limit,
+            defaults.rate_window_seconds, defaults.operation_timeout_seconds))
+        self.env.write_text("OVS_EVALUATOR_REQUEST_LIMIT=55\nOVS_EVALUATOR_TOKEN_LIMIT=75000\n"
+            "OVS_EVALUATOR_OPERATION_TIMEOUT_SECONDS=80\n", encoding="utf-8")
+        selected = load_evaluator_config({"evaluator_request_limit": 40},
+            environ={"OVS_EVALUATOR_REQUEST_LIMIT": "50"}, env_file=self.env)
+        self.assertEqual(40, selected.request_limit)
+        self.assertEqual(75000, selected.token_limit)
+        self.assertEqual(80, selected.operation_timeout_seconds)
 
     def test_cli_process_file_and_default_precedence(self):
         self.env.write_text(

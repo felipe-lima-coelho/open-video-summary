@@ -22,23 +22,36 @@ def wait_for_retry(delay, sleep, cancel_event=None):
     check_cancelled(cancel_event)
 
 
-def retry_after(headers, cap=30.0):
+def retry_after(headers, cap=None, *, now=None):
+    """Parse the server's minimum delay without shortening it to a local cap.
+
+    ``cap`` is retained for source compatibility but deliberately does not clip
+    an advertised delay. The operation deadline decides whether waiting fits.
+    """
     value = next((value for key, value in (headers or {}).items()
-                  if key.lower() == "retry-after"), None)
+                  if str(key).lower() == "retry-after"), None)
+    if value is None:
+        milliseconds = next((value for key, value in (headers or {}).items()
+                             if str(key).lower() == "retry-after-ms"), None)
+        try:
+            seconds = float(milliseconds) / 1000
+            return max(0.0, seconds) if math.isfinite(seconds) else None
+        except (TypeError, ValueError):
+            return None
     if value is None:
         return None
     try:
         seconds = float(value)
         if math.isfinite(seconds):
-            return min(cap, max(0.0, seconds))
+            return max(0.0, seconds)
     except (TypeError, ValueError):
         pass
     try:
         date = parsedate_to_datetime(value)
         if date.tzinfo is None:
             date = date.replace(tzinfo=timezone.utc)
-        return min(cap, max(0.0, (date.astimezone(timezone.utc)
-                                 - datetime.now(timezone.utc)).total_seconds()))
+        return max(0.0, (date.astimezone(timezone.utc)
+                         - (now or datetime.now(timezone.utc))).total_seconds())
     except (TypeError, ValueError, OverflowError):
         return None
 

@@ -206,11 +206,11 @@ class TypeSafeAdapterTests(unittest.TestCase):
         self.assertEqual("jev-1.12.0", json.loads(transport.calls[0]["body"])["model"])
         self.assertEqual("jev-1.12.0", result.metadata.requested_model)
 
-    def test_retries_rate_limit_with_capped_retry_after_and_records_failure(self):
+    def test_retries_rate_limit_with_full_retry_after_and_records_failure(self):
         transport = FakeTransport(
             TransportResponse(
                 429,
-                {"Retry-After": "900"},
+                {"Retry-After": "60"},
                 b'{"error":"private service details"}',
             ),
             response({"q": {"type": "noul", "noul": 0.5}}),
@@ -223,7 +223,8 @@ class TypeSafeAdapterTests(unittest.TestCase):
         result = evaluator.evaluate("private transcript", noul={"q": "Question?"})
 
         self.assertEqual(2, len(transport.calls))
-        self.assertEqual([30.0], waits)
+        self.assertEqual(1, len(waits))
+        self.assertAlmostEqual(60.0, waits[0], places=2)
         self.assertEqual(
             ["rate_limited", "success"], [r.status for r in evaluator.records]
         )

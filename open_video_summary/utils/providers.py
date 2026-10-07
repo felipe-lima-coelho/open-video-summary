@@ -23,6 +23,15 @@ class LLMConfig:
     timeout_seconds: float = 120.0
     max_attempts: int = 3
     retry_backoff_seconds: float = 1.0
+    operation_timeout_seconds: float = 360.0
+    max_output_tokens: int = 16384
+    request_limit: float | None = None
+    token_limit: int | None = None
+    rate_window_seconds: float = 60.0
+    learn_rate_limits: bool = True
+    organization: str | None = None
+    project: str | None = None
+    limit_group: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +56,11 @@ class EvaluatorConfig:
     timeout_seconds: float = 30.0
     max_attempts: int = 2
     retry_backoff_seconds: float = 0.5
+    operation_timeout_seconds: float = 90.0
+    request_limit: float = 60.0
+    token_limit: int = 80000
+    rate_window_seconds: float = 1.0
+    limit_group: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +84,17 @@ def _positive(value, name: str, *, integer: bool = False):
     if result <= 0 or not math.isfinite(result):
         raise ConfigurationError(f"{name} must be a positive number.")
     return result
+
+
+def _optional_positive(value, name, *, integer=False):
+    return None if _optional(value) is None else _positive(value, name, integer=integer)
+
+
+def _boolean(value, name):
+    value = str(value).strip().lower()
+    if value not in {"true", "false", "1", "0"}:
+        raise ConfigurationError(f"{name} must be true or false.")
+    return value in {"true", "1"}
 
 
 def load_environment_values(
@@ -178,6 +203,25 @@ def load_provider_config(
             "OVS_LLM_TIMEOUT_SECONDS",
         ),
         max_attempts=attempts,
+        operation_timeout_seconds=_positive(
+            get("llm_operation_timeout", "OVS_LLM_OPERATION_TIMEOUT_SECONDS", "360"),
+            "OVS_LLM_OPERATION_TIMEOUT_SECONDS"),
+        max_output_tokens=_positive(
+            get("llm_max_output_tokens", "OVS_LLM_MAX_OUTPUT_TOKENS", "16384"),
+            "OVS_LLM_MAX_OUTPUT_TOKENS", integer=True),
+        request_limit=_optional_positive(
+            get("llm_request_limit", "OVS_LLM_REQUEST_LIMIT"), "OVS_LLM_REQUEST_LIMIT"),
+        token_limit=_optional_positive(
+            get("llm_token_limit", "OVS_LLM_TOKEN_LIMIT"), "OVS_LLM_TOKEN_LIMIT", integer=True),
+        rate_window_seconds=_positive(
+            get("llm_rate_window", "OVS_LLM_RATE_WINDOW_SECONDS", "60"),
+            "OVS_LLM_RATE_WINDOW_SECONDS"),
+        learn_rate_limits=_boolean(
+            get("llm_learn_rate_limits", "OVS_LLM_LEARN_RATE_LIMITS", "true"),
+            "OVS_LLM_LEARN_RATE_LIMITS"),
+        organization=get("llm_organization", "OVS_LLM_ORGANIZATION"),
+        project=get("llm_project", "OVS_LLM_PROJECT"),
+        limit_group=get("llm_limit_group", "OVS_LLM_LIMIT_GROUP"),
     )
     language = get("language", "OVS_STT_LANGUAGE", "pt")
     stt = STTConfig(
@@ -241,6 +285,19 @@ def load_evaluator_config(
             "OVS_EVALUATOR_MAX_ATTEMPTS",
             integer=True,
         ),
+        operation_timeout_seconds=_positive(
+            get("evaluator_operation_timeout", "OVS_EVALUATOR_OPERATION_TIMEOUT_SECONDS", "90"),
+            "OVS_EVALUATOR_OPERATION_TIMEOUT_SECONDS"),
+        request_limit=_positive(
+            get("evaluator_request_limit", "OVS_EVALUATOR_REQUEST_LIMIT", "60"),
+            "OVS_EVALUATOR_REQUEST_LIMIT"),
+        token_limit=_positive(
+            get("evaluator_token_limit", "OVS_EVALUATOR_TOKEN_LIMIT", "80000"),
+            "OVS_EVALUATOR_TOKEN_LIMIT", integer=True),
+        rate_window_seconds=_positive(
+            get("evaluator_rate_window", "OVS_EVALUATOR_RATE_WINDOW_SECONDS", "1"),
+            "OVS_EVALUATOR_RATE_WINDOW_SECONDS"),
+        limit_group=get("evaluator_limit_group", "OVS_EVALUATOR_LIMIT_GROUP"),
     )
     try:
         endpoint = urlsplit(config.base_url)

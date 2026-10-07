@@ -32,7 +32,8 @@ from open_video_summary.errors import (
 )
 from open_video_summary.utils.providers import LLMConfig
 from open_video_summary.utils.progress import notify
-from open_video_summary.utils.retry import check_cancelled, retry_after, retry_delay, wait_for_retry
+from open_video_summary.utils.retry import check_cancelled, retry_after, retry_delay
+from open_video_summary.utils.request_control import RequestLimits, RequestScope, estimate_input_tokens
 
 
 def _value(obj, key: str, default=None):
@@ -62,7 +63,13 @@ def _external_error(exc: Exception, provider: str) -> ProviderError:
     if status in {401, 403} or name in {"AuthenticationError", "PermissionDeniedError"}:
         return AuthenticationError(f"{provider} authentication or permission failed.")
     if status == 429 or name == "RateLimitError":
-        if code in {"insufficient_quota", "billing_hard_limit_reached"}:
+        error_type = _value(detail, "type")
+        terminal_codes = {"insufficient_quota", "billing_hard_limit_reached", "quota_exceeded",
+                          "billing_limit_exceeded", "usage_limit_reached", "credit_balance_exhausted",
+                          "organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+                          "organization_usage_limit_exceeded"}
+        if (isinstance(code, str) and code in terminal_codes
+                or isinstance(error_type, str) and error_type in terminal_codes):
             return ProviderConfigurationError(f"{provider} quota or billing limit was reached.")
         return RateLimitError(f"{provider} request limit was reached.")
     if isinstance(exc, TimeoutError) or "Timeout" in name or status == 408:
@@ -273,7 +280,7 @@ class LLMAdapter(ABC):
     """One finite budget covers external failures and invalid domain responses."""
 
     def __init__(self, config: LLMConfig, *, client=None, sleep=time.sleep,
-                 progress=None, jitter=random.uniform):
+                 progress=None, jitter=random.uniform, request_scope=None):
         self.config = config
         self.model = config.model
         self.max_attempts = config.max_attempts
@@ -286,6 +293,14 @@ class LLMAdapter(ABC):
         self.cancel_event = None
         self.interpreter = DomainResponseInterpreter()
         self._validate_config()
+        self.set_request_scope(request_scope or RequestScope())
+
+    def set_request_scope(self, scope):
+        self.request_scope = scope
+        self.controller = scope.controller(self.config, RequestLimits(
+            requests=self.config.request_limit, tokens=self.config.token_limit,
+            window_seconds=self.config.rate_window_seconds,
+            learn_headers=self.config.provider == "openai" and self.config.learn_rate_limits))
 
     @property
     def can_fork(self):
@@ -295,7 +310,8 @@ class LLMAdapter(ABC):
         """Create private request state and a separate lazily constructed client."""
         if not self.can_fork:
             raise ConfigurationError("An injected LLM client cannot be shared by workers.")
-        return type(self)(config=self.config, sleep=self._sleep, jitter=self._jitter)
+        return type(self)(config=self.config, sleep=self._sleep, jitter=self._jitter,
+                          request_scope=self.request_scope)
 
     def _record(self, metadata):
         self.records.append(metadata)
@@ -319,6 +335,37 @@ class LLMAdapter(ABC):
             raise ConfigurationError(
                 "Provider timeouts must be positive and retry delays nonnegative."
             )
+        if (not math.isfinite(self.config.operation_timeout_seconds)
+                or self.config.operation_timeout_seconds <= 0
+                or type(self.config.max_output_tokens) is not int
+                or self.config.max_output_tokens < 1):
+            raise ConfigurationError("Operation deadlines and output token budgets must be positive.")
+        if (self.config.provider == "openai" and self.config.learn_rate_limits
+                and self.config.rate_window_seconds != 60):
+            raise ConfigurationError("OpenAI header learning requires a 60-second window; disable learning to use a custom window.")
+
+    def _admit(self, payload, *, output_tokens=0):
+        self._estimated_input = estimate_input_tokens(payload)
+        self._reserved_tokens = self._estimated_input + output_tokens
+        self._admission = self.controller.admit(self._estimated_input, output_tokens,
+            deadline=self._operation_deadline, sleep=self._sleep, cancel_event=self.cancel_event)
+        self._attempt_timeout = min(self.config.timeout_seconds,
+                                    self.controller.remaining(self._operation_deadline))
+        check_cancelled(self.cancel_event)
+
+    def _attempt_fields(self, retry_reason=None):
+        admission = self._admission
+        limits = self.controller.snapshot()
+        return dict(request_sent=self._request_sent,
+            estimated_input_tokens=admission.estimated_input_tokens if admission else self._estimated_input,
+            reserved_tokens=admission.reserved_tokens if admission else self._reserved_tokens,
+            wait_seconds=(admission.wait_seconds if admission else 0.0) + self._retry_wait,
+            wait_reasons=(admission.wait_reasons if admission else ())
+                        + (("individual_retry_backoff",) if self._retry_wait else ()), retry_reason=retry_reason,
+            max_output_tokens=self.config.max_output_tokens if self.config.provider == "openai" else None,
+            operation_timeout_seconds=self.config.operation_timeout_seconds,
+            request_limit=limits["request_limit"], token_limit=limits["token_limit"],
+            rate_window_seconds=limits["window_seconds"])
 
     @abstractmethod
     def preflight(self) -> None: ...
@@ -331,12 +378,19 @@ class LLMAdapter(ABC):
     def generate(self, request: GenerationRequest) -> GenerationResult:
         if not request.prompt.strip():
             raise ConfigurationError("The generation prompt must not be empty.")
+        self._operation_deadline = self.controller.deadline(self.config.operation_timeout_seconds)
+        retry_reason = None
+        pending_retry_wait = 0.0
         for attempt in range(1, self.max_attempts + 1):
             check_cancelled(self.cancel_event)
             started = time.monotonic()
             notify(self.progress, ProviderProgress("attempt_started", self.config.provider,
                                                   attempt, self.max_attempts))
             self._request_sent = False
+            self._admission = None
+            self._estimated_input = self._reserved_tokens = None
+            self._response_headers = None
+            self._retry_wait, pending_retry_wait = pending_retry_wait, 0.0
             self._reported_model = None
             self._reported_effort = None
             self._usage = (None, None)
@@ -349,6 +403,8 @@ class LLMAdapter(ABC):
             )
             try:
                 text, model, effort = self._generate_once(request)
+                self.controller.remaining(self._operation_deadline)
+                self.controller.complete(self._admission, headers=self._response_headers)
                 metadata = replace(
                     metadata,
                     returned_model=model,
@@ -362,6 +418,7 @@ class LLMAdapter(ABC):
                         else None
                     ),
                     input_tokens=self._usage[0], output_tokens=self._usage[1],
+                    **self._attempt_fields(retry_reason),
                 )
                 value = self.interpreter.interpret(text, request.output)
                 metadata = replace(
@@ -373,6 +430,10 @@ class LLMAdapter(ABC):
                 )
             except Exception as exc:
                 error = _external_error(exc, self.config.provider)
+                headers = getattr(getattr(exc, "response", None), "headers", None) or self._response_headers
+                delay = retry_delay(attempt, self.attempts_interval, backoff_cap=10.0,
+                    retry_after_seconds=retry_after(headers), jitter=self._jitter)
+                self.controller.complete(self._admission, headers=headers, error=error, cooldown=delay)
                 self._record(
                     replace(
                         metadata,
@@ -389,17 +450,21 @@ class LLMAdapter(ABC):
                             else None
                         ),
                         input_tokens=self._usage[0], output_tokens=self._usage[1],
+                        **self._attempt_fields(type(error).__name__),
                     )
                 )
                 if not error.retryable or attempt == self.max_attempts:
                     raise error from None
-                headers = getattr(getattr(exc, "response", None), "headers", None)
-                delay = retry_delay(attempt, self.attempts_interval, backoff_cap=10.0,
-                    retry_after_seconds=retry_after(headers), jitter=self._jitter)
                 notify(self.progress, ProviderProgress("retry_scheduled", self.config.provider,
                     attempt, self.max_attempts, time.monotonic() - started,
                     delay_seconds=delay, error_type=type(error).__name__))
-                wait_for_retry(delay, self._sleep, self.cancel_event)
+                retry_reason = type(error).__name__
+                # 429 waits are shared and enforced by admission for both new
+                # requests and retries. Isolated timeouts back off individually.
+                if not isinstance(error, RateLimitError):
+                    self.controller.wait(delay, self._sleep, self.cancel_event,
+                                         self._operation_deadline)
+                    pending_retry_wait = delay
         raise InvalidResponseError("The language model exhausted its attempt budget.")
 
     def generate_pattern(self, prompt: str, pattern: str, **kwargs) -> str:
@@ -443,6 +508,7 @@ class OllamaAdapter(LLMAdapter):
         sleep=time.sleep,
         progress=None,
         jitter=random.uniform,
+        request_scope=None,
     ) -> None:
         super().__init__(
             config
@@ -455,6 +521,7 @@ class OllamaAdapter(LLMAdapter):
             sleep=sleep,
             progress=progress,
             jitter=jitter,
+            request_scope=request_scope,
         )
 
     def _validate_config(self):
@@ -505,6 +572,14 @@ class OllamaAdapter(LLMAdapter):
         if request.images:
             kwargs["images"] = list(request.images)
         client = self._get_client()
+        self._admit(json.dumps(kwargs, ensure_ascii=False,
+                    default=lambda value: base64.b64encode(value).decode("ascii")).encode())
+        # Ollama clients own their request timeout. Recreate the native client
+        # when the operation has less time left than the configured attempt.
+        if not self._injected_client and self._attempt_timeout < self.config.timeout_seconds:
+            self.close()
+            import ollama
+            client = self._client = ollama.Client(host=self.config.base_url, timeout=self._attempt_timeout)
         self._request_sent = True
         response = client.generate(**kwargs)
         self._usage = (_value(response, "prompt_eval_count"), _value(response, "eval_count"))
@@ -547,7 +622,7 @@ class OpenAIAdapter(LLMAdapter):
 
     def __init__(
         self, *, config: LLMConfig | None = None, client=None, sleep=time.sleep,
-        progress=None, jitter=random.uniform,
+        progress=None, jitter=random.uniform, request_scope=None,
     ):
         super().__init__(
             config
@@ -560,6 +635,7 @@ class OpenAIAdapter(LLMAdapter):
             sleep=sleep,
             progress=progress,
             jitter=jitter,
+            request_scope=request_scope,
         )
 
     def _validate_config(self):
@@ -615,6 +691,8 @@ class OpenAIAdapter(LLMAdapter):
                 base_url=self.config.base_url,
                 timeout=self.config.timeout_seconds,
                 max_retries=0,
+                **({"organization": self.config.organization} if self.config.organization else {}),
+                **({"project": self.config.project} if self.config.project else {}),
             )
         return self._client
 
@@ -694,6 +772,7 @@ class OpenAIAdapter(LLMAdapter):
             "model": self.model,
             "input": input_data,
             "store": False,
+            "max_output_tokens": self.config.max_output_tokens,
         }
         if self.config.reasoning_effort is not None:
             kwargs["reasoning"] = {"effort": self.config.reasoning_effort}
@@ -703,8 +782,22 @@ class OpenAIAdapter(LLMAdapter):
         # Temperature is deliberately omitted: known reasoning models reject it,
         # and unknown/future models must not inherit Ollama sampling parameters.
         client = self._get_client()
+        self._admit(json.dumps(kwargs, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+                    output_tokens=self.config.max_output_tokens)
+        # This also disables retries on an injected real SDK client; fake test
+        # clients need only expose the small responses.create boundary.
+        if callable(getattr(client, "with_options", None)):
+            client = client.with_options(timeout=self._attempt_timeout, max_retries=0)
+        kwargs["timeout"] = self._attempt_timeout
         self._request_sent = True
-        response = client.responses.create(**kwargs)
+        raw = getattr(client.responses, "with_raw_response", None)
+        if raw is not None:
+            raw_response = raw.create(**kwargs)
+            self._response_headers = raw_response.headers
+            response = raw_response.parse()
+        else:
+            response = client.responses.create(**kwargs)
+            self._response_headers = _value(response, "headers")
         usage = _value(response, "usage")
         self._usage = (_value(usage, "input_tokens"), _value(usage, "output_tokens"))
         self._reported_model = _value(response, "model")
