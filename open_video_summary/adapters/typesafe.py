@@ -309,9 +309,11 @@ class TypeSafeEvaluator:
                         or not isinstance(response.body, bytes)):
                     raise InvalidResponseError("TypeSafe returned an invalid HTTP response.")
                 response_headers = response.headers
-                self.controller.remaining(deadline)
                 if not 200 <= response.status_code < 300:
+                    # A late response still publishes authentication, quota or
+                    # cooldown feedback before its operation can end.
                     raise self._http_error(response.status_code, response.body)
+                self.controller.remaining(deadline)
                 answers, returned_model, input_tokens, output_tokens = self._parse_response(
                     response, noul_ids, choice_options, document=document)
                 self._feedback = self.controller.complete(admission, headers=response_headers,

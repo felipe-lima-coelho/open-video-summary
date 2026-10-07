@@ -1017,27 +1017,40 @@ class _AnalysisRun:
                             reservation.release()
                             failed = True
                             return
-                        future = executor.submit(
-                            self._pair_worker,
-                            left,
-                            right,
-                            reservation,
-                            evaluator_can_fork,
-                        )
-                        active[future] = (next_index, left, right)
+                        try:
+                            future = executor.submit(
+                                self._pair_worker,
+                                left,
+                                right,
+                                reservation,
+                                evaluator_can_fork,
+                            )
+                        except BaseException:
+                            reservation.release()
+                            raise
+                        active[future] = (next_index, left, right, reservation)
                         next_index += 1
 
-                submit_available()
-                while active:
-                    completed, _ = wait(active, return_when=FIRST_COMPLETED)
-                    for future in completed:
-                        index, left, right = active.pop(future)
-                        relation, worker, consumed = future.result()
-                        results[index] = (left, right, relation, worker, consumed)
-                    if self.budget.cancel_event.is_set() or self.budget.permanent_failure is not None:
-                        failed = True
-                    if not failed:
-                        submit_available()
+                try:
+                    submit_available()
+                    while active:
+                        completed, _ = wait(active, return_when=FIRST_COMPLETED)
+                        for future in completed:
+                            index, left, right, reservation = active.pop(future)
+                            relation, worker, consumed = future.result()
+                            results[index] = (left, right, relation, worker, consumed)
+                        if self.budget.cancel_event.is_set() or self.budget.permanent_failure is not None:
+                            failed = True
+                        if not failed:
+                            submit_available()
+                except BaseException:
+                    # Signal retries before the executor's blocking shutdown.
+                    # Already sent requests may finish; queued work must stop.
+                    self.budget.cancel()
+                    for future, (_, _, _, reservation) in active.items():
+                        future.cancel()
+                        reservation.release()
+                    raise
 
             # A later comparison may finish first. Persist every relation, call,
             # and issue in the original priority order.

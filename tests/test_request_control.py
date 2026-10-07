@@ -344,6 +344,38 @@ class AdapterAdmissionTests(unittest.TestCase):
         adapter.generate(GenerationRequest("text"))
         self.assertEqual([50, 10], [call.kwargs["timeout"] for call in create.call_args_list])
 
+    def test_late_typesafe_http_errors_preserve_terminal_and_shared_cooldown_feedback(self):
+        for status, body, headers, kind in (
+            (401, b'{"error":"denied"}', {}, AuthenticationError),
+            (429, b'{"error":{"code":"insufficient_quota"}}', {}, ProviderConfigurationError),
+            (429, b'{"error":"rate limited"}', {"Retry-After": "60"}, RateLimitError),
+        ):
+            with self.subTest(status=status, kind=kind):
+                clock = FakeTime()
+                def late(*args, **kwargs):
+                    clock.value = 91
+                    return TransportResponse(status, headers, body)
+                transport = Mock(side_effect=late)
+                evaluator = TypeSafeEvaluator(TypeSafeConfig(api_key="offline", max_attempts=2),
+                    transport=transport, sleep=clock.sleep, jitter=lambda *_: 0)
+                evaluator.controller = RequestController(RequestLimits(tokens=80000, window_seconds=1), clock=clock.now)
+                with self.assertRaises(RequestDeadlineError if kind is RateLimitError else kind):
+                    evaluator.evaluate("state", noul={"q": "Question?"})
+                self.assertEqual(kind.__name__, evaluator.records[0].retry_reason)
+                self.assertTrue(evaluator.records[0].request_sent)
+                if kind is RateLimitError:
+                    self.assertEqual(151, evaluator.controller._pause_until)
+                    self.assertIsNone(evaluator.controller.snapshot()["terminal_error"])
+                    evaluator.config = replace(evaluator.config, operation_timeout_seconds=30)
+                    with self.assertRaises(RequestDeadlineError):
+                        evaluator.evaluate("state", noul={"q": "Question?"})
+                else:
+                    self.assertEqual(kind.__name__, evaluator.controller.snapshot()["terminal_error"])
+                    with self.assertRaises(kind):
+                        evaluator.evaluate("state", noul={"q": "Question?"})
+                self.assertEqual(1, transport.call_count)
+                self.assertEqual([], clock.waits)
+
     def test_optional_project_headers_tighten_group_token_admission(self):
         control = RequestController(RequestLimits(tokens=1000, learn_headers=True))
         admission = control.admit(100, deadline=control.deadline(10))

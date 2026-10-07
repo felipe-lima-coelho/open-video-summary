@@ -4,7 +4,11 @@ import json
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from open_video_summary.adapters.typesafe import TypeSafeConfig, TypeSafeEvaluator
 
 from open_video_summary.contracts import (
     ChoiceResult,
@@ -217,6 +221,92 @@ def make_run(texts, *, config=None, tracker=None, relations=None, duplicates=())
 
 
 class InformationPairParallelTests(unittest.TestCase):
+    def test_pair_interrupt_cancels_native_retries_before_executor_shutdown(self):
+        for origin in ("coordinator", "worker"):
+            with self.subTest(origin=origin):
+                run = make_run(["Backup every 24 hours", "Backup every 48 hours", "Backup every 72 hours"],
+                    config=InformationAnalysisConfig(qa_enabled=False, pair_concurrency=2))
+                both_started, release = threading.Event(), threading.Event()
+                lock, sent = threading.Lock(), []
+                def transport(url, **kwargs):
+                    with lock:
+                        sent.append(kwargs["body"])
+                        ordinal = len(sent)
+                        if ordinal == 2:
+                            both_started.set()
+                    if origin == "worker" and ordinal == 1:
+                        if not both_started.wait(2):
+                            raise AssertionError("Both first attempts must start")
+                        raise KeyboardInterrupt()
+                    waiting = release if origin == "coordinator" else run.budget.request_event
+                    if not waiting.wait(2):
+                        raise AssertionError("Interrupt did not release the in-flight request")
+                    raise TimeoutError("offline")
+                template = TypeSafeEvaluator(TypeSafeConfig(api_key="offline", max_attempts=2,
+                    retry_backoff_seconds=0), transport=transport, jitter=lambda *_: 0)
+                # Native worker objects share only their controller; transports
+                # are injected at each worker boundary for this offline test.
+                def fork():
+                    return TypeSafeEvaluator(template.config, transport=transport,
+                        jitter=lambda *_: 0, request_scope=template.request_scope)
+                template.can_fork = True
+                template.fork = fork
+                run.evaluator = template
+                if origin == "coordinator":
+                    def interrupted_wait(*args, **kwargs):
+                        if not both_started.wait(2):
+                            raise AssertionError("Both first attempts must start")
+                        release.set()
+                        raise KeyboardInterrupt()
+                    with patch("open_video_summary.core.summarizers.information_analysis.wait", interrupted_wait):
+                        with self.assertRaises(KeyboardInterrupt):
+                            run._consolidate()
+                else:
+                    with self.assertRaises(KeyboardInterrupt):
+                        run._consolidate()
+                self.assertTrue(run.budget.cancel_event.is_set())
+                self.assertEqual(2, len(sent))
+                self.assertEqual(2, run.budget.used)
+                self.assertEqual(0, run.budget.reserved)
+
+    def test_pair_interrupt_cancels_queued_futures_and_releases_unused_reservations(self):
+        run = make_run(["Backup every 24 hours", "Backup every 48 hours", "Backup every 72 hours"],
+            config=InformationAnalysisConfig(qa_enabled=False, pair_concurrency=2))
+        started, queued_cancelled = threading.Event(), threading.Event()
+        def held_worker(left, right, reservation, isolated):
+            try:
+                started.set()
+                if not run.budget.request_event.wait(2):
+                    raise AssertionError("Cancellation must precede executor shutdown")
+                if not queued_cancelled.wait(2):
+                    raise AssertionError("Queued work must be cancelled before shutdown")
+            finally:
+                reservation.release()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            original_submit, submitted = executor.submit, []
+            def submit_worker(*args, **kwargs):
+                future = original_submit(*args, **kwargs)
+                submitted.append(future)
+                if len(submitted) == 2:
+                    future.add_done_callback(lambda item: queued_cancelled.set() if item.cancelled() else None)
+                return future
+            submit = Mock(side_effect=submit_worker)
+            executor.submit = submit
+            def interrupted_wait(*args, **kwargs):
+                if not started.wait(2):
+                    raise AssertionError("The first worker must start")
+                raise KeyboardInterrupt()
+            with patch.object(run, "_pair_worker", held_worker), patch(
+                "open_video_summary.core.summarizers.information_analysis.ThreadPoolExecutor", return_value=executor), patch(
+                "open_video_summary.core.summarizers.information_analysis.wait", interrupted_wait):
+                with self.assertRaises(KeyboardInterrupt):
+                    run._consolidate()
+        self.assertEqual(2, submit.call_count)
+        self.assertTrue(submitted[1].cancelled())
+        self.assertTrue(run.budget.cancel_event.is_set())
+        self.assertEqual(0, run.budget.used)
+        self.assertEqual(0, run.budget.reserved)
+
     def test_comparisons_overlap_within_the_configured_bound(self):
         tracker = PairTracker(barrier=threading.Barrier(3))
         report = make_run(
