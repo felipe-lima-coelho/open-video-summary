@@ -244,6 +244,7 @@ def analyze(source, generator=None, evaluator=None, **settings):
     settings.setdefault("pair_batch_size", 1)
     settings.setdefault("max_relation_adjudications", 0)
     settings.setdefault("qa_window_chars", 4000)
+    settings.setdefault("direct_window_chars", 4000)
     return InformationAnalyzer(
         generator or ScriptedGenerator(),
         evaluator or SyntheticEvaluator(),

@@ -325,7 +325,8 @@ negation outside a generator-selected quote. It does not authorize new assertion
 from reference context. Timing metadata and extraction instructions are excluded.
 Focused anchor binding first checks that the selected wording identifies the
 candidate's property or event. That request contains only assertion wording and
-claim, so another source assertion cannot supply its answer. Exact quote/claim
+claim plus literal cited reference context, which can resolve references but
+cannot supply a new assertion. Exact quote/claim
 identity, or one contiguous exact candidate passage covering every selected
 assertion interval, can establish binding in code. Matching only a different
 occurrence or combining disjoint passages cannot. This proves binding only;
@@ -334,6 +335,15 @@ content support and qualifier fidelity, together with atomicity and applicable
 QA checks. An empty generated annotation never disables
 these source-based checks. An atomic claim need not include unrelated independent
 facts in a longer source passage; coverage auditing handles those omissions.
+
+Binding can also be established when the candidate retains one complete selected
+source sentence verbatim while adding a contextual description. Only the
+sentence's terminal punctuation may be omitted; internal wording is preserved,
+and a mid-sentence fragment does not qualify. This proves ownership of the
+retained assertion only. Added entity descriptions, conditions, quantities and
+other content still require every source-fidelity and atomicity check; context
+alone never creates an occurrence. Reports distinguish this binding origin as
+`literal_assertion_sentence`.
 
 Auxiliary annotation quality is audited separately from content acceptance at the
 same threshold. Candidate `proposed_qualifiers` and raw generator fields remain
@@ -451,10 +461,12 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--information-pair-concurrency` | `OVS_INFORMATION_PAIR_CONCURRENCY` | 8 comparison requests in flight (range 1–8) |
 | `--information-pair-batch-size` | `OVS_INFORMATION_PAIR_BATCH_SIZE` | 4 independently keyed pair decisions per request (range 1–8); 1 enables the individual baseline |
 | `--information-relation-adjudications` | `OVS_INFORMATION_RELATION_ADJUDICATIONS` | Up to 256 individual source-scoped follow-ups for uncertain relations, at most one per pair |
+| `--information-direct-window-chars` | `OVS_INFORMATION_DIRECT_WINDOW_CHARS` | 240 original-source characters per direct discovery window for longer targets (range 80–4000) |
+| `--information-max-direct-windows` | `OVS_INFORMATION_MAX_DIRECT_WINDOWS` | At most 16 direct generation invocations per long target, including failed-window decomposition (range 1–64) |
 | `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | `auto`: remaining global calls times bounded batch capacity; an integer caps paid pair decisions, including follow-ups and 0 |
 | `--information-qa-window-chars` | `OVS_INFORMATION_QA_WINDOW_CHARS` | 240 original-source characters per independent QA discovery window (range 80–4000) |
 | `--information-max-qa-windows` | `OVS_INFORMATION_MAX_QA_WINDOWS` | At most 16 QA generation invocations per target, including failed-window decomposition (range 1–64) |
-| `--information-max-candidates` | `OVS_INFORMATION_MAX_CANDIDATES` | 16 per generation; bounded QA windows emit at most 4 |
+| `--information-max-candidates` | `OVS_INFORMATION_MAX_CANDIDATES` | 16 per generation; bounded direct and QA windows emit at most 4 |
 | `--information-context-chars` | `OVS_INFORMATION_CONTEXT_CHARS` | 24000 characters per prompt, or evaluation context plus questions |
 | `--information-context-segments` | `OVS_INFORMATION_CONTEXT_SEGMENTS` | Up to 4 additional current segments from the same video |
 | `--information-acceptance` | `OVS_INFORMATION_ACCEPTANCE` | 0.85 for each support/qualifier signal and atomicity |
@@ -537,6 +549,13 @@ waves reclaim unused reserve. The report records the final representative-pair
 dimension and planned initial request count; neither a batch nor a reserve
 guarantees that newly discovered content fits the configured budget.
 
+Direct discovery splits targets longer than its configured window size before
+generation, avoiding a repeated monolithic request for the entire long target.
+Shorter targets keep the ordinary direct request. Its independent invocation
+bound includes failed-window decomposition, and `direct_source_windows` records
+the original offsets, status and attempt number. Pending direct windows remain
+visible and make the inventory provisional.
+
 Independent QA discovery traverses disjoint source windows with at most four
 candidates per generation, retaining the full original target and cited context
 for references and governing qualifiers. Assertion evidence must start in its
@@ -546,6 +565,10 @@ the configured QA invocation limit includes those retries. Pending windows are
 reported. QA receives no direct-route candidates. A recoverable route failure
 still permits the original-source coverage audit and preserves valid evidence
 from the other route. Window completion does not prove semantic coverage.
+Both discovery routes retain the complete original target and use source-owned
+offsets, including when a sentence or its governing condition crosses a window
+boundary. They share the existing global call cap and provider controls; direct
+windows do not receive QA output, and QA does not receive direct output.
 
 Configured CLI analyses process independent source segments concurrently, using
 separate provider clients for each worker. The default is two targets; set

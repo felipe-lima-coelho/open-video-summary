@@ -10,7 +10,7 @@ import json
 import math
 
 
-EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v5"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v6"
 SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
 ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
 VALIDATION_QUESTIONS = {

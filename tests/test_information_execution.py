@@ -379,6 +379,8 @@ class ExecutionConfigurationAndCLITests(unittest.TestCase):
             self.assertEqual(256, automatic.max_relation_adjudications)
             self.assertEqual(240, automatic.qa_window_chars)
             self.assertEqual(16, automatic.max_qa_windows)
+            self.assertEqual(240, automatic.direct_window_chars)
+            self.assertEqual(16, automatic.max_direct_windows)
             numeric = configured_information_analyzer(
                 {"information_max_pairs": "0", "information_pair_concurrency": 3},
                 environ={"OVS_INFORMATION_MAX_PAIRS": "100"}, env_file=fixture).config
@@ -386,23 +388,27 @@ class ExecutionConfigurationAndCLITests(unittest.TestCase):
             self.assertEqual(3, numeric.pair_concurrency)
             explicit = configured_information_analyzer(
                 {"information_pair_batch_size": 1, "information_relation_adjudications": 12,
-                 "information_qa_window_chars": 400, "information_max_qa_windows": 8},
+                 "information_qa_window_chars": 400, "information_max_qa_windows": 8,
+                 "information_direct_window_chars": 320, "information_max_direct_windows": 9},
                 environ={"OVS_INFORMATION_PAIR_BATCH_SIZE": "8"}, env_file=fixture).config
             self.assertEqual((1, 12, 400, 8), (explicit.pair_batch_size,
                 explicit.max_relation_adjudications, explicit.qa_window_chars, explicit.max_qa_windows))
+            self.assertEqual((320, 9), (explicit.direct_window_chars, explicit.max_direct_windows))
             for value in (-1, 9):
                 with self.assertRaises(ConfigurationError):
                     InformationAnalysisConfig(pair_concurrency=value)
                 with self.assertRaises(ConfigurationError):
                     InformationAnalysisConfig(pair_batch_size=value)
             for name, invalid in (("max_relation_adjudications", -1), ("qa_window_chars", 79),
-                                  ("max_qa_windows", 0)):
+                                  ("max_qa_windows", 0), ("direct_window_chars", 79),
+                                  ("max_direct_windows", 65)):
                 with self.subTest(name=name), self.assertRaises(ConfigurationError):
                     InformationAnalysisConfig(**{name: invalid})
             args = cli.build_parser().parse_args(["analyze-information",
                 "--information-max-pairs", "auto", "--information-pair-concurrency", "8",
                 "--information-pair-batch-size", "1", "--information-relation-adjudications", "8",
                 "--information-qa-window-chars", "400", "--information-max-qa-windows", "10",
+                "--information-direct-window-chars", "320", "--information-max-direct-windows", "9",
                 "--llm-operation-timeout", "400", "--llm-max-output-tokens", "12000",
                 "--evaluator-request-limit", "60", "--evaluator-token-limit", "80000",
                 "--evaluator-token-request-overhead", "300", "--evaluator-token-question-overhead", "150"])
@@ -411,6 +417,7 @@ class ExecutionConfigurationAndCLITests(unittest.TestCase):
             self.assertEqual((1, 8, 400, 10), (args.information_pair_batch_size,
                 args.information_relation_adjudications, args.information_qa_window_chars,
                 args.information_max_qa_windows))
+            self.assertEqual((320, 9), (args.information_direct_window_chars, args.information_max_direct_windows))
             self.assertEqual(400, args.llm_operation_timeout)
             self.assertEqual(300, args.evaluator_token_request_overhead)
             self.assertEqual(150, args.evaluator_token_question_overhead)

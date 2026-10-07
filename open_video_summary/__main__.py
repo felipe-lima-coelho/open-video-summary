@@ -434,6 +434,10 @@ def _information_arguments(parser):
                         help="Independently keyed pair decisions per request (default 4; 1 is the individual baseline).")
     parser.add_argument("--information-relation-adjudications", type=int, default=None,
                         help="Maximum individual follow-ups for uncertain pair relations (default 256).")
+    parser.add_argument("--information-direct-window-chars", type=int, default=None,
+                        help="Direct discovery source-window size for longer targets (default 240).")
+    parser.add_argument("--information-max-direct-windows", type=int, default=None,
+                        help="Bounded direct generations per long target, including failed-window recovery (default 16).")
     parser.add_argument("--information-qa-window-chars", type=int, default=None,
                         help="Independent QA source-window size in original characters (default 240).")
     parser.add_argument("--information-max-qa-windows", type=int, default=None,
