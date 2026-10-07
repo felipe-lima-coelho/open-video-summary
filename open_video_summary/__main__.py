@@ -426,10 +426,18 @@ def _information_arguments(parser):
     parser.add_argument("--information-concurrency", type=int, default=None, help="Parallel source targets (default: OVS_INFORMATION_CONCURRENCY or 2; 1-8).")
     parser.add_argument("--information-max-calls", type=int, default=None)
     parser.add_argument("--information-pair-concurrency", type=int, default=None,
-                        help="Individual semantic comparisons in flight (default 8; 1-8).")
+                        help="Semantic comparison requests in flight (default 8; 1-8).")
+    parser.add_argument("--information-pair-batch-size", type=int, default=None,
+                        help="Independently keyed pair decisions per request (default 4; 1 is the individual baseline).")
+    parser.add_argument("--information-relation-adjudications", type=int, default=None,
+                        help="Maximum individual follow-ups for uncertain pair relations (default 256).")
+    parser.add_argument("--information-qa-window-chars", type=int, default=None,
+                        help="Independent QA source-window size in original characters (default 240).")
+    parser.add_argument("--information-max-qa-windows", type=int, default=None,
+                        help="Bounded QA generations per target, including failed-window recovery (default 16).")
     parser.add_argument("--information-rounds", type=int, default=None)
     parser.add_argument("--information-max-pairs", default=None,
-                        help="Paid logical comparison cap, or auto for remaining global call budget (default auto).")
+                        help="Paid pair-decision cap including follow-ups, or auto for remaining calls times batch capacity.")
     parser.add_argument("--information-max-candidates", type=int, default=None)
     parser.add_argument("--information-context-chars", type=int, default=None)
     parser.add_argument("--information-context-segments", type=int, default=None)

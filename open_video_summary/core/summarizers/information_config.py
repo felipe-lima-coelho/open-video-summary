@@ -13,6 +13,10 @@ class InformationAnalysisConfig:
     max_coverage_rounds: int = 2
     max_pair_comparisons: int | None = None
     pair_concurrency: int = 8
+    pair_batch_size: int = 4
+    max_relation_adjudications: int = 256
+    qa_window_chars: int = 240
+    max_qa_windows: int = 16
     max_candidates_per_route: int = 16
     max_context_chars: int = 24000
     context_segments: int = 4
@@ -27,6 +31,10 @@ class InformationAnalysisConfig:
         limits = {
             "concurrency": (1, 8),
             "pair_concurrency": (1, 8),
+            "pair_batch_size": (1, 8),
+            "max_relation_adjudications": (0, 10000),
+            "qa_window_chars": (80, 4000),
+            "max_qa_windows": (1, 64),
             "max_calls": (1, 10000),
             "max_coverage_rounds": (0, 10),
             "max_pair_comparisons": (0, 10000),
@@ -98,6 +106,10 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
         qa_enabled=get("information_qa", "OVS_INFORMATION_QA", True, boolean),
         concurrency=get("information_concurrency", "OVS_INFORMATION_CONCURRENCY", 2, int),
         pair_concurrency=get("information_pair_concurrency", "OVS_INFORMATION_PAIR_CONCURRENCY", 8, int),
+        pair_batch_size=get("information_pair_batch_size", "OVS_INFORMATION_PAIR_BATCH_SIZE", 4, int),
+        max_relation_adjudications=get("information_relation_adjudications", "OVS_INFORMATION_RELATION_ADJUDICATIONS", 256, int),
+        qa_window_chars=get("information_qa_window_chars", "OVS_INFORMATION_QA_WINDOW_CHARS", 240, int),
+        max_qa_windows=get("information_max_qa_windows", "OVS_INFORMATION_MAX_QA_WINDOWS", 16, int),
         max_calls=get("information_max_calls", "OVS_INFORMATION_MAX_CALLS", 256, int),
         max_coverage_rounds=get("information_rounds", "OVS_INFORMATION_ROUNDS", 2, int),
         max_pair_comparisons=get(

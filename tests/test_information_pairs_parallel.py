@@ -210,7 +210,7 @@ def make_run(texts, *, config=None, tracker=None, relations=None, duplicates=())
     analyzer = InformationAnalyzer(
         OfflineGenerator(),
         evaluator,
-        config or InformationAnalysisConfig(qa_enabled=False),
+        config or InformationAnalysisConfig(pair_batch_size=1, qa_enabled=False),
     )
     run = _AnalysisRun(analyzer, snapshot)
     run.candidates.extend(records)
@@ -225,7 +225,7 @@ class InformationPairParallelTests(unittest.TestCase):
         for origin in ("coordinator", "worker"):
             with self.subTest(origin=origin):
                 run = make_run(["Backup every 24 hours", "Backup every 48 hours", "Backup every 72 hours"],
-                    config=InformationAnalysisConfig(qa_enabled=False, pair_concurrency=2))
+                    config=InformationAnalysisConfig(pair_batch_size=1, qa_enabled=False, pair_concurrency=2))
                 both_started, release = threading.Event(), threading.Event()
                 lock, sent = threading.Lock(), []
                 def transport(url, **kwargs):
@@ -271,7 +271,7 @@ class InformationPairParallelTests(unittest.TestCase):
 
     def test_pair_interrupt_cancels_queued_futures_and_releases_unused_reservations(self):
         run = make_run(["Backup every 24 hours", "Backup every 48 hours", "Backup every 72 hours"],
-            config=InformationAnalysisConfig(qa_enabled=False, pair_concurrency=2))
+            config=InformationAnalysisConfig(pair_batch_size=1, qa_enabled=False, pair_concurrency=2))
         started, queued_cancelled = threading.Event(), threading.Event()
         def held_worker(left, right, reservation, isolated):
             try:
@@ -317,7 +317,7 @@ class InformationPairParallelTests(unittest.TestCase):
                 "Retention lasts 30 days",
                 "Retention lasts 60 days",
             ],
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, pair_concurrency=3, max_pair_comparisons=20
             ),
             tracker=tracker,
@@ -351,14 +351,14 @@ class InformationPairParallelTests(unittest.TestCase):
         )
         serial = make_run(
             texts,
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, pair_concurrency=1, max_pair_comparisons=20
             ),
             relations=relations,
         ).run()
         parallel = make_run(
             texts,
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, pair_concurrency=4, max_pair_comparisons=20
             ),
             relations=relations,
@@ -384,7 +384,7 @@ class InformationPairParallelTests(unittest.TestCase):
         run = make_run(
             ["Backup every 24 hours"],
             duplicates=("Backup every 24 hours",),
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, max_calls=1, max_pair_comparisons=0
             ),
         )
@@ -409,7 +409,7 @@ class InformationPairParallelTests(unittest.TestCase):
                 "Backup every 72 hours",
                 "Retention lasts 30 days",
             ],
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, max_calls=5, max_pair_comparisons=None,
                 pair_concurrency=8,
             ),
@@ -440,7 +440,7 @@ class InformationPairParallelTests(unittest.TestCase):
         tracker = PairTracker(failures={first: AuthenticationError("denied")})
         report = make_run(
             texts,
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, pair_concurrency=1, max_pair_comparisons=20
             ),
             tracker=tracker,
@@ -463,7 +463,7 @@ class InformationPairParallelTests(unittest.TestCase):
         tracker = PairTracker(failures={failed: ServiceTimeoutError("timeout")})
         report = make_run(
             texts,
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, pair_concurrency=2, max_pair_comparisons=20
             ),
             tracker=tracker,
@@ -484,7 +484,7 @@ class InformationPairParallelTests(unittest.TestCase):
         tracker = PairTracker()
         run = make_run(
             ["Backup every 24 hours", "Backup every 48 hours", "Retention lasts 30 days"],
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, pair_concurrency=8, max_pair_comparisons=20
             ),
             tracker=tracker,
@@ -506,7 +506,7 @@ class InformationPairParallelTests(unittest.TestCase):
         tracker.cancel_on = frozenset((texts[0], texts[1]))
         run = make_run(
             texts,
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, pair_concurrency=1, max_pair_comparisons=20
             ),
             tracker=tracker,
@@ -573,7 +573,7 @@ class InformationPairParallelTests(unittest.TestCase):
         ]
         run = make_run(
             texts,
-            config=InformationAnalysisConfig(
+            config=InformationAnalysisConfig(pair_batch_size=1,
                 qa_enabled=False, pair_concurrency=8, max_pair_comparisons=20
             ),
             tracker=tracker,

@@ -105,7 +105,8 @@ class InformationExecutionTests(unittest.TestCase):
             api_key="offline-private-key", max_attempts=attempts, retry_backoff_seconds=0), sleep=Mock())
         evaluator = TypeSafeEvaluator(TypeSafeConfig(api_key="offline-private-evaluator"))
         analyzer = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
-            concurrency=concurrency, qa_enabled=False, max_coverage_rounds=0, max_calls=max_calls),
+            concurrency=concurrency, qa_enabled=False, max_coverage_rounds=0, max_calls=max_calls,
+            pair_batch_size=1),
             progress=progress, progress_interval_seconds=0.01)
         self.addCleanup(generator.close)
         with patch.dict(sys.modules, {"openai": SimpleNamespace(OpenAI=tracker.client)}), patch(
@@ -374,21 +375,42 @@ class ExecutionConfigurationAndCLITests(unittest.TestCase):
             automatic = configured_information_analyzer(environ={}, env_file=fixture).config
             self.assertIsNone(automatic.max_pair_comparisons)
             self.assertEqual(8, automatic.pair_concurrency)
+            self.assertEqual(4, automatic.pair_batch_size)
+            self.assertEqual(256, automatic.max_relation_adjudications)
+            self.assertEqual(240, automatic.qa_window_chars)
+            self.assertEqual(16, automatic.max_qa_windows)
             numeric = configured_information_analyzer(
                 {"information_max_pairs": "0", "information_pair_concurrency": 3},
                 environ={"OVS_INFORMATION_MAX_PAIRS": "100"}, env_file=fixture).config
             self.assertEqual(0, numeric.max_pair_comparisons)
             self.assertEqual(3, numeric.pair_concurrency)
+            explicit = configured_information_analyzer(
+                {"information_pair_batch_size": 1, "information_relation_adjudications": 12,
+                 "information_qa_window_chars": 400, "information_max_qa_windows": 8},
+                environ={"OVS_INFORMATION_PAIR_BATCH_SIZE": "8"}, env_file=fixture).config
+            self.assertEqual((1, 12, 400, 8), (explicit.pair_batch_size,
+                explicit.max_relation_adjudications, explicit.qa_window_chars, explicit.max_qa_windows))
             for value in (-1, 9):
                 with self.assertRaises(ConfigurationError):
                     InformationAnalysisConfig(pair_concurrency=value)
+                with self.assertRaises(ConfigurationError):
+                    InformationAnalysisConfig(pair_batch_size=value)
+            for name, invalid in (("max_relation_adjudications", -1), ("qa_window_chars", 79),
+                                  ("max_qa_windows", 0)):
+                with self.subTest(name=name), self.assertRaises(ConfigurationError):
+                    InformationAnalysisConfig(**{name: invalid})
             args = cli.build_parser().parse_args(["analyze-information",
                 "--information-max-pairs", "auto", "--information-pair-concurrency", "8",
+                "--information-pair-batch-size", "1", "--information-relation-adjudications", "8",
+                "--information-qa-window-chars", "400", "--information-max-qa-windows", "10",
                 "--llm-operation-timeout", "400", "--llm-max-output-tokens", "12000",
                 "--evaluator-request-limit", "60", "--evaluator-token-limit", "80000",
                 "--evaluator-token-request-overhead", "300", "--evaluator-token-question-overhead", "150"])
             self.assertEqual("auto", args.information_max_pairs)
             self.assertEqual(8, args.information_pair_concurrency)
+            self.assertEqual((1, 8, 400, 10), (args.information_pair_batch_size,
+                args.information_relation_adjudications, args.information_qa_window_chars,
+                args.information_max_qa_windows))
             self.assertEqual(400, args.llm_operation_timeout)
             self.assertEqual(300, args.evaluator_token_request_overhead)
             self.assertEqual(150, args.evaluator_token_question_overhead)

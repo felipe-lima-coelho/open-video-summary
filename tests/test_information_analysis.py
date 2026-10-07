@@ -241,6 +241,9 @@ class SyntheticEvaluator:
 
 
 def analyze(source, generator=None, evaluator=None, **settings):
+    settings.setdefault("pair_batch_size", 1)
+    settings.setdefault("max_relation_adjudications", 0)
+    settings.setdefault("qa_window_chars", 4000)
     return InformationAnalyzer(
         generator or ScriptedGenerator(),
         evaluator or SyntheticEvaluator(),
@@ -869,8 +872,10 @@ class InformationProtocolTests(unittest.TestCase):
             {("v0:s0", "direct"): ServiceTimeoutError("Fixture timeout")}
         )
         unavailable = analyze(videos([text]), generator)
-        self.assertEqual("failed", unavailable.status)
+        self.assertEqual("partial", unavailable.status)
         self.assertEqual("ServiceTimeoutError", unavailable.calls[0].status)
+        self.assertEqual(1, len(unavailable.coverage))
+        self.assertIn("route_analysis_failed", [item.kind for item in unavailable.issues])
 
     def test_oversized_target_remains_pending_without_blocking_other_targets(self):
         text = "O prazo é 30 dias."
@@ -1034,7 +1039,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         resolution = record.evidence_resolutions[0]
         self.assertEqual((76, 154, 76, 155), (resolution.supplied_start_char, resolution.supplied_end_char, resolution.resolved_start_char, resolution.resolved_end_char))
         self.assertEqual("unique_exact_quote", resolution.method)
-        self.assertEqual(3, report.to_dict()["schema_version"])
+        self.assertEqual(4, report.to_dict()["schema_version"])
         self.assertEqual(155, report.to_dict()["candidates"][0]["evidence_resolutions"][0]["resolved_end_char"])
         self.assertEqual(text, report.snapshot.current_segments[0].content)
 

@@ -9,7 +9,7 @@ annotation never disables a source-based check.
 import json
 
 
-EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v3"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v4"
 SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
 ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
 VALIDATION_QUESTIONS = {
@@ -60,6 +60,51 @@ QA_QUESTIONS = {
     "qa_anchor": "Is the candidate question answerable from the selected assertion in its original source and cited reference context?",
     "qa_consistency": "Does the candidate answer communicate the same complete proposition as the candidate claim?",
 }
+RELATION_ADJUDICATION_QUESTIONS = {
+    "left_entails_right": "Does the complete Left claim entail every part of the Right claim, including entities, scope, attribution, quantities, polarity, certainty, conditions and exceptions? Mere topical similarity is not entailment. Compare communicated content, not external truth.",
+    "right_entails_left": "Does the complete Right claim entail every part of the Left claim, including entities, scope, attribution, quantities, polarity, certainty, conditions and exceptions? Mere topical similarity is not entailment. Compare communicated content, not external truth.",
+    "incompatible": "Do the claims make incompatible assertions about the same entities, event or property and temporal scope? Different compatible or unrelated properties are not a contradiction. Preserve modal possibilities as possibilities.",
+    "correction_left": "Does the original source explicitly present the Left assertion as a correction of the Right assertion? Chronological order or different quantities alone do not establish a correction.",
+    "correction_right": "Does the original source explicitly present the Right assertion as a correction of the Left assertion? Chronological order or different quantities alone do not establish a correction.",
+}
+RELATION_BATCH_QUESTION = (
+    "Evaluate only {pair_id}, Left candidate {left_id} and Right candidate {right_id}. "
+    "Only their own marked source scopes and cited reference context may be used; "
+    "assertions in other pairs supply no evidence. "
+)
+
+
+def resolve_relation(signals, threshold):
+    """Require positive and negative evidence for every defining distinction."""
+    yes = lambda key: signals[key] >= threshold
+    no = lambda key: signals[key] <= 1 - threshold
+    if yes("correction_left") and no("correction_right"):
+        label = "correction_left"
+        defining = ("correction_left", "correction_right")
+    elif yes("correction_right") and no("correction_left"):
+        label = "correction_right"
+        defining = ("correction_left", "correction_right")
+    elif no("correction_left") and no("correction_right"):
+        defining = tuple(signals)
+        if yes("incompatible") and no("left_entails_right") and no("right_entails_left"):
+            label = "contradiction"
+        elif no("incompatible"):
+            if yes("left_entails_right") and yes("right_entails_left"):
+                label = "equivalent"
+            elif yes("left_entails_right") and no("right_entails_left"):
+                label = "more_specific_left"
+            elif no("left_entails_right") and yes("right_entails_left"):
+                label = "more_specific_right"
+            elif no("left_entails_right") and no("right_entails_left"):
+                label = "complementary"
+            else:
+                return "uncertain", None
+        else:
+            return "uncertain", None
+    else:
+        return "uncertain", None
+    strength = min(max(signals[key], 1 - signals[key]) for key in defining)
+    return label, strength
 
 
 def _evidence_text(candidate, role):
@@ -89,12 +134,16 @@ def _marked_source(segment, evidence):
 
 def anchor_binding_spec(candidate):
     """Do not expose unrelated source assertions to the anchor-binding decision."""
-    return "\n\n".join((
+    blocks = [
         "Selected assertion wording:\n" + "\n".join(
             item.quote for item in candidate.evidence if item.role == "assertion"
         ),
         "Candidate claim:\n" + candidate.text,
-    )), {"anchor_binding": ANCHOR_BINDING_QUESTION}
+    ]
+    if any(item.role == "context" for item in candidate.evidence):
+        blocks.append("Cited literal reference context (resolves references only; cannot supply a new assertion):\n"
+                      + _evidence_text(candidate, "context"))
+    return "\n\n".join(blocks), {"anchor_binding": ANCHOR_BINDING_QUESTION}
 
 
 def _source_scope(candidate, target, context):
@@ -195,6 +244,22 @@ def relation_state(left, right, segments):
     return "\n\n".join(blocks)
 
 
+def relation_batch_spec(pairs, segments, instruction):
+    """Format the same pair/source scopes for individual and keyed evaluation."""
+    if len(pairs) == 1:
+        return relation_state(*pairs[0], segments), {
+            "relation": (instruction, RELATION_CRITERIA)
+        }
+    blocks, choices = [], {}
+    for index, (left, right) in enumerate(pairs):
+        identifier = f"pair{index}"
+        blocks.append(f"BEGIN {identifier}\n{relation_state(left, right, segments)}\nEND {identifier}")
+        choices[identifier] = (RELATION_BATCH_QUESTION.format(
+            pair_id=identifier, left_id=left.id, right_id=right.id) + instruction,
+            RELATION_CRITERIA)
+    return "\n\n".join(blocks), choices
+
+
 def evaluation_templates():
     """Templates are persisted as hashes alongside generator prompt hashes."""
     return {
@@ -208,4 +273,6 @@ def evaluation_templates():
         "coverage_questions": COVERAGE_QUESTIONS,
         "qa_questions": QA_QUESTIONS,
         "relation_criteria": RELATION_CRITERIA,
+        "relation_adjudication_questions": RELATION_ADJUDICATION_QUESTIONS,
+        "relation_batch_question": RELATION_BATCH_QUESTION,
     }

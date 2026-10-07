@@ -448,9 +448,13 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--information-concurrency` | `OVS_INFORMATION_CONCURRENCY` | 2 independent source targets (range 1–8) |
 | `--information-max-calls` | `OVS_INFORMATION_MAX_CALLS` | 256 logical calls |
 | `--information-rounds` | `OVS_INFORMATION_ROUNDS` | 2 recovery rounds per target |
-| `--information-pair-concurrency` | `OVS_INFORMATION_PAIR_CONCURRENCY` | 8 individual semantic comparisons in flight (range 1–8) |
-| `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | `auto`: remaining global logical-call budget when consolidation starts; an integer adds a paid comparison cap, including 0 |
-| `--information-max-candidates` | `OVS_INFORMATION_MAX_CANDIDATES` | 16 per target and extraction route |
+| `--information-pair-concurrency` | `OVS_INFORMATION_PAIR_CONCURRENCY` | 8 comparison requests in flight (range 1–8) |
+| `--information-pair-batch-size` | `OVS_INFORMATION_PAIR_BATCH_SIZE` | 4 independently keyed pair decisions per request (range 1–8); 1 enables the individual baseline |
+| `--information-relation-adjudications` | `OVS_INFORMATION_RELATION_ADJUDICATIONS` | Up to 256 individual source-scoped follow-ups for uncertain relations, at most one per pair |
+| `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | `auto`: remaining global calls times bounded batch capacity; an integer caps paid pair decisions, including follow-ups and 0 |
+| `--information-qa-window-chars` | `OVS_INFORMATION_QA_WINDOW_CHARS` | 240 original-source characters per independent QA discovery window (range 80–4000) |
+| `--information-max-qa-windows` | `OVS_INFORMATION_MAX_QA_WINDOWS` | At most 16 QA generation invocations per target, including failed-window decomposition (range 1–64) |
+| `--information-max-candidates` | `OVS_INFORMATION_MAX_CANDIDATES` | 16 per generation; bounded QA windows emit at most 4 |
 | `--information-context-chars` | `OVS_INFORMATION_CONTEXT_CHARS` | 24000 characters per prompt, or evaluation context plus questions |
 | `--information-context-segments` | `OVS_INFORMATION_CONTEXT_SEGMENTS` | Up to 4 additional current segments from the same video |
 | `--information-acceptance` | `OVS_INFORMATION_ACCEPTANCE` | 0.85 for each support/qualifier signal and atomicity |
@@ -494,14 +498,53 @@ automatic merges and marks unique-unit counts provisional. Free exact validated
 proofs run first and consume neither paid comparisons nor logical calls. `auto`
 removes the former independent 160-comparison default without increasing the
 global budget. The library default remains 256 calls; `.env.example` explicitly
-sets 1000. Reports record configured/effective pair caps and actual paid work.
+sets 1000. Reports distinguish paid pair-decision attempts (`paid_pair_comparisons`),
+logical comparison requests (`pair_requests`), individual relation follow-ups
+(`relation_adjudications`), and reused exact-proposition relations. Physical retry
+attempts and token usage remain separate. A batch saves requests; it does not
+turn four independent semantic decisions into one paid pair decision.
+
+Only candidates with identical accepted claim text, type and complete resolved
+evidence reuse a representative pair's decision. Every other pair is still
+examined; lexical similarity sets order and never establishes a relation.
+Reused relation rows name their representative pair, and original candidate and
+occurrence evidence remain intact. Groups still require equivalence for every
+member pair, including reused exact-proposition decisions; contradictory edges
+prevent transitive merges.
+
+A borderline eight-class Choice receives at most one individual follow-up,
+within the same global and paid-pair limits. Five binary checks distinguish
+mutual entailment, directional detail, incompatible scope and explicit correction.
+All defining positive and negative signals must satisfy the unchanged equivalence
+threshold. Initial selected class/probability and follow-up signals are retained;
+`adjudication_strength` is the weakest defining signal, not a calibrated relation
+probability. Unresolved relations remain visible and counts remain provisional.
+Primary comparisons run in waves that keep up to one-third of remaining calls,
+capped by the remaining follow-up allowance, available for those checks. Later
+waves reclaim unused reserve. The report records the final representative-pair
+dimension and planned initial request count; neither a batch nor a reserve
+guarantees that newly discovered content fits the configured budget.
+
+Independent QA discovery traverses disjoint source windows with at most four
+candidates per generation, retaining the full original target and cited context
+for references and governing qualifiers. Assertion evidence must start in its
+assigned window, and quotes/offsets always belong to the original source. A timed
+out window is decomposed under the same provider deadlines and global call cap;
+the configured QA invocation limit includes those retries. Pending windows are
+reported. QA receives no direct-route candidates. A recoverable route failure
+still permits the original-source coverage audit and preserves valid evidence
+from the other route. Window completion does not prove semantic coverage.
 
 Configured CLI analyses process independent source segments concurrently, using
 separate provider clients for each worker. The default is two targets; set
 `--information-concurrency 4` or `OVS_INFORMATION_CONCURRENCY=4` to increase it,
 up to eight. Operations within each target keep their dependency order. Pair
-consolidation runs afterward with up to eight individual evaluations; it does
-not batch distinct pair states. Logical calls are reserved in deterministic
+consolidation runs afterward with up to eight requests, each carrying at most
+four independently keyed pair decisions. Each question explicitly names its pair
+block and both candidate IDs; only that pair's marked original source scopes and
+cited reference context authorize a decision. The character budget reduces batch
+size when necessary, including individual requests. Set batch size 1 for an
+individual comparison baseline. Logical calls are reserved in deterministic
 priority order before dispatch, and relations, calls and groups follow that order
 regardless of completion order. All workers share the logical-call cap, so target
 coverage at cap exhaustion can depend on scheduling. Isolated failed comparisons

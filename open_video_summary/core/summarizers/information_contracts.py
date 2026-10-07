@@ -295,6 +295,11 @@ class InformationRelation:
     confidence: float | None
     merged: bool = False
     origin: str = "evaluator"
+    reused_from: tuple[str, str] | None = None
+    initial_relation: str | None = None
+    initial_probability: float | None = None
+    adjudication_signals: tuple[tuple[str, float], ...] = ()
+    adjudication_strength: float | None = None
 
 
 @dataclass(frozen=True)
