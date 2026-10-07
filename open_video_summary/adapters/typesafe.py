@@ -30,6 +30,7 @@ from open_video_summary.errors import (
     RateLimitError,
     RequestCancelledError,
     RequestDeadlineError,
+    RunStoppedError,
     ServiceTimeoutError,
     ServiceUnavailableError,
 )
@@ -542,6 +543,8 @@ class TypeSafeEvaluator:
             status = "deadline_exceeded"
         elif isinstance(error, RequestCancelledError):
             status = "cancelled"
+        elif isinstance(error, RunStoppedError):
+            status = "run_stopped"
         elif isinstance(error, ConfigurationError):
             status = "request_rejected"
         else:

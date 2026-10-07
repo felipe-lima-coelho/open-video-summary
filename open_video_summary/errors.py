@@ -21,6 +21,10 @@ class RequestDeadlineError(ProviderError):
     """A bounded operation cannot send or wait within its remaining deadline."""
 
 
+class RunStoppedError(ProviderError):
+    """Dependent requests stopped after a permanent failure in this analysis run."""
+
+
 class AuthenticationError(ProviderError):
     pass
 

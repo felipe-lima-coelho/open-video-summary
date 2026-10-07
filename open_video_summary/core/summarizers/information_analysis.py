@@ -56,6 +56,7 @@ from open_video_summary.core.summarizers.information_evaluation import (
 )
 from open_video_summary.errors import (
     AuthenticationError, ConfigurationError, InvalidResponseError, ProviderConfigurationError,
+    RequestCancelledError, RunStoppedError,
 )
 from open_video_summary.utils.progress import heartbeat, notify
 from open_video_summary.utils.retry import check_cancelled
@@ -119,14 +120,18 @@ class _CallBudget:
         self.limit, self.used, self.reserved, self.lock = limit, 0, 0, Lock()
         self.permanent_failure = None
         self.cancel_event = Event()
+        self.request_event = Event()
+        self.request_signal = _RunRequestSignal(self)
 
     def cancel(self):
         with self.lock:
             self.cancel_event.set()
+            self.request_event.set()
 
     def stop(self, error):
         with self.lock:
             self.permanent_failure = type(error).__name__
+            self.request_event.set()
 
     def claim(self):
         with self.lock:
@@ -181,6 +186,26 @@ class _CallReservation:
 
     def release(self):
         self.budget.release(self)
+
+
+class _RunRequestSignal:
+    """Wake dependent retries without labeling a terminal failure as user cancellation."""
+
+    def __init__(self, budget):
+        self.budget = budget
+
+    def is_set(self):
+        return self.budget.request_event.is_set()
+
+    def wait(self, timeout):
+        return self.budget.request_event.wait(timeout)
+
+    def raise_if_set(self):
+        if self.budget.cancel_event.is_set():
+            raise RequestCancelledError("The analysis was interrupted; no new request was sent.")
+        if self.budget.permanent_failure is not None:
+            raise RunStoppedError(
+                f"Dependent requests stopped after {self.budget.permanent_failure} in this analysis run.")
 
 
 class InformationAnalyzer:
@@ -283,7 +308,7 @@ class _AnalysisRun:
         previous_progress = getattr(adapter, "progress", None)
         previous_cancel = getattr(adapter, "cancel_event", None)
         if hasattr(adapter, "cancel_event"):
-            adapter.cancel_event = self.budget.cancel_event
+            adapter.cancel_event = self.budget.request_signal
         if hasattr(adapter, "progress") and self.progress is not None:
             adapter.progress = lambda service: self._notify("provider_attempt", operation=operation, provider=provider, segment_id=target_id, service=service)
         first_record = len(getattr(adapter, "records", []))

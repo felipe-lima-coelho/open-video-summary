@@ -448,7 +448,8 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--information-concurrency` | `OVS_INFORMATION_CONCURRENCY` | 2 independent source targets (range 1–8) |
 | `--information-max-calls` | `OVS_INFORMATION_MAX_CALLS` | 256 logical calls |
 | `--information-rounds` | `OVS_INFORMATION_ROUNDS` | 2 recovery rounds per target |
-| `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | 160 semantic pair comparisons |
+| `--information-pair-concurrency` | `OVS_INFORMATION_PAIR_CONCURRENCY` | 8 individual semantic comparisons in flight (range 1–8) |
+| `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | `auto`: remaining global logical-call budget when consolidation starts; an integer adds a paid comparison cap, including 0 |
 | `--information-max-candidates` | `OVS_INFORMATION_MAX_CANDIDATES` | 16 per target and extraction route |
 | `--information-context-chars` | `OVS_INFORMATION_CONTEXT_CHARS` | 24000 characters per prompt, or evaluation context plus questions |
 | `--information-context-segments` | `OVS_INFORMATION_CONTEXT_SEGMENTS` | Up to 4 additional current segments from the same video |
@@ -461,6 +462,19 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--evaluator-base-url` | `OVS_EVALUATOR_BASE_URL` | Selected provider endpoint; `https://api.typesafe.ai` for TypeSafe |
 | `--evaluator-timeout` | `OVS_EVALUATOR_TIMEOUT_SECONDS` | 30 seconds per HTTP attempt |
 | `--evaluator-max-attempts` | `OVS_EVALUATOR_MAX_ATTEMPTS` | 2 attempts; TypeSafe allows at most 5 |
+| `--evaluator-operation-timeout` | `OVS_EVALUATOR_OPERATION_TIMEOUT_SECONDS` | 90 seconds for the complete evaluation operation, including admission and retries |
+| `--evaluator-request-limit` | `OVS_EVALUATOR_REQUEST_LIMIT` | 60 physical requests per window |
+| `--evaluator-token-limit` | `OVS_EVALUATOR_TOKEN_LIMIT` | 80000 estimated input tokens per window |
+| `--evaluator-rate-window` | `OVS_EVALUATOR_RATE_WINDOW_SECONDS` | 1 second |
+| `--evaluator-limit-group` | `OVS_EVALUATOR_LIMIT_GROUP` | Model identifier; explicitly group models sharing a service limit |
+| `--llm-operation-timeout` | `OVS_LLM_OPERATION_TIMEOUT_SECONDS` | 360 seconds for the complete generation operation |
+| `--llm-max-output-tokens` | `OVS_LLM_MAX_OUTPUT_TOKENS` | 16384 OpenAI output tokens, including reasoning; Ollama generation remains unchanged |
+| `--llm-request-limit` | `OVS_LLM_REQUEST_LIMIT` | Unset; optional physical request ceiling per window |
+| `--llm-token-limit` | `OVS_LLM_TOKEN_LIMIT` | Unset; optional estimated input plus reserved output token ceiling per window |
+| `--llm-rate-window` | `OVS_LLM_RATE_WINDOW_SECONDS` | 60 seconds; OpenAI header limits describe minute windows |
+| No CLI switch | `OVS_LLM_LEARN_RATE_LIMITS` | `true`; learn OpenAI limits from response headers |
+| `--llm-organization`, `--llm-project` | `OVS_LLM_ORGANIZATION`, `OVS_LLM_PROJECT` | Unset; sent to OpenAI and included in the controller scope |
+| `--llm-limit-group` | `OVS_LLM_LIMIT_GROUP` | Model identifier; set a common group for a shared model family |
 
 The initial `TYPESAFE_API_KEY`, `OVS_JEV_*` and `--jev-*` configuration names were
 replaced, with no compatibility aliases or hidden fallback. Rename the key to
@@ -474,21 +488,84 @@ Provider preflight/model discovery is separate from that budget. Retry records a
 usage, when supplied by the service, allow operational cost accounting; no fixed
 currency cost is inferred. Large original targets are not truncated to fit a
 request: they become pending work. Pair-budget exhaustion prevents further
-automatic merges and marks unique-unit counts provisional.
+automatic merges and marks unique-unit counts provisional. Free exact validated
+proofs run first and consume neither paid comparisons nor logical calls. `auto`
+removes the former independent 160-comparison default without increasing the
+global budget. The library default remains 256 calls; `.env.example` explicitly
+sets 1000. Reports record configured/effective pair caps and actual paid work.
 
 Configured CLI analyses process independent source segments concurrently, using
 separate provider clients for each worker. The default is two targets; set
 `--information-concurrency 4` or `OVS_INFORMATION_CONCURRENCY=4` to increase it,
-up to eight. Operations within each target keep their dependency order, and pair
-consolidation runs after target analysis; report entries are assembled in source
-order. All workers share the logical-call cap, so target coverage at cap exhaustion
-can depend on scheduling. Provider retries remain bounded by their attempt limits;
-`Retry-After` delays are capped at 30 seconds. Retries wait for the greater of that
-delay and exponential backoff with up to 25% jitter (backoff capped at 10 seconds
-for generation, 30 for evaluation). SDK retries are disabled for OpenAI, avoiding
-a second retry loop. Permanent authentication or provider-wide model/billing
-failures stop new analysis requests; in-flight requests retain their finite
-timeouts. A target-specific invalid request does not cancel other targets.
+up to eight. Operations within each target keep their dependency order. Pair
+consolidation runs afterward with up to eight individual evaluations; it does
+not batch distinct pair states. Logical calls are reserved in deterministic
+priority order before dispatch, and relations, calls and groups follow that order
+regardless of completion order. All workers share the logical-call cap, so target
+coverage at cap exhaustion can depend on scheduling. Isolated failed comparisons
+remain unexamined while other admitted comparisons can finish.
+
+Every physical send, including retries and all Jev validation, anchor, coverage
+and pair requests, passes through one shared process-local controller for its
+provider, endpoint, credential, organization/project and limit group. Native
+worker forks keep private clients and records while sharing this controller.
+Configured analyzers share an explicit `RequestScope`; library callers combining
+separate adapters can pass the same scope. The controller does not coordinate
+other processes or external account users. A model family sharing a provider
+limit needs an explicit common limit group; project headers alone do not provide
+cross-group or organization-wide enforcement.
+
+Jev starts at 60 requests/s and 80000 estimated input tokens/s, leaving headroom
+against the user organization's 80 requests/s and 100000 input tokens/s allowance.
+OpenAI account limits are not assumed. Valid response headers establish local
+ceilings at 90% of their published request/token limits, conservatively reconcile
+remaining/reset allowances with in-flight reservations, and can only tighten
+explicit ceilings. Optional project token headers further tighten the group.
+Unknown or absent request-limit headers use a local discovery pace of four
+requests/s while allowing concurrent in-flight calls. This fallback is not a
+guarantee about unknown account limits. Header learning uses minute windows;
+disable it when configuring another OpenAI window duration.
+
+Token reservations use the complete serialized UTF-8 request length plus an
+envelope allowance, including questions, criteria, state and output schema. This
+is a conservative estimate, not exact tokenization. OpenAI additionally reserves
+its explicit `max_output_tokens` ceiling (including reasoning); incomplete
+responses are rejected and recorded. A request estimated larger than a configured
+or learned token window fails visibly before sending, without truncating source
+text. Adjust the output budget or limit explicitly when appropriate. Actual
+provider usage remains separate from estimated admission reservations.
+
+A temporary 429 publishes a cooldown for both new requests and retries in the
+affected controller. Already sent requests finish; recovery is paced gradually
+over ten seconds. An OpenAI cooldown does not pause Jev. Isolated timeouts back
+off only their operation. Three service-unavailable failures within 30 seconds
+pause the affected group for at least five seconds and then ramp its pace.
+`Retry-After` seconds and HTTP dates are minimum waits and are never clipped;
+`retry-after-ms` is also accepted as a compatibility fallback. Exponential backoff
+adds up to 25% jitter (backoff capped at 10 seconds for generation, 30 for
+evaluation). If a required wait cannot fit the remaining operation deadline,
+the operation fails with `RequestDeadlineError` without an early retry. Admission
+and backoff waits are interruptible, and terminal authentication/quota feedback
+wakes queued operations. Current OpenAI credit/spend/usage limit errors and model
+configuration failures stop new dependent analysis requests. A target-specific
+invalid request does not cancel other targets.
+The dependent run uses a separate `RunStoppedError` signal to stop retrying other
+roles after a terminal failure; the original failure remains in report metadata,
+and independent controller scopes are not marked terminal by that run signal.
+
+Retries are bounded by both attempts and a total operation deadline. The existing
+120-second generation and 30-second evaluation per-attempt defaults are clamped
+to remaining time. A shared cooldown cannot make an intrinsically long generation
+succeed within its individual timeout; choose finite timeout/deadline settings
+explicitly. OpenAI SDK retries are disabled, including injected real SDK clients.
+Already sent sockets retain their transport timeouts and are not forcibly aborted.
+Attempt records expose physical sends, retry/error reasons, admission/backoff wait
+time and reasons, estimated reservations, exact usage when returned, active
+limits and output/deadline settings for operational auditing.
+Service classifications and header semantics follow the official
+[OpenAI error guide](https://developers.openai.com/api/docs/guides/error-codes),
+[OpenAI rate limits](https://developers.openai.com/api/docs/guides/rate-limits)
+and [TypeSafe API](https://docs.typesafe.ai/api#handling-rate-limits).
 
 The CLI prints target, operation, provider-attempt, retry, and elapsed-time updates
 while analysis runs, plus a ten-second heartbeat during long provider calls. For

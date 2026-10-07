@@ -9,6 +9,10 @@ from open_video_summary.errors import RequestCancelledError
 
 
 def check_cancelled(cancel_event):
+    signal = getattr(cancel_event, "raise_if_set", None)
+    if callable(signal):
+        signal()
+        return
     if cancel_event is not None and cancel_event.is_set():
         raise RequestCancelledError("The analysis was interrupted; no new request was sent.")
 

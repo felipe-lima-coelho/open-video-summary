@@ -127,7 +127,7 @@ class InformationExecutionTests(unittest.TestCase):
         self.assertEqual(["c0", "t1:c0", "t2:c0"], [item.id for item in report.candidates])
         self.assertEqual({("v0:s0", "c0"), ("v0:s1", "t1:c0"), ("v0:s2", "t2:c0")}, set(tracker.evaluation_ids))
         self.assertEqual([], generator.records)
-        self.assertEqual(3, len(evaluator.records))  # Only sequential pair decisions.
+        self.assertEqual(0, len(evaluator.records))  # Pair workers also own private records.
         self.assertEqual(4, len(tracker.clients))  # Parent preflight plus three workers.
         self.assertFalse(tracker.clients[0].closed)
         self.assertTrue(all(client.closed for client in tracker.clients[1:]))
@@ -187,6 +187,39 @@ class InformationExecutionTests(unittest.TestCase):
         self.assertIsNone(json.loads(report.metadata_json)["permanent_provider_failure"])
         self.assertEqual(2, report.counts.occurrences)
         self.assertEqual("partial", report.status)
+
+    def test_terminal_generator_failure_stops_dependent_evaluator_retry_without_poisoning_scope(self):
+        evaluator_started, terminal_reported = threading.Event(), threading.Event()
+        class Tracker(_Requests):
+            evaluations = 0
+            def client(self, **kwargs):
+                client = super().client(**kwargs)
+                create = client.responses.create
+                def coordinated(**request):
+                    data = json.loads(request["input"].split("\nInput:\n", 1)[1])
+                    result = create(**request)
+                    if data["target"]["id"] == "v0:s1":
+                        if not evaluator_started.wait(2):
+                            raise AssertionError("Evaluator did not start")
+                        raise ExternalStatusError(401)
+                    return result
+                client.responses.create = coordinated
+                return client
+            def evaluate(self, *args, **kwargs):
+                self.evaluations += 1
+                evaluator_started.set()
+                if not terminal_reported.wait(2):
+                    raise AssertionError("Terminal feedback did not arrive")
+                raise TimeoutError("offline")
+        def observe(event):
+            if event.event == "call_failed" and event.error_type == "AuthenticationError":
+                terminal_reported.set()
+        tracker = Tracker()
+        report, generator, evaluator = self.run_native(tracker, attempts=2, progress=observe)
+        self.assertEqual(1, tracker.evaluations)
+        self.assertEqual("AuthenticationError", json.loads(report.metadata_json)["permanent_provider_failure"])
+        self.assertIn("RunStoppedError", [call.status for call in report.calls])
+        self.assertIsNone(evaluator.controller.snapshot()["terminal_error"])
 
     def test_concurrent_interrupt_stops_active_target_chains_and_queued_targets(self):
         for interrupted in ("v0:s0", "v0:s1"):
@@ -312,7 +345,7 @@ class RetryExecutionTests(unittest.TestCase):
         self.assertEqual(3, len([event for event in events if event.event == "attempt_started"]))
         self.assertEqual(["RateLimitError", "ServiceTimeoutError"], [event.error_type for event in events if event.event == "attempt_failed"])
         self.assertNotIn("private", repr(events))
-        self.assertEqual(30.0, retry_after({"retry-after": "900"}))
+        self.assertEqual(900.0, retry_after({"retry-after": "900"}))
         self.assertEqual(10.0, retry_delay(8, 1, backoff_cap=10, jitter=lambda low, high: high))
 
     def test_typesafe_transient_retry_honors_server_delay_and_permanent_auth_is_not_retried(self):
@@ -334,6 +367,29 @@ class RetryExecutionTests(unittest.TestCase):
 
 
 class ExecutionConfigurationAndCLITests(unittest.TestCase):
+    def test_pair_controls_default_auto_and_numeric_caps_from_cli_process_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / ".env"
+            fixture.write_text("OVS_INFORMATION_MAX_PAIRS=auto\nOVS_INFORMATION_PAIR_CONCURRENCY=8\n", encoding="utf-8")
+            automatic = configured_information_analyzer(environ={}, env_file=fixture).config
+            self.assertIsNone(automatic.max_pair_comparisons)
+            self.assertEqual(8, automatic.pair_concurrency)
+            numeric = configured_information_analyzer(
+                {"information_max_pairs": "0", "information_pair_concurrency": 3},
+                environ={"OVS_INFORMATION_MAX_PAIRS": "100"}, env_file=fixture).config
+            self.assertEqual(0, numeric.max_pair_comparisons)
+            self.assertEqual(3, numeric.pair_concurrency)
+            for value in (-1, 9):
+                with self.assertRaises(ConfigurationError):
+                    InformationAnalysisConfig(pair_concurrency=value)
+            args = cli.build_parser().parse_args(["analyze-information",
+                "--information-max-pairs", "auto", "--information-pair-concurrency", "8",
+                "--llm-operation-timeout", "400", "--llm-max-output-tokens", "12000",
+                "--evaluator-request-limit", "60", "--evaluator-token-limit", "80000"])
+            self.assertEqual("auto", args.information_max_pairs)
+            self.assertEqual(8, args.information_pair_concurrency)
+            self.assertEqual(400, args.llm_operation_timeout)
+
     def test_concurrency_defaults_bounds_and_explicit_process_file_precedence(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = Path(temporary) / ".env"
