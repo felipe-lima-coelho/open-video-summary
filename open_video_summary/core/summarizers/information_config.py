@@ -11,7 +11,8 @@ class InformationAnalysisConfig:
     qa_enabled: bool = True
     max_calls: int = 256
     max_coverage_rounds: int = 2
-    max_pair_comparisons: int = 160
+    max_pair_comparisons: int | None = None
+    pair_concurrency: int = 8
     max_candidates_per_route: int = 16
     max_context_chars: int = 24000
     context_segments: int = 4
@@ -25,6 +26,7 @@ class InformationAnalysisConfig:
             raise ConfigurationError("Information QA must be a boolean.")
         limits = {
             "concurrency": (1, 8),
+            "pair_concurrency": (1, 8),
             "max_calls": (1, 10000),
             "max_coverage_rounds": (0, 10),
             "max_pair_comparisons": (0, 10000),
@@ -34,6 +36,8 @@ class InformationAnalysisConfig:
         }
         for name, (minimum, maximum) in limits.items():
             value = getattr(self, name)
+            if name == "max_pair_comparisons" and value is None:
+                continue
             if type(value) is not int or not minimum <= value <= maximum:
                 raise ConfigurationError(
                     f"Information {name} must be between {minimum} and {maximum}."
@@ -87,13 +91,17 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
             raise ValueError()
         return lowered in {"true", "1"}
 
+    def pair_limit(value):
+        return None if str(value).strip().lower() == "auto" else int(value)
+
     settings = InformationAnalysisConfig(
         qa_enabled=get("information_qa", "OVS_INFORMATION_QA", True, boolean),
         concurrency=get("information_concurrency", "OVS_INFORMATION_CONCURRENCY", 2, int),
+        pair_concurrency=get("information_pair_concurrency", "OVS_INFORMATION_PAIR_CONCURRENCY", 8, int),
         max_calls=get("information_max_calls", "OVS_INFORMATION_MAX_CALLS", 256, int),
         max_coverage_rounds=get("information_rounds", "OVS_INFORMATION_ROUNDS", 2, int),
         max_pair_comparisons=get(
-            "information_max_pairs", "OVS_INFORMATION_MAX_PAIRS", 160, int
+            "information_max_pairs", "OVS_INFORMATION_MAX_PAIRS", None, pair_limit
         ),
         max_candidates_per_route=get(
             "information_max_candidates", "OVS_INFORMATION_MAX_CANDIDATES", 16, int
@@ -120,4 +128,10 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
     generator = create_llm(
         load_provider_config(supplied, environ=values, env_file=env_file).llm
     )
-    return InformationAnalyzer(generator, create_evaluator(evaluator_config), settings, progress=progress)
+    evaluator = create_evaluator(evaluator_config)
+    from open_video_summary.utils.request_control import RequestScope
+    scope = RequestScope()
+    for adapter in (generator, evaluator):
+        if callable(getattr(adapter, "set_request_scope", None)):
+            adapter.set_request_scope(scope)
+    return InformationAnalyzer(generator, evaluator, settings, progress=progress)

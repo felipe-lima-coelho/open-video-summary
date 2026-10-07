@@ -5,7 +5,7 @@ import re
 import time
 import uuid
 import math
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from heapq import nsmallest
@@ -116,7 +116,7 @@ class _ProviderStopped(Exception):
 
 class _CallBudget:
     def __init__(self, limit):
-        self.limit, self.used, self.lock = limit, 0, Lock()
+        self.limit, self.used, self.reserved, self.lock = limit, 0, 0, Lock()
         self.permanent_failure = None
         self.cancel_event = Event()
 
@@ -133,10 +133,54 @@ class _CallBudget:
             check_cancelled(self.cancel_event)
             if self.permanent_failure is not None:
                 raise _ProviderStopped()
-            if self.used >= self.limit:
+            if self.used + self.reserved >= self.limit:
                 raise _LimitReached()
             self.used += 1
             return self.used
+
+    def reserve(self):
+        """Reserve one logical call before a pair task is submitted."""
+        with self.lock:
+            check_cancelled(self.cancel_event)
+            if self.permanent_failure is not None:
+                raise _ProviderStopped()
+            if self.used + self.reserved >= self.limit:
+                raise _LimitReached()
+            self.reserved += 1
+            return _CallReservation(self)
+
+    def consume(self, reservation):
+        with self.lock:
+            check_cancelled(self.cancel_event)
+            if self.permanent_failure is not None:
+                raise _ProviderStopped()
+            if not reservation.active:
+                raise RuntimeError("The logical-call reservation is no longer active.")
+            reservation.active = False
+            reservation.consumed = True
+            self.reserved -= 1
+            self.used += 1
+
+    def release(self, reservation):
+        with self.lock:
+            if reservation.active:
+                reservation.active = False
+                self.reserved -= 1
+
+    @property
+    def remaining(self):
+        with self.lock:
+            return max(0, self.limit - self.used - self.reserved)
+
+
+class _CallReservation:
+    def __init__(self, budget):
+        self.budget = budget
+        self.active = True
+        self.consumed = False
+
+    def release(self):
+        self.budget.release(self)
 
 
 class InformationAnalyzer:
@@ -186,6 +230,11 @@ class _AnalysisRun:
         self.actual_concurrency = parent.actual_concurrency if parent else 1
         self.evaluated_targets = set()
         self.validation_cache = {}
+        self.effective_pair_limit = None
+        self.paid_pair_comparisons = 0
+        self.exact_pair_relations = 0
+        self.unexamined_pair_count = 0
+        self.pair_concurrency = 1
 
     @property
     def call_count(self):
@@ -204,13 +253,8 @@ class _AnalysisRun:
         if item not in self.issues:
             self.issues.append(item)
 
-    def _permit(self, context, instructions=()):
+    def _permit(self, context, instructions=(), *, reservation=None):
         check_cancelled(self.budget.cancel_event)
-        if self.call_count >= self.config.max_calls:
-            self.issue(
-                "call_budget_exhausted", "Remaining analysis work was not executed."
-            )
-            raise _LimitReached()
         if (
             len(context) + sum(len(item) for item in instructions)
             > self.config.max_context_chars
@@ -221,7 +265,10 @@ class _AnalysisRun:
             )
             raise _LimitReached()
         try:
-            self.budget.claim()
+            if reservation is None:
+                self.budget.claim()
+            else:
+                self.budget.consume(reservation)
         except _ProviderStopped:
             self.issue("provider_stopped", "No new requests were sent after a permanent authentication or configuration failure.")
             raise
@@ -292,13 +339,14 @@ class _AnalysisRun:
         self._notify("call_completed", operation=operation, provider=provider, segment_id=target_id, operation_seconds=time.monotonic() - started)
         return result
 
-    def _evaluate(self, operation, context, noul=None, choice=None):
+    def _evaluate(self, operation, context, noul=None, choice=None, *, reservation=None):
         noul, choice = noul or {}, choice or {}
         encoded = context if isinstance(context, str) else canonical_json(context)
         self._permit(
             encoded,
             tuple(noul.values())
             + tuple(value[0] + canonical_json(value[1]) for value in choice.values()),
+            reservation=reservation,
         )
         result = self._invoke(
             self.evaluator,
@@ -771,18 +819,14 @@ class _AnalysisRun:
         candidate = record.candidate
         return candidate.text, candidate.unit_type, candidate.evidence
 
-    def _candidate_pairs(self, accepted):
-        """Process free exact matches, then schedule plausible semantic matches.
-
-        Similarity is only scheduling evidence. Every nonexact merge still needs
-        the evaluator's equivalence decision and the full group compatibility
-        checks. A bounded heap avoids storing every possible pair.
-        """
+    def _candidate_pairs(self, accepted, paid_limit):
+        """Return free exact pairs and a prioritized, bounded paid pair list."""
         exact = {}
         for record in accepted:
             exact.setdefault(self._exact_proposition_key(record), []).append(record)
-        for group in exact.values():
-            yield from combinations(group, 2)
+        exact_pairs = [
+            pair for group in exact.values() for pair in combinations(group, 2)
+        ]
         tokens = {
             record.id: frozenset(re.findall(r"\w+", record.candidate.text.casefold()))
             for record in accepted
@@ -814,15 +858,82 @@ class _AnalysisRun:
             pair for pair in combinations(accepted, 2)
             if self._exact_proposition_key(pair[0]) != self._exact_proposition_key(pair[1])
         )
-        yield from nsmallest(self.config.max_pair_comparisons, nonexact, key=priority)
+        return exact_pairs, nsmallest(paid_limit, nonexact, key=priority)
+
+    def _pair_worker(self, left, right, reservation, isolated):
+        """Evaluate one paid pair with private adapter state and local audit rows."""
+        worker = _AnalysisRun(
+            InformationAnalyzer(
+                self.generator,
+                self.evaluator,
+                self.config,
+                progress=self.progress,
+                progress_interval_seconds=self.progress_interval,
+            ),
+            self.snapshot,
+            budget=self.budget,
+            parent=self,
+        )
+        worker.active_target = None
+        evaluator = self.evaluator
+        owned = None
+        relation = None
+        try:
+            if isolated:
+                evaluator = self.evaluator.fork()
+                owned = evaluator
+                worker.evaluator = evaluator
+            state = relation_state(left, right, self.segments)
+            _, decisions = worker._evaluate(
+                "compare_candidates",
+                state,
+                choice={"relation": (RELATION_INSTRUCTION, RELATION_CRITERIA)},
+                reservation=reservation,
+            )
+            result = decisions["relation"]
+            probability = dict(result.probabilities).get(result.selected, 0.0)
+            label = (
+                result.selected
+                if probability >= self.config.equivalence_threshold
+                else "uncertain"
+            )
+            relation = InformationRelation(
+                left.id, right.id, label, probability, result.confidence
+            )
+        except Exception as exc:
+            worker.issue(
+                "pair_evaluation_failed",
+                type(exc).__name__,
+                candidates=(left.id, right.id),
+            )
+        finally:
+            reservation.release()
+            if owned is not None:
+                closer = getattr(owned, "close", None)
+                if closer is not None:
+                    try:
+                        closer()
+                    except Exception as exc:
+                        worker.issue("adapter_cleanup_failed", type(exc).__name__)
+        return relation, worker, reservation.consumed
 
     def _consolidate(self):
         accepted = self._accepted()
         compatible = {}
         total_pairs = len(accepted) * (len(accepted) - 1) // 2
-        for left, right in self._candidate_pairs(accepted):
-            if self._exact_proposition_key(left) == self._exact_proposition_key(right):
-                relation = InformationRelation(
+        configured_limit = self.config.max_pair_comparisons
+        remaining = self.budget.remaining
+        self.effective_pair_limit = (
+            remaining
+            if configured_limit is None
+            else min(configured_limit, remaining)
+        )
+        exact_pairs, paid_pairs = self._candidate_pairs(
+            accepted, self.effective_pair_limit
+        )
+        for left, right in exact_pairs:
+            self.relations.append(
+                InformationRelation(
                     left.id,
                     right.id,
                     "equivalent",
@@ -830,45 +941,103 @@ class _AnalysisRun:
                     None,
                     origin="exact_validated_proposition",
                 )
-            else:
-                state = relation_state(left, right, self.segments)
-                try:
-                    _, decisions = self._evaluate(
-                        "compare_candidates",
-                        state,
-                        choice={"relation": (RELATION_INSTRUCTION, RELATION_CRITERIA)},
-                    )
-                except Exception as exc:
-                    self.issue(
-                        "pair_evaluation_failed",
-                        type(exc).__name__,
-                        candidates=(left.id, right.id),
-                    )
-                    break
-                result = decisions["relation"]
-                probability = dict(result.probabilities).get(result.selected, 0.0)
-                label = (
-                    result.selected
-                    if probability >= self.config.equivalence_threshold
-                    else "uncertain"
-                )
-                relation = InformationRelation(
-                    left.id, right.id, label, probability, result.confidence
-                )
-            self.relations.append(relation)
-            compatible[frozenset((left.id, right.id))] = (
-                relation.relation == "equivalent"
             )
-            if relation.relation == "uncertain":
-                self.issue(
-                    "relation_uncertain",
-                    "Candidate meanings were not merged without a sufficiently strong equivalence decision.",
-                    candidates=(left.id, right.id),
-                )
+            compatible[frozenset((left.id, right.id))] = True
+        self.exact_pair_relations = len(exact_pairs)
+
+        evaluator_can_fork = (
+            callable(getattr(self.evaluator, "fork", None))
+            and getattr(self.evaluator, "can_fork", True)
+        )
+        requested_concurrency = getattr(self.config, "pair_concurrency", 8)
+        self.pair_concurrency = (
+            min(requested_concurrency, len(paid_pairs))
+            if evaluator_can_fork and paid_pairs
+            else 1
+        )
+        failed = False
+        if paid_pairs:
+            with ThreadPoolExecutor(
+                max_workers=self.pair_concurrency,
+                thread_name_prefix="ovs-information-pair",
+            ) as executor:
+                active = {}
+                results = {}
+                next_index = 0
+
+                def submit_available():
+                    nonlocal next_index, failed
+                    while (
+                        len(active) < self.pair_concurrency
+                        and next_index < len(paid_pairs)
+                    ):
+                        if self.budget.cancel_event.is_set():
+                            failed = True
+                            return
+                        if self.budget.permanent_failure is not None:
+                            failed = True
+                            return
+                        left, right = paid_pairs[next_index]
+                        try:
+                            reservation = self.budget.reserve()
+                        except _ProviderStopped:
+                            self.issue("provider_stopped", "No new requests were sent after a permanent authentication or configuration failure.")
+                            failed = True
+                            return
+                        except _LimitReached:
+                            self.issue("call_budget_exhausted", "Remaining analysis work was not executed.")
+                            failed = True
+                            return
+                        if self.budget.cancel_event.is_set() or self.budget.permanent_failure is not None:
+                            reservation.release()
+                            failed = True
+                            return
+                        future = executor.submit(
+                            self._pair_worker,
+                            left,
+                            right,
+                            reservation,
+                            evaluator_can_fork,
+                        )
+                        active[future] = (next_index, left, right)
+                        next_index += 1
+
+                submit_available()
+                while active:
+                    completed, _ = wait(active, return_when=FIRST_COMPLETED)
+                    for future in completed:
+                        index, left, right = active.pop(future)
+                        relation, worker, consumed = future.result()
+                        results[index] = (left, right, relation, worker, consumed)
+                    if self.budget.cancel_event.is_set() or self.budget.permanent_failure is not None:
+                        failed = True
+                    if not failed:
+                        submit_available()
+
+            # A later comparison may finish first. Persist every relation, call,
+            # and issue in the original priority order.
+            for index in sorted(results):
+                left, right, relation, worker, consumed = results[index]
+                self.paid_pair_comparisons += int(consumed)
+                self.calls.extend(worker.calls)
+                for item in worker.issues:
+                    self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
+                if relation is not None:
+                    self.relations.append(relation)
+                    compatible[frozenset((left.id, right.id))] = (
+                        relation.relation == "equivalent"
+                    )
+                    if relation.relation == "uncertain":
+                        self.issue(
+                            "relation_uncertain",
+                            "Candidate meanings were not merged without a sufficiently strong equivalence decision.",
+                            candidates=(left.id, right.id),
+                        )
         if len(self.relations) < total_pairs:
+            self.unexamined_pair_count = total_pairs - len(self.relations)
             self.issue(
                 "pair_budget_exhausted",
-                f"{total_pairs - len(self.relations)} candidate pairs remain unexamined; unique-unit counts are provisional.",
+                f"{self.unexamined_pair_count} candidate pairs remain unexamined; unique-unit counts are provisional.",
             )
         groups = []
         for record in accepted:
@@ -1082,6 +1251,7 @@ class _AnalysisRun:
             else "partial" if self.issues else "completed"
         )
         counts = self._counts(units, occurrences, status)
+        attempt_audit = self._provider_attempt_audit(self.calls)
         metadata = {
             "started_at": self.started_at,
             "duration_seconds": time.monotonic() - self.started,
@@ -1090,6 +1260,12 @@ class _AnalysisRun:
             "requested_concurrency": self.config.concurrency,
             "actual_concurrency": self.actual_concurrency,
             "adapter_isolation_available": can_isolate,
+            "effective_pair_limit": self.effective_pair_limit,
+            "paid_pair_comparisons": self.paid_pair_comparisons,
+            "exact_pair_relations": self.exact_pair_relations,
+            "unexamined_pair_count": self.unexamined_pair_count,
+            "pair_concurrency": self.pair_concurrency,
+            **attempt_audit,
             "permanent_provider_failure": self.budget.permanent_failure,
             "budget_allocation": "A shared logical-call cap includes all targets and consolidation. With concurrent targets, work completed before cap exhaustion can depend on scheduling; report records are assembled in source order. Provider retries are additional bounded physical attempts.",
             "generator": self._provider_settings(self.generator),
@@ -1109,7 +1285,7 @@ class _AnalysisRun:
             "acceptance_semantics": "Content requires literal anchors, focused anchor binding, six source-scope fidelity checks, applicable QA checks and atomicity at the configured threshold. Exact claim/quote identity or one contiguous literal claim passage covering every assertion anchor establishes binding in code; otherwise a separate focused request excludes unrelated source assertions. Auxiliary annotation audits are separate; unverified proposals never supply canonical qualifiers or affect coverage or semantic grouping.",
             "validation_reuse": "Within each immutable target worker, identical resolved candidates, QA fields, proposed annotations and source scopes reuse completed decisions with validation_reused_from. Errors are never cached; changed content or evidence requires new validation.",
             "validation_reused_candidates": sum(record.validation_reused_from is not None for record in self.candidates),
-            "pair_scheduling": "Free exact validated text/type/evidence duplicates are processed first, then anchor and token similarity prioritize evaluator comparisons. Similarity never establishes equivalence; unexamined pairs remain provisional.",
+            "pair_scheduling": "Free exact validated text/type/evidence duplicates are processed first, then anchor and token similarity prioritize evaluator comparisons. Similarity never establishes equivalence; paid comparisons use a shared logical-call reservation and unexamined pairs remain provisional.",
             "literal_alignment": "Matching supplied offsets are retained. Otherwise only a unique exact quote within the same permitted segment is resolved, with raw offsets and evidence_resolutions retained; ambiguous and nonliteral evidence is rejected.",
             "scope": "verbal_transcript",
             "timestamp_resolution": "source_segment",
@@ -1155,11 +1331,81 @@ class _AnalysisRun:
             "reasoning_effort",
             "timeout_seconds",
             "max_attempts",
+            "operation_timeout_seconds",
+            "max_output_tokens",
+            "request_limit",
+            "token_limit",
+            "rate_window_seconds",
+            "learn_rate_limits",
+            "limit_group",
+            "organization",
+            "project",
         )
         return {
             name: getattr(config, name)
             for name in names
             if config is not None and hasattr(config, name)
+        }
+
+    @staticmethod
+    def _provider_attempt_audit(calls):
+        """Summarize only observed physical sends and recorded provider waits."""
+        providers = {}
+
+        def entry(provider):
+            return providers.setdefault(
+                provider,
+                {
+                    "physical_attempts": 0,
+                    "retry_attempts": 0,
+                    "wait_seconds": 0.0,
+                    "errors": {},
+                },
+            )
+
+        for call in calls:
+            provider = call.provider or "unknown"
+            summary = entry(provider)
+            try:
+                metadata = json.loads(call.metadata_json)
+            except (TypeError, ValueError):
+                continue
+            records = metadata.get("attempt_records", ())
+            if not isinstance(records, (list, tuple)):
+                continue
+            sent_count = 0
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                sent_count += int(record.get("request_sent") is True)
+                try:
+                    summary["wait_seconds"] += max(
+                        0.0, float(record.get("wait_seconds", 0.0) or 0.0)
+                    )
+                except (TypeError, ValueError):
+                    pass
+                status = record.get("status")
+                if status and status not in {"success", "completed"}:
+                    errors = summary["errors"]
+                    errors[status] = errors.get(status, 0) + 1
+            summary["physical_attempts"] += sent_count
+            summary["retry_attempts"] += max(0, sent_count - 1)
+
+        return {
+            "physical_attempts": sum(
+                item["physical_attempts"] for item in providers.values()
+            ),
+            "retry_attempts": sum(
+                item["retry_attempts"] for item in providers.values()
+            ),
+            "wait_seconds": sum(item["wait_seconds"] for item in providers.values()),
+            "provider_audit": {
+                provider: {
+                    **values,
+                    "errors": dict(sorted(values["errors"].items())),
+                }
+                for provider, values in sorted(providers.items())
+            },
         }
 
     def _counts(self, units, occurrences, status):
