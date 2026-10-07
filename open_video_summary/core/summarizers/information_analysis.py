@@ -51,6 +51,7 @@ from open_video_summary.core.summarizers.information_evaluation import (
     RELATION_ADJUDICATION_QUESTIONS,
     anchor_binding_spec,
     coverage_spec,
+    exact_proposition_key,
     evaluation_templates,
     relation_state,
     relation_batch_spec,
@@ -952,6 +953,16 @@ class _AnalysisRun:
         self.coverage.append(record)
         return record
 
+    def _recovery_progress(self, target_id):
+        """Track accepted evidence identities and newly resolved annotations."""
+        verified = {}
+        for record in self._accepted(target_id):
+            annotations = verified.setdefault(self._exact_proposition_key(record), set())
+            if record.annotation_state == "verified":
+                annotations.add(record.candidate.qualifiers)
+        # Conflicting verified proposals are not an annotation improvement.
+        return set(verified), {key for key, values in verified.items() if len(values) == 1}
+
     def _target(self, target):
         routes = [("direct", lambda: self._direct_extract(target))]
         if self.config.qa_enabled:
@@ -974,12 +985,13 @@ class _AnalysisRun:
                     (target.id,),
                 )
                 return
-            previous = len(self._accepted(target.id))
+            previous_content, previous_annotations = self._recovery_progress(target.id)
             self._extract(target, "recovery", round_number + 1, audit)
-            if len(self._accepted(target.id)) == previous:
+            current_content, current_annotations = self._recovery_progress(target.id)
+            if not (current_content - previous_content or current_annotations - previous_annotations):
                 self.issue(
                     "coverage_no_progress",
-                    "Recovery produced no additional accepted candidate; pending coverage was retained.",
+                    "Recovery produced no new exact accepted content, occurrence or verified annotation state; pending coverage was retained.",
                     (target.id,),
                 )
                 return
@@ -1061,8 +1073,7 @@ class _AnalysisRun:
 
     @staticmethod
     def _exact_proposition_key(record):
-        candidate = record.candidate
-        return candidate.text, candidate.unit_type, candidate.evidence
+        return exact_proposition_key(record)
 
     def _candidate_pairs(self, accepted, paid_limit):
         """Return free exact pairs and a prioritized, bounded paid pair list."""
@@ -1660,6 +1671,7 @@ class _AnalysisRun:
             "relation_resolution": "A low-probability eight-class Choice triggers at most one individual source-scoped follow-up with six binary checks: directional entailment, incompatible scope, explicit corrections and same complete meaning. Equivalence certainty is separate from the descriptive subtype. Decisive non-entailment in either direction establishes distinctness; subtype ambiguity alone does not make inventory counts provisional. Conflicting complete-meaning/directional signals or unresolved equivalence remain uncertain and provisional. Cutoffs are inclusive within two machine representation steps, with unchanged thresholds. Initial probabilities and all follow-up signals are preserved; derived strengths are not calibrated relation probabilities.",
             "relation_families": "Primary equivalent, known-distinct and uncertain probabilities partition the validated Choice distribution after division by its complete raw total, recorded as primary_probability_total. All primary subtype decisions use this normalization too; initial_probability and call decisions retain the raw provider scores. Known-distinct probability sums complementary, both specificity directions, contradiction and both correction directions; uncertain probability contributes to the denominator but is excluded from known distinctness. The unchanged equivalence threshold can establish distinctness from this family even when no subtype reaches it. Follow-ups still run when budget permits; decisive cross-stage disagreement and internal follow-up conflicts retain uncertainty. Family mass is a model distribution aggregate, not an empirically calibrated accuracy estimate.",
             "recovery_state_projection": "Recovery retains complete original source/context, all accepted meanings and verified qualifiers, and all essential literal evidence in a deduplicated evidence table. Exact projected duplicate records share ids; repair reasons remain while repeated provenance, timestamps and numerical evaluator diagnostics stay in the full report. Source text and report records are not truncated or overwritten. Requests still obey the context-character cap, separately from the logical-call cap.",
+            "coverage_recovery_progress": "Coverage requests group only accepted records with identical text, type and full source evidence, listing all their ids. Reports retain every original record and represented candidate id. Recovery advances only when it adds an exact content/evidence identity or resolves a previously unverified annotation group to one verified value. Duplicate rows, higher scores, unverified annotation changes and conflicting verified annotations are not progress. A no-progress stop preserves the pending coverage state and provisional counts.",
             "literal_source_repairs": "After independent direct and QA discovery, up to max_literal_repairs candidates per target copy one complete own-target assertion sentence verbatim, retaining its cited context and original candidate via literal_repair_of. Each exact source assertion is attempted at most once, independent of route context or annotation variations, and already accepted exact assertions are skipped. Fragments, unchanged proposals and outside-window candidates are ineligible. All six source-fidelity gates, unresolved-reference checks and atomicity run again; copied source text does not imply acceptance. Repairs share the global call cap and stop while one remaining call can still audit coverage.",
             "discovery_window_provenance": "Source windows use trusted Python Unicode offsets and exact source slices. Generator declarations are retained separately; claims that the trusted request bounds mismatch its own source slice do not replace those bounds or reject in-window candidates. Resolved assertion evidence still determines ownership, and actual outside-window proposals remain unresolved with their supplied and resolved offsets retained.",
             "equivalence_uncertain_relations": sum(item.equivalence_state == "uncertain" for item in self.relations),

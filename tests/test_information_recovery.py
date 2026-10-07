@@ -3,6 +3,7 @@
 import copy
 import json
 import math
+import re
 import socket
 import unittest
 from dataclasses import asdict, replace
@@ -21,7 +22,7 @@ from open_video_summary.core.summarizers.information_contracts import capture_sn
 from open_video_summary.core.summarizers.information_evaluation import (
     RELATION_ADJUDICATION_QUESTIONS, RELATION_CRITERIA, anchor_binding_spec, resolve_relation, resolve_equivalence,
     passes_probability_cutoff,
-    relation_family_probabilities, reconcile_equivalence,
+    relation_family_probabilities, reconcile_equivalence, coverage_spec,
 )
 from open_video_summary.errors import (
     AuthenticationError, ProviderConfigurationError, RequestCancelledError,
@@ -537,6 +538,114 @@ class InformationRecoveryTests(unittest.TestCase):
         self.assertEqual(raw["evidence"][0],evidence)
         self.assertEqual(source,target.content)
         self.assertLess(len(json.dumps(projection)),3000)
+
+    def test_report_derived_duplicate_recovery_preserves_pending_coverage(self):
+        source = ("Sistema operacional é o que faz o smartphone funcionar, possibilita usar os aplicativos. "
+                  "O Android é o sistema operacional mais usado em smartphones ao redor do planeta. "
+                  "A Huawei é a segunda maior fabricante de smartphones do mundo.")
+        claims = [
+            candidate("v0:s0", source, quote="Sistema operacional é o que faz o smartphone funcionar",
+                      text="Sistema operacional é o que faz o smartphone funcionar."),
+            candidate("v0:s0", source, quote=source[:88],
+                      text="O sistema operacional possibilita usar os aplicativos."),
+            candidate("v0:s0", source, quote=source[89:169]),
+            candidate("v0:s0", source, quote=source[170:232]),
+        ]
+        qa = [dict(copy.deepcopy(claims[index]), question="Qual informação é comunicada?",
+                   answer=claims[index]["text"]) for index in (0, 2, 3)]
+        for missing, state in ((.63, "uncertain"), (.94, "gap_detected")):
+            with self.subTest(missing=missing):
+                generator = ScriptedGenerator({("v0:s0", "direct"):claims,
+                    ("v0:s0", "qa"):qa, ("v0:s0", "recovery"):claims[2:]})
+                evaluator = SyntheticEvaluator(coverage={"v0:s0":[missing, .01]})
+                original = evaluator.evaluate
+                coverage_states = []
+                def evaluate(context, noul=None, choice=None):
+                    if "missing" in (noul or {}):
+                        coverage_states.append(context)
+                    result = original(context, noul, choice)
+                    return replace(result, noul=tuple(replace(item, probability=.8)
+                        if item.id.endswith("_annotation") else item for item in result.noul))
+                evaluator.evaluate = evaluate
+                report = analyze(videos([source]), generator, evaluator, max_coverage_rounds=2)
+                self.assertEqual(9, report.counts.accepted_candidates)
+                self.assertEqual(3, len(generator.requests))
+                self.assertEqual([state], [row.state for row in report.coverage])
+                self.assertEqual(tuple(f"c{i}" for i in range(7)), report.coverage[0].represented_candidate_ids)
+                self.assertEqual("partial", report.status)
+                self.assertTrue(report.counts.counts_provisional)
+                self.assertIn("coverage_no_progress", [issue.kind for issue in report.issues])
+                represented = coverage_states[0].split("Represented claims:\n", 1)[1]
+                labels = re.findall(r"(?m)^(c\d+(?:, c\d+)*): ", represented)
+                self.assertEqual(["c0, c4", "c1", "c2, c5", "c3, c6"], labels)
+                self.assertTrue(all(claim["text"] in represented for claim in claims))
+                self.assertIn(source, coverage_states[0])
+                self.assertEqual(source, report.snapshot.current_segments[0].content)
+                self.assertEqual(claims[2:], [json.loads(c.raw_json) for c in report.candidates[-2:]])
+
+    def test_recovery_advances_for_new_content_or_a_separate_asserted_occurrence(self):
+        sentence = "A cópia é diária."
+        source = sentence + " " + sentence + " A retenção é mensal."
+        initial = candidate("v0:s0", source, quote=sentence, offset=0)
+        for recovered in (candidate("v0:s0", source, quote=sentence, offset=len(sentence)+1),
+                          candidate("v0:s0", source, quote="A retenção é mensal.")):
+            with self.subTest(recovered=recovered):
+                generator = ScriptedGenerator({("v0:s0", "direct"):[initial],
+                                                ("v0:s0", "recovery"):[recovered]})
+                report = analyze(videos([source]), generator,
+                    SyntheticEvaluator(coverage={"v0:s0":[.99, .01]}), qa_enabled=False)
+                self.assertEqual(["gap_detected", "no_gap_signaled"], [row.state for row in report.coverage])
+                self.assertEqual(2, report.counts.accepted_candidates)
+                self.assertEqual(2, report.counts.occurrences)
+                self.assertNotIn("coverage_no_progress", [issue.kind for issue in report.issues])
+                target = report.snapshot.current_segments[0]
+                state, _ = coverage_spec(target, (), report.candidates, ())
+                self.assertIn("c0: ", state)
+                self.assertIn("c1: ", state)
+
+    def test_recovery_annotation_progress_requires_new_unambiguous_verification(self):
+        source = "A cópia é diária."
+        for old_score, new_score, expected_progress in ((.4, .99, True), (.4, .8, False), (.99, .99, False)):
+            with self.subTest(old_score=old_score, new_score=new_score):
+                initial = candidate("v0:s0", source, attribution="Fonte proposta")
+                recovered = candidate("v0:s0", source)
+                evaluator = SyntheticEvaluator(coverage={"v0:s0":[.99, .01]})
+                original = evaluator.evaluate
+                def evaluate(context, noul=None, choice=None):
+                    result = original(context, noul, choice)
+                    question = (noul or {}).get("attribution_annotation", "")
+                    score = old_score if "Fonte proposta" in question else new_score
+                    return replace(result, noul=tuple(replace(item, probability=score)
+                        if item.id == "attribution_annotation" else item for item in result.noul))
+                evaluator.evaluate = evaluate
+                report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"):[initial],
+                    ("v0:s0", "recovery"):[recovered]}), evaluator, qa_enabled=False)
+                self.assertEqual(2, report.counts.accepted_candidates)
+                self.assertEqual(2 if expected_progress else 1, len(report.coverage))
+                self.assertEqual(not expected_progress,
+                    "coverage_no_progress" in [issue.kind for issue in report.issues])
+                self.assertEqual(initial, json.loads(report.candidates[0].raw_json))
+                if not expected_progress:
+                    self.assertEqual("gap_detected", report.coverage[-1].state)
+                    self.assertTrue(report.counts.counts_provisional)
+
+    def test_coverage_projection_keeps_different_types_and_full_evidence_separate(self):
+        source = "O sistema operacional Android, que pertence ao Google."
+        proposals = [candidate("v0:s0", source, text="O Android pertence ao Google.", quote=quote)
+                     for quote in ("que pertence ao Google.", "sistema operacional Android, que pertence ao Google")]
+        report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"):proposals}), qa_enabled=False)
+        first, second = report.candidates
+        duplicate = replace(first, id="duplicate")
+        different_type = replace(first, id="different_type", candidate=replace(first.candidate, unit_type="definition"))
+        state, _ = coverage_spec(report.snapshot.current_segments[0], (),
+            (first, duplicate, second, different_type), ())
+        represented = state.split("Represented claims:\n", 1)[1]
+        self.assertIn("c0, duplicate: ", represented)
+        self.assertIn("c1: ", represented)
+        self.assertIn("different_type: ", represented)
+        for record in (first, second):
+            evidence = record.candidate.evidence[0]
+            self.assertIn(f"[{evidence.start_char},{evidence.end_char})", represented)
 
     def test_context_limit_has_operation_size_and_does_not_consume_call_budget(self):
         report = analyze(videos(["x"*5000]), ScriptedGenerator(), qa_enabled=False,

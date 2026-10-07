@@ -611,6 +611,14 @@ research content. A request still exceeding the configured context cap records
 its operation, size, limit and remaining call budget separately from call
 exhaustion.
 
+Coverage requests group exact repeats of accepted text, type and full source
+evidence, retaining every contributing candidate ID. Original report records and
+coverage provenance remain intact. Recovery requires a new accepted identity or
+newly resolved verified annotations to advance; extra duplicate rows alone do
+not count as progress. Distinct assertion spans remain distinct occurrences.
+Conflicting verified annotations do not establish improvement. Stopping for no
+progress retains the existing gap or uncertainty and keeps counts provisional.
+
 Configured CLI analyses process independent source segments concurrently, using
 separate provider clients for each worker. The default is two targets; set
 `--information-concurrency 4` or `OVS_INFORMATION_CONCURRENCY=4` to increase it,

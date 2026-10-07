@@ -10,7 +10,7 @@ import json
 import math
 
 
-EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v7"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v8"
 SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
 ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
 VALIDATION_QUESTIONS = {
@@ -267,16 +267,26 @@ def validation_spec(candidate, candidate_id, target, context=()):
     }
 
 
+def exact_proposition_key(record):
+    """Require identical text, type and full source evidence for exact reuse."""
+    candidate = record.candidate
+    return candidate.text, candidate.unit_type, candidate.evidence
+
+
 def coverage_spec(target, context, accepted, markers):
     represented = []
+    groups = {}
     for record in accepted:
+        groups.setdefault(exact_proposition_key(record), []).append(record)
+    for records in groups.values():
+        record = records[0]
         candidate = record.candidate
         spans = ", ".join(
             f"{item.segment_id} [{item.start_char},{item.end_char})"
             for item in candidate.evidence if item.role == "assertion"
         )
         represented.append(
-            f"{record.id}: {candidate.text}\nAssertion spans: {spans}\n"
+            f"{', '.join(item.id for item in records)}: {candidate.text}\nAssertion spans: {spans}\n"
             + "Assertion evidence: " + _evidence_text(candidate, "assertion")
         )
     blocks = [
