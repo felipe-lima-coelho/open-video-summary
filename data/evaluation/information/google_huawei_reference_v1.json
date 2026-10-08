@@ -1,0 +1,2754 @@
+{
+  "schema_version": 1,
+  "protocol": {
+    "id": "contextual-propositions-v2",
+    "version": "2",
+    "granularity": "One independently assessable proposition. Split independent coordinated assertions and appositions. Keep a conditional rule with condition and consequent. A source sentence used as a decomposition parent is not an additional counted unit.",
+    "unit_policy": "Contextualize subjects and references only from cited source context. Record communicated claims, not external truth.",
+    "qualifier_policy": "Preserve attribution, negation, modality, quantities, time, scope, conditions, exceptions, and stated purpose. Do not promote a condition or purpose to an asserted event or outcome.",
+    "equivalence_policy": "Group occurrences only when complete proposition, entity, scope, and qualifiers match. Related topic or shared wording is insufficient.",
+    "coverage_policy": "Audit every segment against the unit inventory. This source pass did not consult model outputs; model omissions must be computed by reference comparison.",
+    "evidence_policy": "Evidence quotes are exact substrings with zero-based Unicode character offsets. Context spans resolve references or supply a subject; they do not add a new assertion."
+  },
+  "provenance": {
+    "annotation_kind": "source_anchored_reference_inventory",
+    "annotator_type": "agent",
+    "annotator": "single Codex agent annotator",
+    "reviewer_status": "pending_independent_review",
+    "reference_status": "agent_annotated_not_human_gold",
+    "source_path": "data/processed/google_huawei_segments.json",
+    "source_sha256": "defef729d1f98ff28a91e8f6b770d0d95c3a1d39ff22e1761d38ae52d82ba445",
+    "source_fingerprint": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7",
+    "annotation_date": "2026-10-08",
+    "scope": "All 16 source segments in the three videos in data/processed/google_huawei_segments.json.",
+    "blindness": "Annotated directly from the source dataset; generated inventories and provider outputs were not consulted.",
+    "development_scope": "Development reference; no held-out human-reviewed split is claimed."
+  },
+  "snapshot": {
+    "source_fingerprint": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7",
+    "current_order": [
+      "v0:s0",
+      "v0:s1",
+      "v0:s2",
+      "v0:s3",
+      "v1:s0",
+      "v1:s1",
+      "v1:s2",
+      "v1:s3",
+      "v1:s4",
+      "v1:s5",
+      "v2:s0",
+      "v2:s1",
+      "v2:s2",
+      "v2:s3",
+      "v2:s4",
+      "v2:s5"
+    ],
+    "source": [
+      {
+        "id": "v0",
+        "name": "jornal_da_band",
+        "path": "data/raw/google_huawei/jornal_da_band.mp4",
+        "topics": [
+          "Rompimento entre Google e Huawei",
+          "Impactos para os usuários de celulares Huawei",
+          "Guerra comercial e acusações de espionagem entre Estados Unidos e China"
+        ],
+        "segments": [
+          {
+            "id": "v0:s0",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s0",
+            "video_id": "v0",
+            "video_index": 0,
+            "segment_index": 0,
+            "content": "O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei, segunda maior fabricante de smartphones do mundo, atrás da sul-coreana Samsung.",
+            "start": 0.18,
+            "end": 10.2,
+            "order": 0,
+            "video_topic": "Rompimento entre Google e Huawei",
+            "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+            "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
+          },
+          {
+            "id": "v0:s1",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s1",
+            "video_id": "v0",
+            "video_index": 0,
+            "segment_index": 1,
+            "content": "A decisão decorre da guerra comercial travada entre Estados Unidos e China. Usuários de aparelhos da gigante chinesa não vão mais receber atualizações de aplicativos do sistema operacional Android, que pertence ao Google. E, no futuro, celulares da Huawei nem deverão mais incluir programas como o Google Maps e o YouTube.",
+            "start": 10.56,
+            "end": 30.92,
+            "order": 1,
+            "video_topic": "Impactos para os usuários de celulares Huawei",
+            "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+            "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
+          },
+          {
+            "id": "v0:s2",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s2",
+            "video_id": "v0",
+            "video_index": 0,
+            "segment_index": 2,
+            "content": "O Google alega estar seguindo diretrizes do governo americano, que proibiu empresas dos Estados Unidos de fazer negócios com companhias estrangeiras de telecomunicações consideradas perigosas para a segurança nacional.",
+            "start": 31.18,
+            "end": 43.72,
+            "order": 2,
+            "video_topic": "Rompimento entre Google e Huawei",
+            "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+            "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
+          },
+          {
+            "id": "v0:s3",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s3",
+            "video_id": "v0",
+            "video_index": 0,
+            "segment_index": 3,
+            "content": "O alvo principal da medida era a Huawei. A empresa é acusada por Washington de espionagem cibernética em favor de Pequim.",
+            "start": 44.0,
+            "end": 52.16,
+            "order": 3,
+            "video_topic": "Guerra comercial e acusações de espionagem entre Estados Unidos e China",
+            "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+            "video_path": "data/raw/google_huawei/jornal_da_band.mp4"
+          }
+        ]
+      },
+      {
+        "id": "v1",
+        "name": "jornal_nacional",
+        "path": "data/raw/google_huawei/jornal_nacional.mp4",
+        "topics": [
+          "Restrições dos EUA à Huawei e suspensão das atualizações do Android",
+          "Impacto da decisão sobre os smartphones e aplicativos da Huawei",
+          "Acusações de espionagem e segurança nacional",
+          "Disputa comercial entre China e EUA pelo domínio do 5G"
+        ],
+        "segments": [
+          {
+            "id": "v1:s0",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s0",
+            "video_id": "v1",
+            "video_index": 1,
+            "segment_index": 0,
+            "content": "Nesta segunda-feira, a guerra comercial entre China e Estados Unidos envolveu dois gigantes da tecnologia.",
+            "start": 0.04,
+            "end": 6.14,
+            "order": 0,
+            "video_topic": "Restrições dos EUA à Huawei e suspensão das atualizações do Android",
+            "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+            "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+          },
+          {
+            "id": "v1:s1",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s1",
+            "video_id": "v1",
+            "video_index": 1,
+            "segment_index": 1,
+            "content": "Sistema operacional é o que faz o smartphone funcionar, possibilita usar os aplicativos. O Android é o sistema operacional mais usado em smartphones ao redor do planeta. A Huawei é a segunda maior fabricante de smartphones do mundo.",
+            "start": 7.38,
+            "end": 22.22,
+            "order": 1,
+            "video_topic": "Impacto da decisão sobre os smartphones e aplicativos da Huawei",
+            "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+            "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+          },
+          {
+            "id": "v1:s2",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s2",
+            "video_id": "v1",
+            "video_index": 1,
+            "segment_index": 2,
+            "content": "Durante muito tempo, eles cresceram se ajudando. Mas agora o presidente Donald Trump pode ter acabado com essa parceria. O governo proibiu empresas americanas de fazer negócios com a empresa chinesa. A Google, dona do Android, chegou a anunciar que, pra cumprir a ordem, não ia mais atualizar o sistema operacional em telefones da Huawei. Mas agora, no fim do dia, o governo americano voltou atrás e baixou uma regra provisória permitindo as atualizações dos celulares por mais noventa dias.",
+            "start": 22.62,
+            "end": 53.36,
+            "order": 2,
+            "video_topic": "Restrições dos EUA à Huawei e suspensão das atualizações do Android",
+            "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+            "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+          },
+          {
+            "id": "v1:s3",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s3",
+            "video_id": "v1",
+            "video_index": 1,
+            "segment_index": 3,
+            "content": "Os novos celulares da Huawei vão continuar sem poder usar o sistema e os aplicativos da Google. O detalhe é que na China, onde a comunicação é monitorada pelo governo, ninguém tem acesso aos serviços da Google, nem mesmo nos celulares Huawei, mas os aplicativos são indispensáveis pro comércio mundial da empresa.",
+            "start": 53.84,
+            "end": 74.12,
+            "order": 3,
+            "video_topic": "Impacto da decisão sobre os smartphones e aplicativos da Huawei",
+            "global_topic": "Impactos das restrições nos smartphones, aplicativos e usuários da Huawei",
+            "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+          },
+          {
+            "id": "v1:s4",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s4",
+            "video_id": "v1",
+            "video_index": 1,
+            "segment_index": 4,
+            "content": "Os celulares da Huawei já são proibidos nos Estados Unidos. Os americanos alegam, sem mostrar provas, que eles podem ser uma porta pra espionagem chinesa.",
+            "start": 75.0,
+            "end": 84.34,
+            "order": 4,
+            "video_topic": "Acusações de espionagem e segurança nacional",
+            "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+            "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+          },
+          {
+            "id": "v1:s5",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s5",
+            "video_id": "v1",
+            "video_index": 1,
+            "segment_index": 5,
+            "content": "Proibir empresas americanas de fazer negócios com a Huawei é mais um passo na guerra comercial entre os dois países, já de olho no mercado do 5G. A nova tecnologia 5G promete revolucionar a internet móvel e os Estados Unidos e a China lutam pra definir quem vai dominar esse mercado.",
+            "start": 84.84,
+            "end": 103.26,
+            "order": 5,
+            "video_topic": "Disputa comercial entre China e EUA pelo domínio do 5G",
+            "global_topic": "Segurança nacional e disputa pelo domínio da tecnologia 5G",
+            "video_path": "data/raw/google_huawei/jornal_nacional.mp4"
+          }
+        ]
+      },
+      {
+        "id": "v2",
+        "name": "sbt_brasil",
+        "path": "data/raw/google_huawei/sbt_brasil.mp4",
+        "topics": [
+          "Suspensão do Android nos celulares Huawei",
+          "Disputa comercial e acusações entre Estados Unidos e China",
+          "Segurança e controle da tecnologia 5G",
+          "Desenvolvimento de uma plataforma própria pela Huawei"
+        ],
+        "segments": [
+          {
+            "id": "v2:s0",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+            "video_id": "v2",
+            "video_index": 2,
+            "segment_index": 0,
+            "content": "O Google suspendeu o uso do sistema Android em celulares da marca Huawei. A decisão segue uma ordem do presidente dos Estados Unidos. A briga é entre os Estados Unidos e a China, mas a repercussão mundial. \"Acho um absurdo porque o telefone funciona bem e é eficiente\", disse o italiano que usa um smartphone da marca chinesa.",
+            "start": 0.74,
+            "end": 23.62,
+            "order": 0,
+            "video_topic": "Suspensão do Android nos celulares Huawei",
+            "global_topic": "Rompimento entre Google e Huawei e suspensão das atualizações do Android",
+            "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+          },
+          {
+            "id": "v2:s1",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s1",
+            "video_id": "v2",
+            "video_index": 2,
+            "segment_index": 1,
+            "content": "Na semana passada, Donald Trump assinou um decreto alegando emergência nacional para impedir que empresas americanas negociem com algumas companhias chinesas, entre elas a Huawei. O governo dos Estados Unidos afirma que a China está usando os equipamentos da segunda maior fabricante de smartphones do mundo para espionagem.",
+            "start": 24.02,
+            "end": 45.12,
+            "order": 1,
+            "video_topic": "Disputa comercial e acusações entre Estados Unidos e China",
+            "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+            "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+          },
+          {
+            "id": "v2:s2",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s2",
+            "video_id": "v2",
+            "video_index": 2,
+            "segment_index": 2,
+            "content": "Os americanos também temem perder o controle sobre a rede 5G. Atualmente, a Huawei é uma das empresas mais avançadas nas pesquisas dessa nova tecnologia.",
+            "start": 45.62,
+            "end": 56.26,
+            "order": 2,
+            "video_topic": "Segurança e controle da tecnologia 5G",
+            "global_topic": "Segurança nacional e disputa pelo domínio da tecnologia 5G",
+            "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+          },
+          {
+            "id": "v2:s3",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s3",
+            "video_id": "v2",
+            "video_index": 2,
+            "segment_index": 3,
+            "content": "Cumprindo a determinação, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca. A decisão vai afetar principalmente os novos aparelhos da Huawei, que não vão ter aplicativos como Gmail e o YouTube.",
+            "start": 56.64,
+            "end": 73.36,
+            "order": 3,
+            "video_topic": "Suspensão do Android nos celulares Huawei",
+            "global_topic": "Impactos das restrições nos smartphones, aplicativos e usuários da Huawei",
+            "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+          },
+          {
+            "id": "v2:s4",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s4",
+            "video_id": "v2",
+            "video_index": 2,
+            "segment_index": 4,
+            "content": "O porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos espalham informações falsas para conseguir vantagens comerciais e não mostram qualquer evidência que provem as acusações. A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras.",
+            "start": 73.74,
+            "end": 94.54,
+            "order": 4,
+            "video_topic": "Disputa comercial e acusações entre Estados Unidos e China",
+            "global_topic": "Disputa comercial e acusações de espionagem entre Estados Unidos e China",
+            "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+          },
+          {
+            "id": "v2:s5",
+            "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s5",
+            "video_id": "v2",
+            "video_index": 2,
+            "segment_index": 5,
+            "content": "A Huawei afirma que já trabalha no desenvolvimento de uma nova plataforma para que os celulares possam operar normalmente.",
+            "start": 94.94,
+            "end": 103.42,
+            "order": 5,
+            "video_topic": "Desenvolvimento de uma plataforma própria pela Huawei",
+            "global_topic": "Desenvolvimento de uma plataforma própria pela Huawei",
+            "video_path": "data/raw/google_huawei/sbt_brasil.mp4"
+          }
+        ]
+      }
+    ]
+  },
+  "units": [
+    {
+      "id": "gh-u001",
+      "text": "O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": true,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-001",
+          "segment_id": "v0:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s0",
+          "assertion_evidence": [
+            {
+              "quote": "O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei",
+              "start_char": 0,
+              "end_char": 74
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u002",
+      "text": "A Huawei é a segunda maior fabricante de smartphones do mundo.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-002",
+          "segment_id": "v0:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s0",
+          "assertion_evidence": [
+            {
+              "quote": "segunda maior fabricante de smartphones do mundo",
+              "start_char": 76,
+              "end_char": 124
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s0",
+              "quote": "celulares da Huawei",
+              "start_char": 55,
+              "end_char": 74
+            }
+          ]
+        },
+        {
+          "id": "gh-occ-003",
+          "segment_id": "v1:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s1",
+          "assertion_evidence": [
+            {
+              "quote": "segunda maior fabricante de smartphones do mundo.",
+              "start_char": 183,
+              "end_char": 232
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v1:s1",
+              "quote": "A Huawei",
+              "start_char": 170,
+              "end_char": 178
+            }
+          ]
+        },
+        {
+          "id": "gh-occ-004",
+          "segment_id": "v2:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s1",
+          "assertion_evidence": [
+            {
+              "quote": "segunda maior fabricante de smartphones do mundo",
+              "start_char": 259,
+              "end_char": 307
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s1",
+              "quote": "entre elas a Huawei",
+              "start_char": 159,
+              "end_char": 178
+            }
+          ]
+        }
+      ],
+      "annotation": {
+        "cross_source_equivalence": "All three sources state that Huawei is the second-largest smartphone manufacturer worldwide; the Samsung comparison in one source is annotated separately."
+      }
+    },
+    {
+      "id": "gh-u053",
+      "text": "A Samsung sul-coreana está à frente da Huawei na classificação mundial de fabricantes de smartphones.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-056",
+          "segment_id": "v0:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s0",
+          "assertion_evidence": [
+            {
+              "quote": "atrás da sul-coreana Samsung.",
+              "start_char": 126,
+              "end_char": 155
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s0",
+              "quote": "segunda maior fabricante de smartphones do mundo",
+              "start_char": 76,
+              "end_char": 124
+            }
+          ]
+        }
+      ],
+      "annotation": {
+        "granularity_note": "The named comparison adds the identity of the higher-ranked manufacturer. It is separate from Huawei's second-place rank and is not repeated in the other sources."
+      }
+    },
+    {
+      "id": "gh-u003",
+      "text": "A decisão do Google decorre da guerra comercial entre Estados Unidos e China.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-005",
+          "segment_id": "v0:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s1",
+          "assertion_evidence": [
+            {
+              "quote": "A decisão decorre da guerra comercial travada entre Estados Unidos e China.",
+              "start_char": 0,
+              "end_char": 75
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s0",
+              "quote": "O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei",
+              "start_char": 0,
+              "end_char": 74
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u004",
+      "text": "Usuários de aparelhos da Huawei não receberão mais atualizações dos aplicativos do Android.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": true,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-006",
+          "segment_id": "v0:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s1",
+          "assertion_evidence": [
+            {
+              "quote": "Usuários de aparelhos da gigante chinesa não vão mais receber atualizações de aplicativos do sistema operacional Android",
+              "start_char": 76,
+              "end_char": 196
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s0",
+              "quote": "celulares da Huawei",
+              "start_char": 55,
+              "end_char": 74
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u005",
+      "text": "O Android pertence ao Google.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-007",
+          "segment_id": "v0:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s1",
+          "assertion_evidence": [
+            {
+              "quote": "que pertence ao Google.",
+              "start_char": 198,
+              "end_char": 221
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s1",
+              "quote": "sistema operacional Android",
+              "start_char": 169,
+              "end_char": 196
+            }
+          ]
+        },
+        {
+          "id": "gh-occ-008",
+          "segment_id": "v1:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s2",
+          "assertion_evidence": [
+            {
+              "quote": "A Google, dona do Android",
+              "start_char": 200,
+              "end_char": 225
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {
+        "cross_source_equivalence": "Both occurrences state that Google owns Android."
+      }
+    },
+    {
+      "id": "gh-u006",
+      "text": "No futuro, celulares da Huawei deverão deixar de incluir programas como Google Maps e YouTube.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": "forecast or expectation (deverão)",
+        "quantities": [],
+        "conditions": [
+          "No futuro"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-009",
+          "segment_id": "v0:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s1",
+          "assertion_evidence": [
+            {
+              "quote": "E, no futuro, celulares da Huawei nem deverão mais incluir programas como o Google Maps e o YouTube.",
+              "start_char": 222,
+              "end_char": 322
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u007",
+      "text": "O Google alega que segue diretrizes do governo americano.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Google",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-010",
+          "segment_id": "v0:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s2",
+          "assertion_evidence": [
+            {
+              "quote": "O Google alega estar seguindo diretrizes do governo americano",
+              "start_char": 0,
+              "end_char": 61
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u008",
+      "text": "O governo americano proibiu empresas dos Estados Unidos de negociar com companhias estrangeiras de telecomunicações consideradas perigosas para a segurança nacional.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": [
+          "companhias consideradas perigosas para a segurança nacional"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-011",
+          "segment_id": "v0:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s2",
+          "assertion_evidence": [
+            {
+              "quote": "que proibiu empresas dos Estados Unidos de fazer negócios com companhias estrangeiras de telecomunicações consideradas perigosas para a segurança nacional.",
+              "start_char": 63,
+              "end_char": 218
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u009",
+      "text": "O alvo principal da medida era a Huawei.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-012",
+          "segment_id": "v0:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s3",
+          "assertion_evidence": [
+            {
+              "quote": "O alvo principal da medida era a Huawei.",
+              "start_char": 0,
+              "end_char": 40
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s2",
+              "quote": "que proibiu empresas dos Estados Unidos de fazer negócios com companhias estrangeiras de telecomunicações consideradas perigosas para a segurança nacional.",
+              "start_char": 63,
+              "end_char": 218
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u010",
+      "text": "Washington acusa a Huawei de espionagem cibernética em favor de Pequim.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Washington",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-013",
+          "segment_id": "v0:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v0:s3",
+          "assertion_evidence": [
+            {
+              "quote": "A empresa é acusada por Washington de espionagem cibernética em favor de Pequim.",
+              "start_char": 41,
+              "end_char": 121
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s3",
+              "quote": "O alvo principal da medida era a Huawei.",
+              "start_char": 0,
+              "end_char": 40
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u011",
+      "text": "A guerra comercial entre China e Estados Unidos envolveu dois gigantes da tecnologia, sem identificação nominal neste trecho.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-014",
+          "segment_id": "v1:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s0",
+          "assertion_evidence": [
+            {
+              "quote": "Nesta segunda-feira, a guerra comercial entre China e Estados Unidos envolveu dois gigantes da tecnologia.",
+              "start_char": 0,
+              "end_char": 106
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {
+        "unresolved_references": [
+          "The identities of the two technology giants are not named in this segment."
+        ],
+        "scorable_components": [
+          "generic claim that the war involved two unnamed technology giants"
+        ],
+        "non_scorable_components": [
+          "identity of the two giants"
+        ],
+        "alternative_valid_readings": [
+          "Keep the proposition generic; do not name either giant from topic knowledge."
+        ]
+      }
+    },
+    {
+      "id": "gh-u012",
+      "text": "Um sistema operacional faz o smartphone funcionar.",
+      "unit_type": "definition",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-015",
+          "segment_id": "v1:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s1",
+          "assertion_evidence": [
+            {
+              "quote": "Sistema operacional é o que faz o smartphone funcionar",
+              "start_char": 0,
+              "end_char": 54
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u013",
+      "text": "Um sistema operacional possibilita usar aplicativos.",
+      "unit_type": "definition",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-016",
+          "segment_id": "v1:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s1",
+          "assertion_evidence": [
+            {
+              "quote": "possibilita usar os aplicativos.",
+              "start_char": 56,
+              "end_char": 88
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v1:s1",
+              "quote": "Sistema operacional é o que faz o smartphone funcionar",
+              "start_char": 0,
+              "end_char": 54
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u014",
+      "text": "O Android é o sistema operacional mais usado em smartphones no mundo.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-017",
+          "segment_id": "v1:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s1",
+          "assertion_evidence": [
+            {
+              "quote": "O Android é o sistema operacional mais usado em smartphones ao redor do planeta.",
+              "start_char": 89,
+              "end_char": 169
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u015",
+      "text": "As entidades referidas apenas como “eles” cresceram ajudando-se mutuamente por muito tempo.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": [
+          "Durante muito tempo"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-018",
+          "segment_id": "v1:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s2",
+          "assertion_evidence": [
+            {
+              "quote": "Durante muito tempo, eles cresceram se ajudando.",
+              "start_char": 0,
+              "end_char": 48
+            }
+          ],
+          "context_evidence": [],
+          "scorable": false,
+          "exclusion_reason": "The proposition uses an unresolved “eles” referent; no single named-entity reading is required."
+        }
+      ],
+      "annotation": {
+        "unresolved_references": [
+          "The entities referred to by “eles” are not named in this local passage."
+        ],
+        "identity_sensitive_metric": "Exclude named-entity equivalence; retain the bounded relation.",
+        "strict_identity_match_scorable": false,
+        "strict_unit_alignment_scorable": false
+      },
+      "scorable": false,
+      "exclusion_reason": "The proposition uses an unresolved “eles” referent; no single named-entity reading is required."
+    },
+    {
+      "id": "gh-u016",
+      "text": "Donald Trump pode ter encerrado a parceria mencionada imediatamente antes, sem identificação segura dos parceiros neste trecho.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": "possibility (pode ter acabado)",
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-019",
+          "segment_id": "v1:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s2",
+          "assertion_evidence": [
+            {
+              "quote": "Mas agora o presidente Donald Trump pode ter acabado com essa parceria.",
+              "start_char": 49,
+              "end_char": 120
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v1:s2",
+              "quote": "Durante muito tempo, eles cresceram se ajudando.",
+              "start_char": 0,
+              "end_char": 48
+            }
+          ],
+          "scorable": false,
+          "exclusion_reason": "The proposition uses an unresolved “essa parceria” referent; no single partner identity is required."
+        }
+      ],
+      "annotation": {
+        "unresolved_references": [
+          "The partners in “essa parceria” are not securely identified in this local passage."
+        ],
+        "identity_sensitive_metric": "Exclude partner-specific matching; retain only the bounded possibility.",
+        "strict_identity_match_scorable": false,
+        "strict_unit_alignment_scorable": false
+      },
+      "scorable": false,
+      "exclusion_reason": "The proposition uses an unresolved “essa parceria” referent; no single partner identity is required."
+    },
+    {
+      "id": "gh-u017",
+      "text": "O governo proibiu empresas americanas de negociar com a empresa chinesa mencionada como Huawei no contexto anterior.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-020",
+          "segment_id": "v1:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s2",
+          "assertion_evidence": [
+            {
+              "quote": "O governo proibiu empresas americanas de fazer negócios com a empresa chinesa.",
+              "start_char": 121,
+              "end_char": 199
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v1:s2",
+              "quote": "presidente Donald Trump",
+              "start_char": 61,
+              "end_char": 84
+            },
+            {
+              "segment_id": "v1:s1",
+              "quote": "A Huawei",
+              "start_char": 170,
+              "end_char": 178
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u018",
+      "text": "O Google anunciou que deixaria de atualizar o sistema operacional em telefones da Huawei para cumprir a ordem.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": true,
+        "modality": "announced future intention (não ia)",
+        "quantities": [],
+        "conditions": [
+          "para cumprir a ordem"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-021",
+          "segment_id": "v1:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s2",
+          "assertion_evidence": [
+            {
+              "quote": "chegou a anunciar que, pra cumprir a ordem, não ia mais atualizar o sistema operacional em telefones da Huawei.",
+              "start_char": 227,
+              "end_char": 338
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v1:s2",
+              "quote": "dona do Android",
+              "start_char": 210,
+              "end_char": 225
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u019",
+      "text": "O governo americano voltou atrás na decisão no fim do dia.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-022",
+          "segment_id": "v1:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s2",
+          "assertion_evidence": [
+            {
+              "quote": "Mas agora, no fim do dia, o governo americano voltou atrás",
+              "start_char": 339,
+              "end_char": 397
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u020",
+      "text": "O governo americano baixou uma regra provisória que permitia atualizações dos celulares por mais noventa dias.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": "provisional permission",
+        "quantities": [
+          "mais noventa dias"
+        ],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-023",
+          "segment_id": "v1:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s2",
+          "assertion_evidence": [
+            {
+              "quote": "baixou uma regra provisória permitindo as atualizações dos celulares por mais noventa dias.",
+              "start_char": 400,
+              "end_char": 491
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u021",
+      "text": "Os novos celulares da Huawei continuariam sem poder usar o sistema e os aplicativos do Google.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": true,
+        "modality": "future continuation (vão continuar sem poder)",
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-024",
+          "segment_id": "v1:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s3",
+          "assertion_evidence": [
+            {
+              "quote": "Os novos celulares da Huawei vão continuar sem poder usar o sistema e os aplicativos da Google.",
+              "start_char": 0,
+              "end_char": 95
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u022",
+      "text": "Na China, a comunicação é monitorada pelo governo.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-025",
+          "segment_id": "v1:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s3",
+          "assertion_evidence": [
+            {
+              "quote": "onde a comunicação é monitorada pelo governo",
+              "start_char": 122,
+              "end_char": 166
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u023",
+      "text": "Na China, ninguém tem acesso aos serviços do Google, inclusive em celulares Huawei.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": true,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-026",
+          "segment_id": "v1:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s3",
+          "assertion_evidence": [
+            {
+              "quote": "O detalhe é que na China, onde a comunicação é monitorada pelo governo, ninguém tem acesso aos serviços da Google, nem mesmo nos celulares Huawei",
+              "start_char": 96,
+              "end_char": 241
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {
+        "granularity_note": "The Huawei-phone phrase is included under universal “ninguém”; it is not a second unit."
+      }
+    },
+    {
+      "id": "gh-u024",
+      "text": "Os aplicativos do Google são indispensáveis para o comércio mundial da Huawei.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-027",
+          "segment_id": "v1:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s3",
+          "assertion_evidence": [
+            {
+              "quote": "mas os aplicativos são indispensáveis pro comércio mundial da empresa.",
+              "start_char": 243,
+              "end_char": 313
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v1:s3",
+              "quote": "celulares da Huawei",
+              "start_char": 9,
+              "end_char": 28
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u025",
+      "text": "Os celulares da Huawei já são proibidos nos Estados Unidos.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-028",
+          "segment_id": "v1:s4",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s4",
+          "assertion_evidence": [
+            {
+              "quote": "Os celulares da Huawei já são proibidos nos Estados Unidos.",
+              "start_char": 0,
+              "end_char": 59
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u026",
+      "text": "Os americanos alegam, sem apresentar provas, que celulares Huawei podem servir de porta para espionagem chinesa.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Os americanos",
+        "negated": false,
+        "modality": "possibility (podem)",
+        "quantities": [],
+        "conditions": [
+          "sem mostrar provas"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-029",
+          "segment_id": "v1:s4",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s4",
+          "assertion_evidence": [
+            {
+              "quote": "Os americanos alegam, sem mostrar provas, que eles podem ser uma porta pra espionagem chinesa.",
+              "start_char": 60,
+              "end_char": 154
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u027",
+      "text": "Proibir empresas americanas de negociar com a Huawei é mais um passo na guerra comercial entre os dois países.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-030",
+          "segment_id": "v1:s5",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s5",
+          "assertion_evidence": [
+            {
+              "quote": "Proibir empresas americanas de fazer negócios com a Huawei é mais um passo na guerra comercial entre os dois países",
+              "start_char": 0,
+              "end_char": 115
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u028",
+      "text": "Estados Unidos e China já estão de olho no mercado do 5G.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-031",
+          "segment_id": "v1:s5",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s5",
+          "assertion_evidence": [
+            {
+              "quote": "já de olho no mercado do 5G.",
+              "start_char": 117,
+              "end_char": 145
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u029",
+      "text": "A nova tecnologia 5G promete revolucionar a internet móvel.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": "promise (promete)",
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-032",
+          "segment_id": "v1:s5",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s5",
+          "assertion_evidence": [
+            {
+              "quote": "A nova tecnologia 5G promete revolucionar a internet móvel",
+              "start_char": 146,
+              "end_char": 204
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u030",
+      "text": "Estados Unidos e China lutam para definir quem dominará o mercado do 5G.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-033",
+          "segment_id": "v1:s5",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s5",
+          "assertion_evidence": [
+            {
+              "quote": "os Estados Unidos e a China lutam pra definir quem vai dominar esse mercado.",
+              "start_char": 207,
+              "end_char": 283
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u031",
+      "text": "O Google suspendeu o uso do Android em celulares da Huawei.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-034",
+          "segment_id": "v2:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+          "assertion_evidence": [
+            {
+              "quote": "O Google suspendeu o uso do sistema Android em celulares da marca Huawei.",
+              "start_char": 0,
+              "end_char": 73
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u032",
+      "text": "A decisão segue uma ordem do presidente dos Estados Unidos.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-035",
+          "segment_id": "v2:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+          "assertion_evidence": [
+            {
+              "quote": "A decisão segue uma ordem do presidente dos Estados Unidos.",
+              "start_char": 74,
+              "end_char": 133
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s0",
+              "quote": "O Google suspendeu o uso do sistema Android em celulares da marca Huawei.",
+              "start_char": 0,
+              "end_char": 73
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u033",
+      "text": "A disputa é entre Estados Unidos e China.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-036",
+          "segment_id": "v2:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+          "assertion_evidence": [
+            {
+              "quote": "A briga é entre os Estados Unidos e a China,",
+              "start_char": 134,
+              "end_char": 178
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u034",
+      "text": "A repercussão da disputa é mundial.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-037",
+          "segment_id": "v2:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+          "assertion_evidence": [
+            {
+              "quote": "A briga é entre os Estados Unidos e a China, mas a repercussão mundial.",
+              "start_char": 134,
+              "end_char": 205
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s0",
+              "quote": "A briga é entre os Estados Unidos e a China,",
+              "start_char": 134,
+              "end_char": 178
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u035",
+      "text": "O entrevistado italiano que usa um smartphone Huawei considera absurda a decisão do Google.",
+      "unit_type": "opinion",
+      "qualifiers": {
+        "attribution": "Italian user of a Huawei smartphone",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-038",
+          "segment_id": "v2:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+          "assertion_evidence": [
+            {
+              "quote": "Acho um absurdo",
+              "start_char": 207,
+              "end_char": 222
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s0",
+              "quote": "disse o italiano que usa um smartphone da marca chinesa.",
+              "start_char": 270,
+              "end_char": 326
+            },
+            {
+              "segment_id": "v2:s0",
+              "quote": "O Google suspendeu o uso do sistema Android em celulares da marca Huawei.",
+              "start_char": 0,
+              "end_char": 73
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u036",
+      "text": "O entrevistado afirma que o telefone funciona bem.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Italian user of a Huawei smartphone",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-039",
+          "segment_id": "v2:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+          "assertion_evidence": [
+            {
+              "quote": "o telefone funciona bem",
+              "start_char": 230,
+              "end_char": 253
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s0",
+              "quote": "Acho um absurdo porque o telefone funciona bem e é eficiente",
+              "start_char": 207,
+              "end_char": 267
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u037",
+      "text": "O entrevistado afirma que o telefone é eficiente.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Italian user of a Huawei smartphone",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-040",
+          "segment_id": "v2:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+          "assertion_evidence": [
+            {
+              "quote": "eficiente",
+              "start_char": 258,
+              "end_char": 267
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s0",
+              "quote": "Acho um absurdo porque o telefone funciona bem e é eficiente",
+              "start_char": 207,
+              "end_char": 267
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u038",
+      "text": "Na semana anterior ao relato, Donald Trump assinou um decreto.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": [
+          "Na semana passada, relativamente à reportagem"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-041",
+          "segment_id": "v2:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s1",
+          "assertion_evidence": [
+            {
+              "quote": "Na semana passada, Donald Trump assinou um decreto",
+              "start_char": 0,
+              "end_char": 50
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u039",
+      "text": "Donald Trump alegou emergência nacional ao assinar o decreto.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Donald Trump",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-042",
+          "segment_id": "v2:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s1",
+          "assertion_evidence": [
+            {
+              "quote": "alegando emergência nacional",
+              "start_char": 51,
+              "end_char": 79
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u040",
+      "text": "O decreto visava impedir empresas americanas de negociar com algumas companhias chinesas, entre elas a Huawei.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-043",
+          "segment_id": "v2:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s1",
+          "assertion_evidence": [
+            {
+              "quote": "para impedir que empresas americanas negociem com algumas companhias chinesas, entre elas a Huawei.",
+              "start_char": 80,
+              "end_char": 179
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u041",
+      "text": "O governo dos Estados Unidos afirma que a China usa equipamentos da Huawei para espionagem.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Governo dos Estados Unidos",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-044",
+          "segment_id": "v2:s1",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s1",
+          "assertion_evidence": [
+            {
+              "quote": "O governo dos Estados Unidos afirma que a China está usando os equipamentos da segunda maior fabricante de smartphones do mundo para espionagem.",
+              "start_char": 180,
+              "end_char": 324
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s1",
+              "quote": "entre elas a Huawei.",
+              "start_char": 159,
+              "end_char": 179
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u042",
+      "text": "Os americanos temem perder o controle sobre a rede 5G.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Os americanos",
+        "negated": false,
+        "modality": "fear (temem)",
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-045",
+          "segment_id": "v2:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s2",
+          "assertion_evidence": [
+            {
+              "quote": "Os americanos também temem perder o controle sobre a rede 5G.",
+              "start_char": 0,
+              "end_char": 61
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u043",
+      "text": "Atualmente, a Huawei é uma das empresas mais avançadas nas pesquisas sobre 5G.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-046",
+          "segment_id": "v2:s2",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s2",
+          "assertion_evidence": [
+            {
+              "quote": "Atualmente, a Huawei é uma das empresas mais avançadas nas pesquisas dessa nova tecnologia.",
+              "start_char": 62,
+              "end_char": 153
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u044",
+      "text": "Cumprindo a determinação, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca Huawei.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": true,
+        "modality": null,
+        "quantities": [],
+        "conditions": [
+          "Cumprindo a determinação"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-047",
+          "segment_id": "v2:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s3",
+          "assertion_evidence": [
+            {
+              "quote": "Cumprindo a determinação, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca.",
+              "start_char": 0,
+              "end_char": 118
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s3",
+              "quote": "novos aparelhos da Huawei",
+              "start_char": 158,
+              "end_char": 183
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u045",
+      "text": "A decisão afetará principalmente os novos aparelhos da Huawei.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-048",
+          "segment_id": "v2:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s3",
+          "assertion_evidence": [
+            {
+              "quote": "A decisão vai afetar principalmente os novos aparelhos da Huawei,",
+              "start_char": 119,
+              "end_char": 184
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u046",
+      "text": "Os novos aparelhos da Huawei não terão aplicativos como Gmail e YouTube.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": true,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-049",
+          "segment_id": "v2:s3",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s3",
+          "assertion_evidence": [
+            {
+              "quote": "aplicativos como Gmail e o YouTube.",
+              "start_char": 201,
+              "end_char": 236
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s3",
+              "quote": "novos aparelhos da Huawei,",
+              "start_char": 158,
+              "end_char": 184
+            }
+          ]
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u047",
+      "text": "Um porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos espalham informações falsas para obter vantagens comerciais.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Porta-voz do Ministério das Relações Exteriores da China",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-050",
+          "segment_id": "v2:s4",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s4",
+          "assertion_evidence": [
+            {
+              "quote": "O porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos espalham informações falsas para conseguir vantagens comerciais",
+              "start_char": 0,
+              "end_char": 152
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u048",
+      "text": "O porta-voz afirmou que os Estados Unidos não apresentam qualquer evidência que comprove as acusações.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Porta-voz do Ministério das Relações Exteriores da China",
+        "negated": true,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-051",
+          "segment_id": "v2:s4",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s4",
+          "assertion_evidence": [
+            {
+              "quote": "e não mostram qualquer evidência que provem as acusações.",
+              "start_char": 153,
+              "end_char": 210
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {
+        "unresolved_references": [
+          "The segment does not fully specify which accusations are meant."
+        ],
+        "identity_sensitive_metric": "Exclude accusation-specific matching beyond the generic reference.",
+        "scorable_components": [
+          "generic claim that the United States did not show evidence for the referenced accusations"
+        ],
+        "non_scorable_components": [
+          "identity or exact content of the accusations"
+        ]
+      }
+    },
+    {
+      "id": "gh-u049",
+      "text": "A China acusa os Estados Unidos de usar sua influência para pressionar empresas estrangeiras.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "China",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-052",
+          "segment_id": "v2:s4",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s4",
+          "assertion_evidence": [
+            {
+              "quote": "A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras.",
+              "start_char": 211,
+              "end_char": 325
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u050",
+      "text": "A China acusa os Estados Unidos de usar sua influência para aniquilar empresas estrangeiras.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "China",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-053",
+          "segment_id": "v2:s4",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s4",
+          "assertion_evidence": [
+            {
+              "quote": "A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras.",
+              "start_char": 211,
+              "end_char": 325
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u051",
+      "text": "A Huawei afirma que já trabalha no desenvolvimento de uma nova plataforma.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Huawei",
+        "negated": false,
+        "modality": "ongoing development (já trabalha)",
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-054",
+          "segment_id": "v2:s5",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s5",
+          "assertion_evidence": [
+            {
+              "quote": "A Huawei afirma que já trabalha no desenvolvimento de uma nova plataforma",
+              "start_char": 0,
+              "end_char": 73
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    },
+    {
+      "id": "gh-u052",
+      "text": "A plataforma está sendo desenvolvida para que os celulares possam operar normalmente; o trecho expressa um objetivo, não um resultado garantido.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": "stated purpose or goal (para que possam)",
+        "quantities": [],
+        "conditions": [
+          "Objetivo da plataforma"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-055",
+          "segment_id": "v2:s5",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s5",
+          "assertion_evidence": [
+            {
+              "quote": "para que os celulares possam operar normalmente.",
+              "start_char": 74,
+              "end_char": 122
+            }
+          ],
+          "context_evidence": []
+        }
+      ],
+      "annotation": {}
+    }
+  ],
+  "annotations": {
+    "decompositions": [
+      {
+        "id": "gh-parent-01",
+        "segment_id": "v0:s0",
+        "parent_evidence": {
+          "quote": "O Google decidiu não atualizar mais os aplicativos dos celulares da Huawei, segunda maior fabricante de smartphones do mundo, atrás da sul-coreana Samsung.",
+          "start_char": 0,
+          "end_char": 155
+        },
+        "component_unit_ids": [
+          "gh-u001",
+          "gh-u002",
+          "gh-u053"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "Update decision and company ranking are separately assessable."
+      },
+      {
+        "id": "gh-parent-02",
+        "segment_id": "v0:s1",
+        "parent_evidence": {
+          "quote": "Usuários de aparelhos da gigante chinesa não vão mais receber atualizações de aplicativos do sistema operacional Android, que pertence ao Google.",
+          "start_char": 76,
+          "end_char": 221
+        },
+        "component_unit_ids": [
+          "gh-u004",
+          "gh-u005"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The relative clause about Android ownership is a distinct relation."
+      },
+      {
+        "id": "gh-parent-03",
+        "segment_id": "v1:s1",
+        "parent_evidence": {
+          "quote": "Sistema operacional é o que faz o smartphone funcionar, possibilita usar os aplicativos.",
+          "start_char": 0,
+          "end_char": 88
+        },
+        "component_unit_ids": [
+          "gh-u012",
+          "gh-u013"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The definition contains two independently answerable functions."
+      },
+      {
+        "id": "gh-parent-04",
+        "segment_id": "v1:s2",
+        "parent_evidence": {
+          "quote": "A Google, dona do Android, chegou a anunciar que, pra cumprir a ordem, não ia mais atualizar o sistema operacional em telefones da Huawei.",
+          "start_char": 200,
+          "end_char": 338
+        },
+        "component_unit_ids": [
+          "gh-u005",
+          "gh-u018"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The ownership apposition and announcement are separate."
+      },
+      {
+        "id": "gh-parent-05",
+        "segment_id": "v1:s2",
+        "parent_evidence": {
+          "quote": "Mas agora, no fim do dia, o governo americano voltou atrás e baixou uma regra provisória permitindo as atualizações dos celulares por mais noventa dias.",
+          "start_char": 339,
+          "end_char": 491
+        },
+        "component_unit_ids": [
+          "gh-u019",
+          "gh-u020"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "Reversing course and issuing a provisional rule with duration are distinct."
+      },
+      {
+        "id": "gh-parent-06",
+        "segment_id": "v1:s5",
+        "parent_evidence": {
+          "quote": "Proibir empresas americanas de fazer negócios com a Huawei é mais um passo na guerra comercial entre os dois países, já de olho no mercado do 5G.",
+          "start_char": 0,
+          "end_char": 145
+        },
+        "component_unit_ids": [
+          "gh-u027",
+          "gh-u028"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The prohibition's place in the trade war and the countries' focus on 5G are distinct."
+      },
+      {
+        "id": "gh-parent-07",
+        "segment_id": "v1:s5",
+        "parent_evidence": {
+          "quote": "A nova tecnologia 5G promete revolucionar a internet móvel e os Estados Unidos e a China lutam pra definir quem vai dominar esse mercado.",
+          "start_char": 146,
+          "end_char": 283
+        },
+        "component_unit_ids": [
+          "gh-u029",
+          "gh-u030"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The forecast about mobile internet and the countries' contest over market control are distinct."
+      },
+      {
+        "id": "gh-parent-08",
+        "segment_id": "v2:s0",
+        "parent_evidence": {
+          "quote": "Acho um absurdo porque o telefone funciona bem e é eficiente\", disse o italiano que usa um smartphone da marca chinesa.",
+          "start_char": 207,
+          "end_char": 326
+        },
+        "component_unit_ids": [
+          "gh-u035",
+          "gh-u036",
+          "gh-u037"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The attributed evaluation and its two stated reasons are linked; count only components."
+      },
+      {
+        "id": "gh-parent-09",
+        "segment_id": "v2:s1",
+        "parent_evidence": {
+          "quote": "Na semana passada, Donald Trump assinou um decreto alegando emergência nacional para impedir que empresas americanas negociem com algumas companhias chinesas, entre elas a Huawei.",
+          "start_char": 0,
+          "end_char": 179
+        },
+        "component_unit_ids": [
+          "gh-u038",
+          "gh-u039",
+          "gh-u040"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "Signing, the stated emergency, and decree purpose are separate."
+      },
+      {
+        "id": "gh-parent-10",
+        "segment_id": "v2:s3",
+        "parent_evidence": {
+          "quote": "Cumprindo a determinação, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca. A decisão vai afetar principalmente os novos aparelhos da Huawei, que não vão ter aplicativos como Gmail e o YouTube.",
+          "start_char": 0,
+          "end_char": 236
+        },
+        "component_unit_ids": [
+          "gh-u044",
+          "gh-u045",
+          "gh-u046"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The Android supply decision, affected group, and app availability are separately assessable."
+      },
+      {
+        "id": "gh-parent-11",
+        "segment_id": "v2:s4",
+        "parent_evidence": {
+          "quote": "O porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos espalham informações falsas para conseguir vantagens comerciais e não mostram qualquer evidência que provem as acusações.",
+          "start_char": 0,
+          "end_char": 210
+        },
+        "component_unit_ids": [
+          "gh-u047",
+          "gh-u048"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The false-information claim and no-evidence claim are separate."
+      },
+      {
+        "id": "gh-parent-12",
+        "segment_id": "v2:s4",
+        "parent_evidence": {
+          "quote": "A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras.",
+          "start_char": 211,
+          "end_char": 325
+        },
+        "component_unit_ids": [
+          "gh-u049",
+          "gh-u050"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "Alleged pressure and alleged elimination are distinct actions."
+      },
+      {
+        "id": "gh-parent-13",
+        "segment_id": "v2:s5",
+        "parent_evidence": {
+          "quote": "A Huawei afirma que já trabalha no desenvolvimento de uma nova plataforma para que os celulares possam operar normalmente.",
+          "start_char": 0,
+          "end_char": 122
+        },
+        "component_unit_ids": [
+          "gh-u051",
+          "gh-u052"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "Ongoing development and its stated goal are separate; the goal is not an achieved result."
+      },
+      {
+        "id": "gh-parent-14",
+        "segment_id": "v2:s0",
+        "parent_evidence": {
+          "quote": "A briga é entre os Estados Unidos e a China, mas a repercussão mundial.",
+          "start_char": 134,
+          "end_char": 205
+        },
+        "component_unit_ids": [
+          "gh-u033",
+          "gh-u034"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "The dispute's parties and geographic reach of repercussions are distinct."
+      }
+    ],
+    "equivalence_decisions": [
+      {
+        "unit_id": "gh-u002",
+        "occurrence_ids": [
+          "gh-occ-002",
+          "gh-occ-003",
+          "gh-occ-004"
+        ],
+        "relation": "same_complete_meaning",
+        "basis": "All three occurrences state that Huawei is the second-largest smartphone manufacturer worldwide. The Samsung comparison in v0:s0 is a separately annotated detail.",
+        "review_status": "pending_independent_review"
+      },
+      {
+        "unit_id": "gh-u005",
+        "occurrence_ids": [
+          "gh-occ-007",
+          "gh-occ-008"
+        ],
+        "relation": "same_complete_meaning",
+        "basis": "Both occurrences state that Google owns Android.",
+        "review_status": "pending_independent_review"
+      }
+    ],
+    "coverage_audit": [
+      {
+        "segment_id": "v0:s0",
+        "reference_unit_ids": [
+          "gh-u001",
+          "gh-u002",
+          "gh-u053"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 3,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u001",
+          "gh-u002",
+          "gh-u053"
+        ]
+      },
+      {
+        "segment_id": "v0:s1",
+        "reference_unit_ids": [
+          "gh-u003",
+          "gh-u004",
+          "gh-u005",
+          "gh-u006"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 4,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u003",
+          "gh-u004",
+          "gh-u005",
+          "gh-u006"
+        ]
+      },
+      {
+        "segment_id": "v0:s2",
+        "reference_unit_ids": [
+          "gh-u007",
+          "gh-u008"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 2,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u007",
+          "gh-u008"
+        ]
+      },
+      {
+        "segment_id": "v0:s3",
+        "reference_unit_ids": [
+          "gh-u009",
+          "gh-u010"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 2,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u009",
+          "gh-u010"
+        ]
+      },
+      {
+        "segment_id": "v1:s0",
+        "reference_unit_ids": [
+          "gh-u011"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [
+          "gh-gap-01"
+        ],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 1,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u011"
+        ]
+      },
+      {
+        "segment_id": "v1:s1",
+        "reference_unit_ids": [
+          "gh-u002",
+          "gh-u012",
+          "gh-u013",
+          "gh-u014"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 4,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u002",
+          "gh-u012",
+          "gh-u013",
+          "gh-u014"
+        ]
+      },
+      {
+        "segment_id": "v1:s2",
+        "reference_unit_ids": [
+          "gh-u005",
+          "gh-u015",
+          "gh-u016",
+          "gh-u017",
+          "gh-u018",
+          "gh-u019",
+          "gh-u020"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [
+          "gh-gap-02",
+          "gh-gap-03"
+        ],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 7,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u005",
+          "gh-u017",
+          "gh-u018",
+          "gh-u019",
+          "gh-u020"
+        ]
+      },
+      {
+        "segment_id": "v1:s3",
+        "reference_unit_ids": [
+          "gh-u021",
+          "gh-u022",
+          "gh-u023",
+          "gh-u024"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 4,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u021",
+          "gh-u022",
+          "gh-u023",
+          "gh-u024"
+        ]
+      },
+      {
+        "segment_id": "v1:s4",
+        "reference_unit_ids": [
+          "gh-u025",
+          "gh-u026"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 2,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u025",
+          "gh-u026"
+        ]
+      },
+      {
+        "segment_id": "v1:s5",
+        "reference_unit_ids": [
+          "gh-u027",
+          "gh-u028",
+          "gh-u029",
+          "gh-u030"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 4,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u027",
+          "gh-u028",
+          "gh-u029",
+          "gh-u030"
+        ]
+      },
+      {
+        "segment_id": "v2:s0",
+        "reference_unit_ids": [
+          "gh-u031",
+          "gh-u032",
+          "gh-u033",
+          "gh-u034",
+          "gh-u035",
+          "gh-u036",
+          "gh-u037"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 7,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u031",
+          "gh-u032",
+          "gh-u033",
+          "gh-u034",
+          "gh-u035",
+          "gh-u036",
+          "gh-u037"
+        ]
+      },
+      {
+        "segment_id": "v2:s1",
+        "reference_unit_ids": [
+          "gh-u002",
+          "gh-u038",
+          "gh-u039",
+          "gh-u040",
+          "gh-u041"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 5,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u002",
+          "gh-u038",
+          "gh-u039",
+          "gh-u040",
+          "gh-u041"
+        ]
+      },
+      {
+        "segment_id": "v2:s2",
+        "reference_unit_ids": [
+          "gh-u042",
+          "gh-u043"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 2,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u042",
+          "gh-u043"
+        ]
+      },
+      {
+        "segment_id": "v2:s3",
+        "reference_unit_ids": [
+          "gh-u044",
+          "gh-u045",
+          "gh-u046"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 3,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u044",
+          "gh-u045",
+          "gh-u046"
+        ]
+      },
+      {
+        "segment_id": "v2:s4",
+        "reference_unit_ids": [
+          "gh-u047",
+          "gh-u048",
+          "gh-u049",
+          "gh-u050"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [
+          "gh-gap-04"
+        ],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 4,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u047",
+          "gh-u048",
+          "gh-u049",
+          "gh-u050"
+        ]
+      },
+      {
+        "segment_id": "v2:s5",
+        "reference_unit_ids": [
+          "gh-u051",
+          "gh-u052"
+        ],
+        "status": "first_pass_units_annotated",
+        "unresolved_issue_ids": [],
+        "review_status": "pending_independent_review",
+        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "reference_unit_count": 2,
+        "strict_unit_alignment_unit_ids": [
+          "gh-u051",
+          "gh-u052"
+        ]
+      }
+    ],
+    "source_issues": [],
+    "annotator_notes": "Parent sentences are provenance for component units and excluded from counts. Occurrences preserve repeated source statements. The one-source Samsung ranking detail is separate from Huawei's repeated worldwide rank. Four gap entries bound identity/reference interpretation; gh-u015 and gh-u016 are excluded from strict unit matching. First-pass judgments are pending independent review.",
+    "metric_guidance": {
+      "annotated_unit_record_count": 53,
+      "occurrence_count": 56,
+      "decomposition_parent_count": 14,
+      "strict_unit_alignment_eligible_count": 51,
+      "strictly_excluded_unit_ids": [
+        "gh-u015",
+        "gh-u016"
+      ],
+      "identity_component_exclusions": {
+        "gh-u011": "The generic proposition is scorable; identities of the two giants are not.",
+        "gh-u048": "The generic no-evidence assertion is scorable; the antecedent of “acusações” is not."
+      },
+      "interpretation": "53 is the number of agent-annotated reference records under this protocol, not a measured or absolute information count. Report strict alignment with the 51 eligible units and identity-specific components excluded; an inclusive reading can show 53 as a sensitivity bound. These development annotations are pending independent review, not calibrated accuracy."
+    }
+  },
+  "gaps": [
+    {
+      "id": "gh-gap-01",
+      "segment_id": "v1:s0",
+      "kind": "unresolved_identity",
+      "evidence": {
+        "quote": "dois gigantes da tecnologia.",
+        "start_char": 78,
+        "end_char": 106
+      },
+      "detail": "The segment says the trade war involved two technology giants but does not name them. Do not resolve them from topic knowledge.",
+      "metric_treatment": "Exclude named-entity match; retain only the generic proposition.",
+      "review_status": "pending_independent_review",
+      "scorable": false,
+      "non_scorable_scope": "identity_resolution_only",
+      "excluded_unit_ids": [],
+      "alternative_valid_readings": [
+        "Keep the proposition generic; do not name either giant."
+      ]
+    },
+    {
+      "id": "gh-gap-02",
+      "segment_id": "v1:s2",
+      "kind": "unresolved_identity",
+      "evidence": {
+        "quote": "eles cresceram se ajudando.",
+        "start_char": 21,
+        "end_char": 48
+      },
+      "detail": "The referent of “eles” is not explicitly named in this passage.",
+      "metric_treatment": "Exclude named-entity match; retain the bounded mutual-help proposition.",
+      "review_status": "pending_independent_review",
+      "scorable": false,
+      "non_scorable_scope": "strict_unit_alignment_and_entity_identity",
+      "excluded_unit_ids": [
+        "gh-u015"
+      ],
+      "alternative_valid_readings": [
+        "Keep the referents of “eles” unnamed."
+      ]
+    },
+    {
+      "id": "gh-gap-03",
+      "segment_id": "v1:s2",
+      "kind": "unresolved_identity",
+      "evidence": {
+        "quote": "essa parceria.",
+        "start_char": 106,
+        "end_char": 120
+      },
+      "detail": "The partnership is linked to the preceding mutual-help statement, but its members are not securely identified in this passage.",
+      "metric_treatment": "Exclude partner-specific match; retain only the bounded possibility.",
+      "review_status": "pending_independent_review",
+      "scorable": false,
+      "non_scorable_scope": "strict_unit_alignment_and_partner_identity",
+      "excluded_unit_ids": [
+        "gh-u016"
+      ],
+      "alternative_valid_readings": [
+        "Keep the members of “essa parceria” unnamed."
+      ]
+    },
+    {
+      "id": "gh-gap-04",
+      "segment_id": "v2:s4",
+      "kind": "unresolved_reference",
+      "evidence": {
+        "quote": "acusações.",
+        "start_char": 200,
+        "end_char": 210
+      },
+      "detail": "The segment does not fully specify which accusations are meant by this reference.",
+      "metric_treatment": "Exclude accusation-specific matching beyond the generic reference.",
+      "review_status": "pending_independent_review",
+      "scorable": false,
+      "non_scorable_scope": "accusation_antecedent_specificity_only",
+      "excluded_unit_ids": [],
+      "alternative_valid_readings": [
+        "Score only the generic no-evidence assertion; do not supply the accusation's identity."
+      ]
+    }
+  ]
+}
