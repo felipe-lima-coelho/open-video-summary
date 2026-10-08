@@ -323,7 +323,11 @@ class SemanticInventory:
                   "partial" if any(item.state == "partial" for item in matches) else
                   "uncertain" if any(item.state == "uncertain" for item in matches) else "missing")
         represented = tuple(item.candidate_id for item in matches if item.state == "covered")
-        return replace(focus, state=status, candidate_ids=represented, matches=tuple(matches))
+        active_ids = {item.id for item in self._accepted(target.id)}
+        previous = {item.candidate_id: item for item in (*focus.inactive_matches, *focus.matches)}
+        inactive = tuple(item for identifier, item in previous.items() if identifier not in active_ids)
+        return replace(focus, state=status, candidate_ids=represented, matches=tuple(matches),
+                       inactive_matches=inactive)
 
     def _refresh_foci(self, target):
         for index, focus in enumerate(self.coverage_foci):
@@ -449,10 +453,44 @@ class SemanticInventory:
                 return
 
     def _finalize_semantic_inventory(self, units):
+        """Bind verified focus correspondences to the final active inventory.
+
+        A failed refresh can leave a complete match to a parent that was since
+        decomposed. Keep that decision as provenance, but do not inherit it into
+        children: their scope and qualifiers need their own focus correspondence.
+        Previously verified matches become usable again if consolidation restores
+        their parent. Exact validated proposition identity remains a free proof.
+        """
         membership = {identifier: unit.id for unit in units for identifier in unit.candidate_ids}
-        self.coverage_foci = [replace(focus, unit_ids=tuple(dict.fromkeys(
-            membership[identifier] for identifier in focus.candidate_ids if identifier in membership)))
-            for focus in self.coverage_foci]
+        active = {record.id: record for record in self._accepted() if record.id in membership}
+        finalized = []
+        for focus in self.coverage_foci:
+            scoped = {identifier: record for identifier, record in active.items()
+                      if record.target_segment_id == focus.segment_id}
+            known = {item.candidate_id: item for item in (*focus.inactive_matches, *focus.matches)}
+            valid_proposal = focus.proposal_record.validation == "accepted" and focus.proposition is not None
+            if valid_proposal:
+                for identifier, record in scoped.items():
+                    if exact_proposition_key(focus.proposal_record) == exact_proposition_key(record):
+                        known[identifier] = CoverageMatch(identifier, "covered", origin="exact_validated_proposition")
+            matches = tuple(item for identifier, item in known.items() if identifier in scoped)
+            inactive = tuple(item for identifier, item in known.items() if identifier not in scoped)
+            represented = (tuple(item.candidate_id for item in matches if item.state == "covered")
+                           if valid_proposal else ())
+            state = ("uncertain" if not valid_proposal else
+                     "covered" if represented else
+                     "partial" if any(item.state == "partial" for item in matches) else
+                     "uncertain" if focus.state in {"covered", "partial"}
+                     or any(item.state == "uncertain" for item in matches) else focus.state)
+            if focus.state == "covered" and not represented:
+                self.issue("coverage_focus_membership_unresolved",
+                    f"Source focus {focus.id} lost its complete correspondence to an active inventory candidate; "
+                    "prior matches remain provenance and decomposition alone does not transfer coverage.",
+                    (focus.segment_id,), focus.candidate_ids)
+            finalized.append(replace(focus, state=state, candidate_ids=represented,
+                unit_ids=tuple(dict.fromkeys(membership[identifier] for identifier in represented)),
+                matches=matches, inactive_matches=inactive))
+        self.coverage_foci = finalized
         for focus in self.coverage_foci:
             if focus.state != "covered":
                 self.issue("coverage_focus_unresolved", f"Source focus {focus.id} remains {focus.state}; no complete correspondence was verified.", (focus.segment_id,))

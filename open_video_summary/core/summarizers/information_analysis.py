@@ -1645,11 +1645,11 @@ class _AnalysisRun(SemanticInventory):
             self.active_target = None
             self._notify("consolidation_started")
             units, occurrences = self._consolidate()
-            self._finalize_semantic_inventory(units)
         except Exception as exc:
             failed = True
             self.issue("analysis_failed", type(exc).__name__)
             units, occurrences = (), ()
+        self._finalize_semantic_inventory(units)
         if not failed:
             for identifier in self.snapshot.current_order:
                 if identifier not in self.evaluated_targets:
@@ -1758,7 +1758,7 @@ class _AnalysisRun(SemanticInventory):
             "timestamp_resolution": "source_segment",
             "completeness_proven": False,
             "joint_granularity": "Single-candidate atomicity is followed by bounded joint review of overlapping original-source assertions, including already accepted parents. A verified decomposition requires distinct independent components, mutual collective content preservation, unchanged qualifiers and source occurrence. Only then is the parent retained as provenance outside unit counts. Incomplete, uncertain and conflicting alternatives remain visible and explicitly provisional; specificity alone never suppresses content.",
-            "source_content_ledger": "Independent source traversal proposes source foci without access to the accepted inventory. Each focus keeps literal evidence, a full proposal validation, stable ID, verified per-candidate correspondence and bounded individual repair history. Only complete qualified meaning at the same source occurrence closes a gap. Citations, reformulations, extra candidates and no-progress stops do not prove coverage. The separate open source audit can still signal undiscovered content. Foci do not count as inventory units.",
+            "source_content_ledger": "Independent source traversal proposes source foci without access to the accepted inventory. Each focus keeps literal evidence, a full proposal validation, stable ID, verified per-candidate correspondence and bounded individual repair history. Only complete qualified meaning at the same source occurrence closes a gap. Final covered states require a verified correspondence to an active inventory unit; inactive matches remain provenance and decomposition alone never transfers coverage to children. Citations, reformulations, extra candidates and no-progress stops do not prove coverage. The separate open source audit can still signal undiscovered content. Foci do not count as inventory units.",
             "thresholds_calibrated": False,
             "count_semantics": (
                 "Accepted candidates count all accepted validation records, including retained "

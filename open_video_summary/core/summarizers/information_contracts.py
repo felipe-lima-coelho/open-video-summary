@@ -386,6 +386,7 @@ class CoverageFocus:
     history: tuple[GapRepair, ...] = ()
     proposal_history: tuple[CandidateRecord, ...] = ()
     revision_signals: tuple[tuple[str, float], ...] = ()
+    inactive_matches: tuple[CoverageMatch, ...] = ()
 
 
 @dataclass(frozen=True)

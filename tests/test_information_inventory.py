@@ -15,7 +15,7 @@ from open_video_summary.core.summarizers.information_analysis import Information
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
 from open_video_summary.core.summarizers.information_contracts import capture_snapshot
 from open_video_summary.core.summarizers.information_inventory import DECOMPOSITION_QUESTIONS
-from open_video_summary.errors import AuthenticationError, ConfigurationError, RequestCancelledError
+from open_video_summary.errors import AuthenticationError, ConfigurationError, InvalidResponseError, RequestCancelledError
 
 
 class InventoryEvaluator(SyntheticEvaluator):
@@ -143,6 +143,127 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual("conflicting", report.decompositions[0].state)
         self.assertEqual("unit_candidate", report.candidates[0].inventory_role)
         self.assertEqual("uncertain", report.relations[0].equivalence_state)
+        self.assertTrue(report.counts.counts_provisional)
+
+    def run_decomposed_focus_refresh(self, *, fail_refresh=True, exact_child=False,
+                                     changed_anchor=False, conflicting_pair=False):
+        focus_text = self.frequency["text"]
+        child = copy.deepcopy(self.frequency)
+        if changed_anchor:
+            child = candidate("v0:s0", self.source, text=focus_text,
+                              quote="os backups são feitos a cada 24 horas", quantities=("24 horas",))
+        elif not exact_child:
+            child["text"] = "No Alfa, o intervalo entre backups é de 24 horas."
+
+        class RefreshEvaluator(InventoryEvaluator):
+            def evaluate(self, context, noul=None, choice=None):
+                if fail_refresh and context.startswith("{"):
+                    state = json.loads(context)
+                    if (state.get("focus", {}).get("text") == focus_text
+                            and any(item["id"] != "c0" for item in state.get("claims", []))):
+                        raise InvalidResponseError("Fixture interrupted the post-decomposition focus refresh.")
+                return super().evaluate(context, noul, choice)
+
+        evaluator = RefreshEvaluator(
+            splits={self.source: (child["text"], self.retention["text"])},
+            matches={(focus_text, self.source): (.99, .01, .99),
+                     (focus_text, child["text"]): (.99, .01, .99)},
+            coverage={"v0:s0": [.99, .01]},
+            relation={frozenset((child["text"], self.retention["text"])): "equivalent"}
+            if conflicting_pair else None)
+        report, _ = self.run_inventory(direct=[self.parent], foci=[self.frequency, self.retention],
+                                      recovery=[child, self.retention], evaluator=evaluator)
+        return report
+
+    def test_failed_refresh_cannot_leave_covered_focus_bound_only_to_inactive_parent(self):
+        report = self.run_decomposed_focus_refresh()
+        first, repaired = report.coverage_foci
+        self.assertEqual("verified", report.decompositions[0].state)
+        self.assertEqual("decomposed_parent", report.candidates[0].inventory_role)
+        self.assertEqual(("uncertain", (), ()), (first.state, first.candidate_ids, first.unit_ids))
+        self.assertEqual((), first.matches)
+        self.assertEqual(("c0", "covered"),
+                         (first.inactive_matches[0].candidate_id, first.inactive_matches[0].state))
+        self.assertEqual("covered", repaired.state)
+        self.assertEqual(("c2",), repaired.candidate_ids)
+        self.assertEqual(("u1",), repaired.unit_ids)
+        self.assertEqual("resolved", repaired.history[0].outcome)
+        self.assertEqual("covered", repaired.history[0].resulting_state)
+        self.assertEqual(("c1", "c2"), repaired.history[0].candidate_ids)
+        self.assertTrue(any(item.candidate_id == "c2" and item.state == "covered"
+                            for item in repaired.history[0].matches))
+        self.assertEqual({"covered": 1, "missing": 0, "partial": 0, "uncertain": 1},
+                         json.loads(report.metadata_json)["source_focus_states"])
+        self.assertEqual(2, report.counts.unique_units)
+        self.assertEqual("partial", report.status)
+        self.assertTrue(report.counts.counts_provisional)
+        issue = next(item for item in report.issues if item.kind == "coverage_focus_membership_unresolved")
+        self.assertEqual(("c0",), issue.candidate_ids)
+        self.assertIn("coverage_focus_unresolved", [item.kind for item in report.issues])
+        self.assertTrue(any(item.operation == "verify_focus_correspondence"
+                            and item.status == "InvalidResponseError" for item in report.calls))
+        active = {identifier for unit in report.units for identifier in unit.candidate_ids}
+        self.assertTrue(all(set(focus.candidate_ids) <= active for focus in report.coverage_foci))
+        self.assertTrue(all(focus.unit_ids for focus in report.coverage_foci if focus.state == "covered"))
+        exported = report.to_dict()
+        self.assertEqual("uncertain", exported["coverage_foci"][0]["state"])
+        self.assertEqual([], exported["coverage_foci"][0]["candidate_ids"])
+        self.assertEqual("c0", exported["coverage_foci"][0]["inactive_matches"][0]["candidate_id"])
+        self.assertEqual("resolved", exported["coverage_foci"][1]["history"][0]["outcome"])
+
+    def test_successful_refresh_keeps_verified_child_binding_and_archives_parent_match(self):
+        report = self.run_decomposed_focus_refresh(fail_refresh=False)
+        first = report.coverage_foci[0]
+        self.assertEqual("completed", report.status)
+        self.assertEqual(("covered", ("c1",), ("u0",)),
+                         (first.state, first.candidate_ids, first.unit_ids))
+        self.assertEqual(("c0", "covered"),
+                         (first.inactive_matches[0].candidate_id, first.inactive_matches[0].state))
+        self.assertTrue(all(item.candidate_id != "c0" for item in first.matches))
+        self.assertEqual(2, json.loads(report.metadata_json)["source_focus_states"]["covered"])
+        self.assertFalse(report.counts.counts_provisional)
+
+    def test_finalization_requires_full_evidence_identity_for_free_child_binding(self):
+        for changed_anchor in (False, True):
+            with self.subTest(changed_anchor=changed_anchor):
+                report = self.run_decomposed_focus_refresh(exact_child=True, changed_anchor=changed_anchor)
+                focus = report.coverage_foci[0]
+                if changed_anchor:
+                    self.assertEqual(("uncertain", (), ()), (focus.state, focus.candidate_ids, focus.unit_ids))
+                else:
+                    self.assertEqual(("covered", ("c1",), ("u0",)),
+                                     (focus.state, focus.candidate_ids, focus.unit_ids))
+                    match = next(item for item in focus.matches if item.candidate_id == "c1")
+                    self.assertEqual("exact_validated_proposition", match.origin)
+                self.assertEqual("decomposed_parent", report.candidates[0].inventory_role)
+                self.assertTrue(any(item.candidate_id == "c0" for item in focus.inactive_matches))
+
+    def test_pair_conflict_restores_prior_verified_parent_match_from_provenance(self):
+        for fail_refresh in (False, True):
+            with self.subTest(fail_refresh=fail_refresh):
+                report = self.run_decomposed_focus_refresh(fail_refresh=fail_refresh, conflicting_pair=True)
+                focus = report.coverage_foci[0]
+                self.assertEqual("conflicting", report.decompositions[0].state)
+                self.assertEqual("unit_candidate", report.candidates[0].inventory_role)
+                self.assertEqual("covered", focus.state)
+                self.assertIn("c0", focus.candidate_ids)
+                self.assertTrue(any(item.candidate_id == "c0" and item.state == "covered" for item in focus.matches))
+                self.assertFalse(any(item.candidate_id == "c0" for item in focus.inactive_matches))
+                parent_unit = next(item.id for item in report.units if "c0" in item.candidate_ids)
+                self.assertIn(parent_unit, focus.unit_ids)
+                self.assertEqual(2, json.loads(report.metadata_json)["source_focus_states"]["covered"])
+                self.assertTrue(report.counts.counts_provisional)
+                self.assertEqual("resolved", report.coverage_foci[1].history[0].outcome)
+
+    def test_failed_consolidation_finalizes_coverage_against_the_empty_active_inventory(self):
+        with patch.object(_AnalysisRun, "_consolidate", side_effect=InvalidResponseError("Fixture consolidation failure")):
+            report, _ = self.run_inventory(direct=[self.frequency], foci=[self.frequency])
+        focus = report.coverage_foci[0]
+        self.assertEqual("failed", report.status)
+        self.assertEqual((), report.units)
+        self.assertEqual(("uncertain", (), ()), (focus.state, focus.candidate_ids, focus.unit_ids))
+        self.assertEqual("c0", focus.inactive_matches[0].candidate_id)
+        self.assertEqual(0, json.loads(report.metadata_json)["source_focus_states"]["covered"])
         self.assertTrue(report.counts.counts_provisional)
 
     def test_specificity_and_a_conditional_rule_do_not_automatically_split(self):
