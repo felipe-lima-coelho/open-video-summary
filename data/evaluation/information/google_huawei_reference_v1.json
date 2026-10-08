@@ -22,7 +22,8 @@
     "annotation_date": "2026-10-08",
     "scope": "All 16 source segments in the three videos in data/processed/google_huawei_segments.json.",
     "blindness": "Annotated directly from the source dataset; generated inventories and provider outputs were not consulted.",
-    "development_scope": "Development reference; no held-out human-reviewed split is claimed."
+    "development_scope": "Development reference; no held-out human-reviewed split is claimed.",
+    "annotation_revision": "Source-fidelity audit completed 2026-10-08; original source and snapshot are unchanged, and independent review remains pending."
   },
   "snapshot": {
     "source_fingerprint": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7",
@@ -389,30 +390,10 @@
               "end_char": 178
             }
           ]
-        },
-        {
-          "id": "gh-occ-004",
-          "segment_id": "v2:s1",
-          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s1",
-          "assertion_evidence": [
-            {
-              "quote": "segunda maior fabricante de smartphones do mundo",
-              "start_char": 259,
-              "end_char": 307
-            }
-          ],
-          "context_evidence": [
-            {
-              "segment_id": "v2:s1",
-              "quote": "entre elas a Huawei",
-              "start_char": 159,
-              "end_char": 178
-            }
-          ]
         }
       ],
       "annotation": {
-        "cross_source_equivalence": "All three sources state that Huawei is the second-largest smartphone manufacturer worldwide; the Samsung comparison in one source is annotated separately."
+        "cross_source_equivalence": "v0:s0 and v1:s1 explicitly identify Huawei as the second-largest smartphone manufacturer worldwide. v2:s1 mentions equipment of a second-largest manufacturer without naming that company in the claim; the manufacturer identity is left unresolved in gh-u041."
       }
     },
     {
@@ -494,7 +475,7 @@
       "qualifiers": {
         "attribution": null,
         "negated": true,
-        "modality": null,
+        "modality": "future change (não vão mais receber)",
         "quantities": [],
         "conditions": []
       },
@@ -574,11 +555,11 @@
     },
     {
       "id": "gh-u006",
-      "text": "No futuro, celulares da Huawei deverão deixar de incluir programas como Google Maps e YouTube.",
+      "text": "No futuro, celulares da Huawei não deverão mais incluir programas como Google Maps e YouTube.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
-        "negated": false,
+        "negated": true,
         "modality": "forecast or expectation (deverão)",
         "quantities": [],
         "conditions": [
@@ -655,7 +636,14 @@
               "end_char": 218
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v0:s2",
+              "quote": "diretrizes do governo americano",
+              "start_char": 30,
+              "end_char": 61
+            }
+          ]
         }
       ],
       "annotation": {}
@@ -686,9 +674,9 @@
           "context_evidence": [
             {
               "segment_id": "v0:s2",
-              "quote": "que proibiu empresas dos Estados Unidos de fazer negócios com companhias estrangeiras de telecomunicações consideradas perigosas para a segurança nacional.",
-              "start_char": 63,
-              "end_char": 218
+              "quote": "diretrizes do governo americano, que proibiu empresas dos Estados Unidos de fazer negócios",
+              "start_char": 30,
+              "end_char": 120
             }
           ]
         }
@@ -732,14 +720,16 @@
     },
     {
       "id": "gh-u011",
-      "text": "A guerra comercial entre China e Estados Unidos envolveu dois gigantes da tecnologia, sem identificação nominal neste trecho.",
+      "text": "Nesta segunda-feira, a guerra comercial entre China e Estados Unidos envolveu dois gigantes da tecnologia.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
         "negated": false,
         "modality": null,
         "quantities": [],
-        "conditions": []
+        "conditions": [
+          "Temporal scope: Nesta segunda-feira; the calendar date is unspecified in this segment."
+        ]
       },
       "occurrences": [
         {
@@ -864,7 +854,7 @@
     },
     {
       "id": "gh-u015",
-      "text": "As entidades referidas apenas como “eles” cresceram ajudando-se mutuamente por muito tempo.",
+      "text": "Durante muito tempo, eles cresceram se ajudando.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -894,25 +884,30 @@
       ],
       "annotation": {
         "unresolved_references": [
-          "The entities referred to by “eles” are not named in this local passage."
+          "The source uses 'eles' without naming its referent in this passage."
         ],
         "identity_sensitive_metric": "Exclude named-entity equivalence; retain the bounded relation.",
         "strict_identity_match_scorable": false,
-        "strict_unit_alignment_scorable": false
+        "strict_unit_alignment_scorable": false,
+        "alternative_valid_readings": [
+          "Keep the referents as the source pronoun “eles”; do not name the partners."
+        ]
       },
       "scorable": false,
       "exclusion_reason": "The proposition uses an unresolved “eles” referent; no single named-entity reading is required."
     },
     {
       "id": "gh-u016",
-      "text": "Donald Trump pode ter encerrado a parceria mencionada imediatamente antes, sem identificação segura dos parceiros neste trecho.",
+      "text": "Mas agora o presidente Donald Trump pode ter acabado com essa parceria.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
         "negated": false,
         "modality": "possibility (pode ter acabado)",
         "quantities": [],
-        "conditions": []
+        "conditions": [
+          "Temporal scope: agora (relative to the source report)."
+        ]
       },
       "occurrences": [
         {
@@ -940,11 +935,14 @@
       ],
       "annotation": {
         "unresolved_references": [
-          "The partners in “essa parceria” are not securely identified in this local passage."
+          "The source uses 'essa parceria' without securely identifying its members in this passage."
         ],
         "identity_sensitive_metric": "Exclude partner-specific matching; retain only the bounded possibility.",
         "strict_identity_match_scorable": false,
-        "strict_unit_alignment_scorable": false
+        "strict_unit_alignment_scorable": false,
+        "alternative_valid_readings": [
+          "Keep the partnership unnamed; retain only the source-stated possibility."
+        ]
       },
       "scorable": false,
       "exclusion_reason": "The proposition uses an unresolved “essa parceria” referent; no single partner identity is required."
@@ -1018,8 +1016,8 @@
           "context_evidence": [
             {
               "segment_id": "v1:s2",
-              "quote": "dona do Android",
-              "start_char": 210,
+              "quote": "A Google, dona do Android",
+              "start_char": 200,
               "end_char": 225
             }
           ]
@@ -1029,14 +1027,16 @@
     },
     {
       "id": "gh-u019",
-      "text": "O governo americano voltou atrás na decisão no fim do dia.",
+      "text": "Mas agora, no fim do dia, o governo americano voltou atrás.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
         "negated": false,
         "modality": null,
         "quantities": [],
-        "conditions": []
+        "conditions": [
+          "Temporal scope: agora, no fim do dia (relative to the source report)."
+        ]
       },
       "occurrences": [
         {
@@ -1057,7 +1057,7 @@
     },
     {
       "id": "gh-u020",
-      "text": "O governo americano baixou uma regra provisória que permitia atualizações dos celulares por mais noventa dias.",
+      "text": "O governo americano baixou uma regra provisória permitindo atualizações dos celulares por mais noventa dias.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1066,7 +1066,9 @@
         "quantities": [
           "mais noventa dias"
         ],
-        "conditions": []
+        "conditions": [
+          "Temporal scope: agora, no fim do dia (inherited from the immediately preceding clause)."
+        ]
       },
       "occurrences": [
         {
@@ -1080,14 +1082,21 @@
               "end_char": 491
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v1:s2",
+              "quote": "o governo americano voltou atrás e",
+              "start_char": 365,
+              "end_char": 399
+            }
+          ]
         }
       ],
       "annotation": {}
     },
     {
       "id": "gh-u021",
-      "text": "Os novos celulares da Huawei continuariam sem poder usar o sistema e os aplicativos do Google.",
+      "text": "Os novos celulares da Huawei vão continuar sem poder usar o sistema e os aplicativos do Google.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1131,8 +1140,8 @@
           "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v1:s3",
           "assertion_evidence": [
             {
-              "quote": "onde a comunicação é monitorada pelo governo",
-              "start_char": 122,
+              "quote": "na China, onde a comunicação é monitorada pelo governo",
+              "start_char": 112,
               "end_char": 166
             }
           ],
@@ -1259,7 +1268,14 @@
               "end_char": 154
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v1:s4",
+              "quote": "Os celulares da Huawei",
+              "start_char": 0,
+              "end_char": 22
+            }
+          ]
         }
       ],
       "annotation": {}
@@ -1315,7 +1331,20 @@
               "end_char": 145
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v1:s5",
+              "quote": "na guerra comercial entre os dois países",
+              "start_char": 75,
+              "end_char": 115
+            },
+            {
+              "segment_id": "v1:s0",
+              "quote": "guerra comercial entre China e Estados Unidos",
+              "start_char": 23,
+              "end_char": 68
+            }
+          ]
         }
       ],
       "annotation": {}
@@ -1371,7 +1400,14 @@
               "end_char": 283
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v1:s5",
+              "quote": "mercado do 5G",
+              "start_char": 131,
+              "end_char": 144
+            }
+          ]
         }
       ],
       "annotation": {}
@@ -1504,10 +1540,10 @@
     },
     {
       "id": "gh-u035",
-      "text": "O entrevistado italiano que usa um smartphone Huawei considera absurda a decisão do Google.",
+      "text": "O entrevistado diz considerar algo absurdo.",
       "unit_type": "opinion",
       "qualifiers": {
-        "attribution": "Italian user of a Huawei smartphone",
+        "attribution": "Italian user of a smartphone from a Chinese brand",
         "negated": false,
         "modality": null,
         "quantities": [],
@@ -1531,24 +1567,31 @@
               "quote": "disse o italiano que usa um smartphone da marca chinesa.",
               "start_char": 270,
               "end_char": 326
-            },
-            {
-              "segment_id": "v2:s0",
-              "quote": "O Google suspendeu o uso do sistema Android em celulares da marca Huawei.",
-              "start_char": 0,
-              "end_char": 73
             }
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "unresolved_references": [
+          "The source says “Acho um absurdo” but does not name the object of that evaluation."
+        ],
+        "scorable_components": [
+          "The interviewee says an unspecified matter is absurd."
+        ],
+        "non_scorable_components": [
+          "Identity of the object being called absurd."
+        ],
+        "alternative_valid_readings": [
+          "Keep the object unspecified; do not require the nearby Google suspension as the target."
+        ]
+      }
     },
     {
       "id": "gh-u036",
-      "text": "O entrevistado afirma que o telefone funciona bem.",
+      "text": "O entrevistado diz que o telefone funciona bem.",
       "unit_type": "assertion",
       "qualifiers": {
-        "attribution": "Italian user of a Huawei smartphone",
+        "attribution": "Italian user of a smartphone from a Chinese brand",
         "negated": false,
         "modality": null,
         "quantities": [],
@@ -1569,9 +1612,9 @@
           "context_evidence": [
             {
               "segment_id": "v2:s0",
-              "quote": "Acho um absurdo porque o telefone funciona bem e é eficiente",
-              "start_char": 207,
-              "end_char": 267
+              "quote": "disse o italiano que usa um smartphone da marca chinesa.",
+              "start_char": 270,
+              "end_char": 326
             }
           ]
         }
@@ -1580,10 +1623,10 @@
     },
     {
       "id": "gh-u037",
-      "text": "O entrevistado afirma que o telefone é eficiente.",
+      "text": "O entrevistado diz que o telefone é eficiente.",
       "unit_type": "assertion",
       "qualifiers": {
-        "attribution": "Italian user of a Huawei smartphone",
+        "attribution": "Italian user of a smartphone from a Chinese brand",
         "negated": false,
         "modality": null,
         "quantities": [],
@@ -1604,9 +1647,9 @@
           "context_evidence": [
             {
               "segment_id": "v2:s0",
-              "quote": "Acho um absurdo porque o telefone funciona bem e é eficiente",
-              "start_char": 207,
-              "end_char": 267
+              "quote": "disse o italiano que usa um smartphone da marca chinesa.",
+              "start_char": 270,
+              "end_char": 326
             }
           ]
         }
@@ -1666,7 +1709,14 @@
               "end_char": 79
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v2:s1",
+              "quote": "Na semana passada, Donald Trump assinou um decreto",
+              "start_char": 0,
+              "end_char": 50
+            }
+          ]
         }
       ],
       "annotation": {}
@@ -1694,14 +1744,21 @@
               "end_char": 179
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v2:s1",
+              "quote": "Na semana passada, Donald Trump assinou um decreto",
+              "start_char": 0,
+              "end_char": 50
+            }
+          ]
         }
       ],
       "annotation": {}
     },
     {
       "id": "gh-u041",
-      "text": "O governo dos Estados Unidos afirma que a China usa equipamentos da Huawei para espionagem.",
+      "text": "O governo dos Estados Unidos afirma que a China está usando os equipamentos da segunda maior fabricante de smartphones do mundo para espionagem.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": "Governo dos Estados Unidos",
@@ -1722,17 +1779,23 @@
               "end_char": 324
             }
           ],
-          "context_evidence": [
-            {
-              "segment_id": "v2:s1",
-              "quote": "entre elas a Huawei.",
-              "start_char": 159,
-              "end_char": 179
-            }
-          ]
+          "context_evidence": []
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "unresolved_references": [
+          "This claim does not identify the second-largest smartphone manufacturer as Huawei. The preceding sentence lists Huawei among Chinese companies but does not explicitly connect Huawei to this description."
+        ],
+        "scorable_components": [
+          "The attributed claim that China uses equipment of the second-largest global smartphone manufacturer for espionage."
+        ],
+        "non_scorable_components": [
+          "Identity of the second-largest manufacturer."
+        ],
+        "alternative_valid_readings": [
+          "Leave the manufacturer unnamed; do not substitute Huawei from the surrounding topic."
+        ]
+      }
     },
     {
       "id": "gh-u042",
@@ -1785,7 +1848,14 @@
               "end_char": 153
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v2:s2",
+              "quote": "rede 5G",
+              "start_char": 53,
+              "end_char": 60
+            }
+          ]
         }
       ],
       "annotation": {}
@@ -1821,6 +1891,12 @@
               "quote": "novos aparelhos da Huawei",
               "start_char": 158,
               "end_char": 183
+            },
+            {
+              "segment_id": "v2:s0",
+              "quote": "A decisão segue uma ordem do presidente dos Estados Unidos",
+              "start_char": 74,
+              "end_char": 132
             }
           ]
         }
@@ -1850,7 +1926,14 @@
               "end_char": 184
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v2:s3",
+              "quote": "Cumprindo a determinação, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca",
+              "start_char": 0,
+              "end_char": 117
+            }
+          ]
         }
       ],
       "annotation": {}
@@ -1873,17 +1956,17 @@
           "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s3",
           "assertion_evidence": [
             {
-              "quote": "aplicativos como Gmail e o YouTube.",
-              "start_char": 201,
+              "quote": "que não vão ter aplicativos como Gmail e o YouTube.",
+              "start_char": 185,
               "end_char": 236
             }
           ],
           "context_evidence": [
             {
               "segment_id": "v2:s3",
-              "quote": "novos aparelhos da Huawei,",
+              "quote": "novos aparelhos da Huawei",
               "start_char": 158,
-              "end_char": 184
+              "end_char": 183
             }
           ]
         }
@@ -1941,7 +2024,14 @@
               "end_char": 210
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v2:s4",
+              "quote": "O porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos espalham informações falsas para conseguir vantagens comerciais",
+              "start_char": 0,
+              "end_char": 152
+            }
+          ]
         }
       ],
       "annotation": {
@@ -1959,7 +2049,7 @@
     },
     {
       "id": "gh-u049",
-      "text": "A China acusa os Estados Unidos de usar sua influência para pressionar empresas estrangeiras.",
+      "text": "A China acusa os Estados Unidos de usar a influência para pressionar empresas estrangeiras.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": "China",
@@ -1987,7 +2077,7 @@
     },
     {
       "id": "gh-u050",
-      "text": "A China acusa os Estados Unidos de usar sua influência para aniquilar empresas estrangeiras.",
+      "text": "A China acusa os Estados Unidos de usar a influência para aniquilar empresas estrangeiras.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": "China",
@@ -2043,16 +2133,14 @@
     },
     {
       "id": "gh-u052",
-      "text": "A plataforma está sendo desenvolvida para que os celulares possam operar normalmente; o trecho expressa um objetivo, não um resultado garantido.",
+      "text": "A Huawei afirma que a plataforma tem como objetivo permitir que os celulares operem normalmente.",
       "unit_type": "assertion",
       "qualifiers": {
-        "attribution": null,
+        "attribution": "Huawei",
         "negated": false,
         "modality": "stated purpose or goal (para que possam)",
         "quantities": [],
-        "conditions": [
-          "Objetivo da plataforma"
-        ]
+        "conditions": []
       },
       "occurrences": [
         {
@@ -2066,10 +2154,19 @@
               "end_char": 122
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v2:s5",
+              "quote": "A Huawei afirma que já trabalha no desenvolvimento de uma nova plataforma",
+              "start_char": 0,
+              "end_char": 73
+            }
+          ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The source attributes this stated purpose to Huawei. It expresses an intended goal, not a claim that the phones have already achieved normal operation."
+      }
     }
   ],
   "annotations": {
@@ -2297,7 +2394,7 @@
         "parent_counted_as_unit": false,
         "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
         "annotation_state": "agent_annotated_pending_review",
-        "reason": "Ongoing development and its stated goal are separate; the goal is not an achieved result."
+        "reason": "Huawei’s attributed report of ongoing development and its stated goal are separate; the goal is not an achieved result."
       },
       {
         "id": "gh-parent-14",
@@ -2322,11 +2419,10 @@
         "unit_id": "gh-u002",
         "occurrence_ids": [
           "gh-occ-002",
-          "gh-occ-003",
-          "gh-occ-004"
+          "gh-occ-003"
         ],
         "relation": "same_complete_meaning",
-        "basis": "All three occurrences state that Huawei is the second-largest smartphone manufacturer worldwide. The Samsung comparison in v0:s0 is a separately annotated detail.",
+        "basis": "Both occurrences explicitly state that Huawei is the second-largest smartphone manufacturer worldwide.",
         "review_status": "pending_independent_review"
       },
       {
@@ -2542,7 +2638,9 @@
           "gh-u037"
         ],
         "status": "first_pass_units_annotated",
-        "unresolved_issue_ids": [],
+        "unresolved_issue_ids": [
+          "gh-gap-05"
+        ],
         "review_status": "pending_independent_review",
         "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
         "reference_unit_count": 7,
@@ -2559,19 +2657,19 @@
       {
         "segment_id": "v2:s1",
         "reference_unit_ids": [
-          "gh-u002",
           "gh-u038",
           "gh-u039",
           "gh-u040",
           "gh-u041"
         ],
         "status": "first_pass_units_annotated",
-        "unresolved_issue_ids": [],
+        "unresolved_issue_ids": [
+          "gh-gap-06"
+        ],
         "review_status": "pending_independent_review",
         "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
-        "reference_unit_count": 5,
+        "reference_unit_count": 4,
         "strict_unit_alignment_unit_ids": [
-          "gh-u002",
           "gh-u038",
           "gh-u039",
           "gh-u040",
@@ -2652,10 +2750,10 @@
       }
     ],
     "source_issues": [],
-    "annotator_notes": "Parent sentences are provenance for component units and excluded from counts. Occurrences preserve repeated source statements. The one-source Samsung ranking detail is separate from Huawei's repeated worldwide rank. Four gap entries bound identity/reference interpretation; gh-u015 and gh-u016 are excluded from strict unit matching. First-pass judgments are pending independent review.",
+    "annotator_notes": "Parent sentences are provenance for component units and excluded from counts. Occurrences preserve repeated source statements only when the complete meaning is supported. The Samsung comparison in v0:s0 is separate from Huawei’s rank. The v2:s1 government claim does not name the second-largest manufacturer, so its identity remains generic. Six gap entries bound identity, reference, and evaluation-target interpretation; gh-u015 and gh-u016 are excluded from strict unit matching. First-pass judgments are pending independent review.",
     "metric_guidance": {
       "annotated_unit_record_count": 53,
-      "occurrence_count": 56,
+      "occurrence_count": 55,
       "decomposition_parent_count": 14,
       "strict_unit_alignment_eligible_count": 51,
       "strictly_excluded_unit_ids": [
@@ -2664,9 +2762,13 @@
       ],
       "identity_component_exclusions": {
         "gh-u011": "The generic proposition is scorable; identities of the two giants are not.",
-        "gh-u048": "The generic no-evidence assertion is scorable; the antecedent of “acusações” is not."
+        "gh-u048": "The generic no-evidence assertion is scorable; the antecedent of “acusações” is not.",
+        "gh-u041": "The attributed espionage claim is scorable; the second-largest manufacturer identity is unresolved."
       },
-      "interpretation": "53 is the number of agent-annotated reference records under this protocol, not a measured or absolute information count. Report strict alignment with the 51 eligible units and identity-specific components excluded; an inclusive reading can show 53 as a sensitivity bound. These development annotations are pending independent review, not calibrated accuracy."
+      "interpretation": "53 is the number of agent-annotated reference records under this protocol, not a measured or absolute information count. Report strict alignment with the 51 eligible units and identity-specific components excluded; an inclusive reading can show 53 as a sensitivity bound. These development annotations are pending independent review, not calibrated accuracy.",
+      "non_scorable_component_exclusions": {
+        "gh-u035": "The generic attributed evaluation is scorable; its target is unspecified."
+      }
     }
   },
   "gaps": [
@@ -2749,6 +2851,53 @@
       "alternative_valid_readings": [
         "Score only the generic no-evidence assertion; do not supply the accusation's identity."
       ]
+    },
+    {
+      "id": "gh-gap-05",
+      "segment_id": "v2:s0",
+      "kind": "unresolved_reference",
+      "evidence": {
+        "quote": "Acho um absurdo",
+        "start_char": 207,
+        "end_char": 222
+      },
+      "detail": "The interviewee gives an evaluation but does not identify what is absurd. Nearby report context does not establish the target as part of the quote.",
+      "metric_treatment": "Score only the generic attributed evaluation; do not require a specific target.",
+      "review_status": "pending_independent_review",
+      "scorable": false,
+      "non_scorable_scope": "evaluation_target_only",
+      "excluded_unit_ids": [],
+      "alternative_valid_readings": [
+        "Keep the evaluated matter unspecified."
+      ]
+    },
+    {
+      "id": "gh-gap-06",
+      "segment_id": "v2:s1",
+      "kind": "unresolved_identity",
+      "evidence": {
+        "quote": "segunda maior fabricante de smartphones do mundo",
+        "start_char": 259,
+        "end_char": 307
+      },
+      "detail": "The government-attributed sentence refers to a second-largest manufacturer but does not name it; the prior clause mentions Huawei among Chinese companies without explicitly resolving this reference.",
+      "metric_treatment": "Score the attributed claim with a generic manufacturer; do not require Huawei identity.",
+      "review_status": "pending_independent_review",
+      "scorable": false,
+      "non_scorable_scope": "manufacturer_identity_only",
+      "excluded_unit_ids": [],
+      "alternative_valid_readings": [
+        "Keep the manufacturer generic; do not infer a named entity."
+      ],
+      "context_evidence": [
+        {
+          "segment_id": "v2:s1",
+          "quote": "entre elas a Huawei.",
+          "start_char": 159,
+          "end_char": 179
+        }
+      ],
+      "context_note": "The nearby clause lists Huawei as one targeted Chinese company; it does not explicitly identify Huawei as the second-largest manufacturer in the following claim."
     }
   ]
 }
