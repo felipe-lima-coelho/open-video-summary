@@ -261,6 +261,10 @@ class CandidateRecord:
     anchor_binding_origin: str | None = None
     validation_reused_from: str | None = None
     literal_repair_of: str | None = None
+    inventory_role: str = "unit_candidate"
+    parent_candidate_ids: tuple[str, ...] = ()
+    decomposition_ids: tuple[str, ...] = ()
+    recovery_focus_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -272,6 +276,8 @@ class InformationUnit:
     candidate_ids: tuple[str, ...]
     qualifier_state: str = "unknown"
     representative_candidate_id: str | None = None
+    inventory_state: str = "validated"
+    decomposition_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -327,6 +333,59 @@ class CoverageRecord:
     focus_markers: tuple[tuple[str, int, int], ...]
     signals: tuple[tuple[str, float], ...]
     state: str
+    focus_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class InformationDecomposition:
+    """An assessed alternative representation, never a transitive equivalence."""
+
+    id: str
+    parent_candidate_id: str
+    component_candidate_ids: tuple[str, ...]
+    state: str
+    signals: tuple[tuple[str, float], ...] = ()
+    origin: str = "joint_source_review"
+    reason: str = ""
+    superseded_by: str | None = None
+
+
+@dataclass(frozen=True)
+class CoverageMatch:
+    candidate_id: str
+    state: str
+    signals: tuple[tuple[str, float], ...] = ()
+    origin: str = "evaluator"
+
+
+@dataclass(frozen=True)
+class GapRepair:
+    round: int
+    attempt: int
+    candidate_ids: tuple[str, ...]
+    previous_state: str
+    resulting_state: str
+    outcome: str
+    context_segment_ids: tuple[str, ...] = ()
+    matches: tuple[CoverageMatch, ...] = ()
+
+
+@dataclass(frozen=True)
+class CoverageFocus:
+    """Source-discovered content, independent of the counted candidate inventory."""
+
+    id: str
+    segment_id: str
+    proposition: InformationCandidate | None
+    proposal_record: CandidateRecord
+    state: str = "uncertain"
+    origin: str = "independent_source_discovery"
+    candidate_ids: tuple[str, ...] = ()
+    unit_ids: tuple[str, ...] = ()
+    matches: tuple[CoverageMatch, ...] = ()
+    history: tuple[GapRepair, ...] = ()
+    proposal_history: tuple[CandidateRecord, ...] = ()
+    revision_signals: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -365,6 +424,8 @@ class InformationCounts:
     valid_zero: bool
     occurrences_provisional: bool = False
     counts_provisional: bool = False
+    provisional_granularity_units: int = 0
+    decomposed_parent_candidates: int = 0
 
 
 @dataclass(frozen=True)
@@ -413,6 +474,8 @@ class InformationReport:
     issues: tuple[AnalysisIssue, ...]
     calls: tuple[AnalysisCall, ...]
     metadata_json: str
+    decompositions: tuple[InformationDecomposition, ...] = ()
+    coverage_foci: tuple[CoverageFocus, ...] = ()
 
     def __post_init__(self):
         # Keep the aggregate flag consistent even for manually assembled partial

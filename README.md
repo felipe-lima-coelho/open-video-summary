@@ -296,13 +296,52 @@ applies to analysis failures after a valid configuration has been constructed.
 
 ### Protocol and report interpretation
 
-`contextual-propositions-v1` inventories verbal content **as communicated**, not
+`contextual-propositions-v2` inventories verbal content **as communicated**, not
 the external truth of a claim. A unit preserves entity context, attribution,
 negation, modality, numbers, conditions and exceptions. Independent properties
-become separate units; a condition remains with its consequent. Compound
-candidates flagged by the evaluator are excluded and offered to the bounded
-recovery route with their validation reasons and signals, so their parts cannot
-silently add to an already counted compound.
+become separate units; a condition remains with its consequent. Joint source
+review checks proposed parent/parts representations even when an earlier
+single-candidate decision called the parent atomic. A parent becomes
+`inventory_role: "decomposed_parent"` only when the verified components preserve
+its complete meaning, governing qualifiers and source occurrence, and are
+distinct independent contents. It remains in `candidates` as provenance but
+does not add a third unit to its two parts. Specificity or overlapping quotations
+alone cannot establish this decomposition.
+
+Incomplete, conflicting or uncertain alternatives remain visible in
+`decompositions`; affected units carry `inventory_state:
+"provisional_granularity"` and `decomposition_ids`. Their summed count is
+provisional, with `provisional_granularity_units` reported separately. A later
+pair decision that conflicts with verified component distinctness restores the
+parent as a visible alternative. This favors traceable uncertainty over silently
+dropping residual meaning or conditions.
+
+Coverage also has a source-content ledger in `coverage_foci`. An independent
+generator traverses the original target without the accepted inventory, proposes
+contents with literal evidence, and passes each proposal through the same
+support, qualifier and atomicity checks. Each stable focus records its full
+proposal validation, verified candidate correspondences, final unit IDs, and a
+bounded repair history. A focus can be `missing`, `partial`, `covered` or
+`uncertain`. Only complete meaning at the same source occurrence closes a gap;
+sharing a whole-sentence quote, adding a duplicate, or reformulating an existing
+claim does not. Source foci do not count as candidate units or occurrences.
+
+The separate open audit still traverses the original source for content that
+never became a focus. No-progress and budget stops leave unresolved records
+visible; even a completed run does not prove exhaustive coverage. Reports use
+schema 7, retain model and prompt versions, and treat probability/confidence as
+routing signals rather than measured application accuracy.
+
+For matched experiments, `--information-mode direct`, `qa`, `hybrid`, and
+`hybrid_coverage` select direct discovery, QA discovery, both, or both plus the
+source ledger/audit and gap recovery. All four share source snapshots, candidate
+validation, joint granularity, literal repairs and complete-link consolidation.
+Only `hybrid_coverage` performs coverage recovery. An explicit mode owns route
+selection; without one, the existing QA switch remains effective and coverage
+stays enabled. Reports record `metadata.experimental_mode` and every configured
+limit. Use the same protocol, reference scope, evaluator and budgets when
+comparing quality and cost; an agent-authored development fixture is not a human
+reference inventory or a scientific calibration.
 
 Direct extraction and optional anchored question/answer extraction initially
 receive the same source context without seeing each other's output. Questions
@@ -421,11 +460,11 @@ JSON is the canonical report. It includes the frozen source snapshot, source and
 current-input fingerprints, source/current order, selection stage order,
 `stage_id="before_introduction"`, candidate validation and reasons, contextual
 units, assertion evidence groups and their alignment state, context evidence,
-pair relations, coverage records,
+pair relations, joint decompositions, individual source foci, coverage records,
 counts by segment/video/whole input and unresolved issues. Calls record requested
 and returned models, input/output hashes, usage when available, latency and retry
-attempts. Report schema 3 retains schema 2 evidence-resolution records, separates
-content validation from annotation audit, and makes canonical qualifiers nullable.
+attempts. Report schema 7 retains evidence-resolution records, separates content
+validation from annotation audit, and keeps canonical qualifiers nullable.
 Source data and older reports are not rewritten. Generator and evaluator template hashes, the evaluator
 template version, protocol version and settings are retained without keys.
 The optional CSV is an occurrence evidence table with alignment state, report
@@ -468,6 +507,10 @@ are described in [models](https://docs.typesafe.ai/models) and
 | CLI option | Environment setting | Default |
 | --- | --- | --- |
 | `--no-information-qa` | `OVS_INFORMATION_QA` (`true`/`false`) | QA enabled |
+| `--information-mode` | `OVS_INFORMATION_MODE` | Unset: existing QA switch plus coverage; explicit `direct`, `qa`, `hybrid`, `hybrid_coverage` modes override that switch |
+| `--information-granularity-checks` | `OVS_INFORMATION_GRANULARITY_CHECKS` | 8 joint parent/parts reviews per target (0–64); 0 disables joint review |
+| `--information-coverage-foci` | `OVS_INFORMATION_COVERAGE_FOCI` | 16 independent source foci per target (0–256); 0 selects the legacy segment audit |
+| `--information-gap-repairs` | `OVS_INFORMATION_GAP_REPAIRS` | 2 attempts per source focus (0–10), also bounded by target rounds and global calls |
 | `--information-concurrency` | `OVS_INFORMATION_CONCURRENCY` | 2 independent source targets (range 1–8) |
 | `--information-max-calls` | `OVS_INFORMATION_MAX_CALLS` | 256 logical calls |
 | `--information-rounds` | `OVS_INFORMATION_ROUNDS` | 2 recovery rounds per target |
@@ -617,11 +660,15 @@ exhaustion.
 
 Coverage requests group exact repeats of accepted text, type and full source
 evidence, retaining every contributing candidate ID. Original report records and
-coverage provenance remain intact. Recovery requires a new accepted identity or
-newly resolved verified annotations to advance; extra duplicate rows alone do
-not count as progress. Distinct assertion spans remain distinct occurrences.
-Conflicting verified annotations do not establish improvement. Stopping for no
-progress retains the existing gap or uncertainty and keeps counts provisional.
+coverage provenance remain intact. The source ledger advances only when a focus
+acquires a fuller verified correspondence. A defective focus hypothesis can be
+revised under the same ID only after a source-scoped semantic check confirms a
+complete repair of the same content; its original proposal stays in history.
+Extra duplicate rows or reformulations do not count as progress. Distinct
+assertion spans remain distinct occurrences. With the ledger explicitly disabled
+(`--information-coverage-foci 0`), the legacy segment loop instead tracks new
+exact accepted identities or newly verified annotations. Neither stopping rule
+proves completeness; unresolved coverage keeps counts provisional.
 
 Configured CLI analyses process independent source segments concurrently, using
 separate provider clients for each worker. The default is two targets; set

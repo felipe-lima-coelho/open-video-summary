@@ -9,6 +9,10 @@ from open_video_summary.errors import ConfigurationError
 @dataclass(frozen=True)
 class InformationAnalysisConfig:
     qa_enabled: bool = True
+    experimental_mode: str | None = None
+    max_granularity_checks: int = 8
+    max_coverage_foci: int = 16
+    max_gap_repairs: int = 2
     max_calls: int = 256
     max_coverage_rounds: int = 2
     max_literal_repairs: int = 4
@@ -31,7 +35,12 @@ class InformationAnalysisConfig:
     def __post_init__(self):
         if not isinstance(self.qa_enabled, bool):
             raise ConfigurationError("Information QA must be a boolean.")
+        if self.experimental_mode not in {None, "direct", "qa", "hybrid", "hybrid_coverage"}:
+            raise ConfigurationError("Information mode must be direct, qa, hybrid or hybrid_coverage.")
         limits = {
+            "max_granularity_checks": (0, 64),
+            "max_coverage_foci": (0, 256),
+            "max_gap_repairs": (0, 10),
             "concurrency": (1, 8),
             "pair_concurrency": (1, 8),
             "pair_batch_size": (1, 8),
@@ -67,6 +76,24 @@ class InformationAnalysisConfig:
                 raise ConfigurationError(
                     f"Information {name} must be finite and between 0.5 and 1."
                 )
+
+    @property
+    def discovery_routes(self):
+        if self.experimental_mode == "direct":
+            return ("direct",)
+        if self.experimental_mode == "qa":
+            return ("qa",)
+        if self.experimental_mode is not None:
+            return ("direct", "qa")
+        return ("direct", "qa") if self.qa_enabled else ("direct",)
+
+    @property
+    def coverage_enabled(self):
+        return self.experimental_mode in {None, "hybrid_coverage"}
+
+    @property
+    def effective_mode(self):
+        return self.experimental_mode or ("hybrid_coverage" if self.qa_enabled else "direct_coverage")
 
 
 def configured_information_analyzer(overrides=None, *, environ=None, env_file=None, progress=None):
@@ -110,6 +137,10 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
 
     settings = InformationAnalysisConfig(
         qa_enabled=get("information_qa", "OVS_INFORMATION_QA", True, boolean),
+        experimental_mode=get("information_mode", "OVS_INFORMATION_MODE", None),
+        max_granularity_checks=get("information_granularity_checks", "OVS_INFORMATION_GRANULARITY_CHECKS", 8, int),
+        max_coverage_foci=get("information_coverage_foci", "OVS_INFORMATION_COVERAGE_FOCI", 16, int),
+        max_gap_repairs=get("information_gap_repairs", "OVS_INFORMATION_GAP_REPAIRS", 2, int),
         concurrency=get("information_concurrency", "OVS_INFORMATION_CONCURRENCY", 2, int),
         pair_concurrency=get("information_pair_concurrency", "OVS_INFORMATION_PAIR_CONCURRENCY", 8, int),
         pair_batch_size=get("information_pair_batch_size", "OVS_INFORMATION_PAIR_BATCH_SIZE", 4, int),

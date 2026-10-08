@@ -99,7 +99,7 @@ class InformationIOTests(unittest.TestCase):
         save_information_report(report, path, csv_path=csv_path)
         exported = json.loads(path.read_text(encoding="utf-8"))
         unit, record = exported["units"][0], exported["candidates"][0]
-        self.assertEqual(6, exported["schema_version"])
+        self.assertEqual(7, exported["schema_version"])
         self.assertIsNone(unit["qualifiers"])
         self.assertEqual("unknown", unit["qualifier_state"])
         self.assertEqual(record["id"], unit["representative_candidate_id"])
@@ -407,6 +407,7 @@ class InformationConfigurationAndCLITests(unittest.TestCase):
                 call.provider == "fixture"
                 for call in report.calls
                 if not call.operation.startswith("extract_")
+                and call.operation not in {"discover_coverage_foci", "decompose_candidate"}
             )
         )
         self.assertNotIn("evaluator-private", json.dumps(exported))

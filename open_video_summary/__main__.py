@@ -142,6 +142,11 @@ def _print_information_report(report, path):
     subtype_pending = json.loads(report.metadata_json).get("subtype_uncertain_relations", 0)
     if subtype_pending:
         print(f"Descriptive relation subtypes pending: {subtype_pending}; equivalence certainty is recorded separately.", flush=True)
+    if report.counts.provisional_granularity_units:
+        print(f"Granularity alternatives: {report.counts.provisional_granularity_units} visible units await a joint representation decision; their sum is provisional.", flush=True)
+    if report.coverage_foci:
+        pending = sum(item.state != "covered" for item in report.coverage_foci)
+        print(f"Source coverage foci: {len(report.coverage_foci)} tracked; {pending} pending. Foci are separate from unit counts.", flush=True)
     if path:
         print(f"Information report: {portable_path(path)}", flush=True)
 
@@ -426,6 +431,14 @@ def build_parser() -> argparse.ArgumentParser:
 def _information_arguments(parser):
     parser.add_argument("--information-csv", default=None, help="Optional occurrence table in a new CSV under outputs/.")
     parser.add_argument("--no-information-qa", dest="information_qa", action="store_false", default=None)
+    parser.add_argument("--information-mode", choices=("direct", "qa", "hybrid", "hybrid_coverage"), default=None,
+                        help="Symmetric extraction ablation; explicit mode overrides the legacy QA switch. Only hybrid_coverage runs source coverage and gap recovery.")
+    parser.add_argument("--information-granularity-checks", type=int, default=None,
+                        help="Bounded joint parent/parts reviews per target (default 8; 0 disables).")
+    parser.add_argument("--information-coverage-foci", type=int, default=None,
+                        help="Maximum independently discovered source foci per target (default 16; 0 selects the legacy segment audit).")
+    parser.add_argument("--information-gap-repairs", type=int, default=None,
+                        help="Maximum repair attempts per source focus (default 2).")
     parser.add_argument("--information-concurrency", type=int, default=None, help="Parallel source targets (default: OVS_INFORMATION_CONCURRENCY or 2; 1-8).")
     parser.add_argument("--information-max-calls", type=int, default=None)
     parser.add_argument("--information-pair-concurrency", type=int, default=None,

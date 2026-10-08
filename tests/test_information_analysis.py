@@ -131,7 +131,7 @@ class ScriptedGenerator:
     def generate(self, request):
         self.requests.append(request)
         data = json.loads(request.prompt.split("\nInput:\n", 1)[1])
-        route = (
+        route = data.get("analysis_task") or (
             "qa"
             if request.output.kind == "information_qa"
             else "recovery" if "coverage_audit" in data else "direct"
@@ -241,6 +241,10 @@ class SyntheticEvaluator:
 
 
 def analyze(source, generator=None, evaluator=None, **settings):
+    # These regression fixtures isolate the original candidate/segment workflow.
+    # Joint structure and the independent ledger have dedicated v2 tests.
+    settings.setdefault("max_granularity_checks", 0)
+    settings.setdefault("max_coverage_foci", 0)
     settings.setdefault("pair_batch_size", 1)
     settings.setdefault("max_relation_adjudications", 0)
     settings.setdefault("qa_window_chars", 4000)
@@ -376,7 +380,7 @@ class SnapshotAndPipelineTests(unittest.TestCase):
             self.assertNotEqual(
                 first.snapshot.source_fingerprint, second.snapshot.source_fingerprint
             )
-            self.assertEqual(2, len(analyzer.generator.requests) // 2)
+            self.assertEqual(3, len(analyzer.generator.requests) // 2)
             self.assertEqual("before_introduction", second.snapshot.stage_id)
             self.assertEqual(
                 [criterion.name for criterion in hsm.selection_criteria] * 2, effects
@@ -1041,7 +1045,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         resolution = record.evidence_resolutions[0]
         self.assertEqual((76, 154, 76, 155), (resolution.supplied_start_char, resolution.supplied_end_char, resolution.resolved_start_char, resolution.resolved_end_char))
         self.assertEqual("unique_exact_quote", resolution.method)
-        self.assertEqual(6, report.to_dict()["schema_version"])
+        self.assertEqual(7, report.to_dict()["schema_version"])
         self.assertEqual(155, report.to_dict()["candidates"][0]["evidence_resolutions"][0]["resolved_end_char"])
         self.assertEqual(text, report.snapshot.current_segments[0].content)
 

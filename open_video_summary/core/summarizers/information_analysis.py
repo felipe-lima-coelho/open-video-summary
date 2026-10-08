@@ -62,6 +62,9 @@ from open_video_summary.core.summarizers.information_evaluation import (
     passes_probability_cutoff,
     validation_spec,
 )
+from open_video_summary.core.summarizers.information_inventory import (
+    SemanticInventory, inventory_templates,
+)
 from open_video_summary.errors import (
     AuthenticationError, ConfigurationError, InvalidResponseError, ProviderConfigurationError,
     RequestCancelledError, RunStoppedError,
@@ -71,7 +74,7 @@ from open_video_summary.utils.progress import heartbeat, notify
 from open_video_summary.utils.retry import check_cancelled
 
 
-PROTOCOL_VERSION = "contextual-propositions-v1"
+PROTOCOL_VERSION = "contextual-propositions-v2"
 PROTOCOL = """Inventory the verbal content explicitly communicated in the transcript.
 A unit is one contextualized proposition, with attribution, negation, modality,
 quantities, conditions and exceptions preserved. Include claims, definitions,
@@ -250,7 +253,7 @@ class InformationAnalyzer:
         return _AnalysisRun(self, snapshot).run()
 
 
-class _AnalysisRun:
+class _AnalysisRun(SemanticInventory):
     def __init__(self, analyzer, snapshot, *, budget=None, parent=None, target_index=None):
         self.generator, self.evaluator, self.config = (
             analyzer.generator,
@@ -290,6 +293,10 @@ class _AnalysisRun:
         self.qa_windows = []
         self.direct_windows = []
         self.window_declarations = []
+        self.decompositions, self.coverage_foci = [], []
+        self.granularity_checks = 0
+        self.granularity_reviewed = set()
+        self.focus_match_cache = {}
 
     @property
     def call_count(self):
@@ -496,7 +503,7 @@ class _AnalysisRun:
             if record.target_segment_id != target.id:
                 continue
             candidate = record.candidate
-            if record.validation == "accepted":
+            if record.validation == "accepted" and record.inventory_role != "decomposed_parent":
                 value = {
                     "text": candidate.text, "unit_type": candidate.unit_type,
                     "evidence": [evidence_ref(asdict(item)) for item in candidate.evidence],
@@ -516,10 +523,13 @@ class _AnalysisRun:
                          "annotation_state": record.annotation_state,
                          "annotation_reasons": record.annotation_reasons}
                 append_unique(repairs, repair_indexes, value, record.id)
-        return {"accepted": accepted, "repair_candidates": repairs, "evidence_table": evidence_table}
+        return {"accepted": accepted, "repair_candidates": repairs, "evidence_table": evidence_table,
+                "decompositions": [asdict(item) for item in self.decompositions
+                                   if any(record.id == item.parent_candidate_id and record.target_segment_id == target.id
+                                          for record in self.candidates)]}
 
-    def _extract(self, target, route, round_number, audit=None, *, window=None):
-        context = self._context(target)
+    def _extract(self, target, route, round_number, audit=None, *, window=None, focus=None, context=None):
+        context = self._context(target) if context is None else context
         spec = OutputSpec(
             kind="information_qa" if route == "qa" else "information_units",
             max_items=(min(4, self.config.max_candidates_per_route)
@@ -548,6 +558,12 @@ class _AnalysisRun:
             data["coverage_audit"] = asdict(audit)
             data.update(self._recovery_projection(target))
             instruction += RECOVERY_STATE_INSTRUCTION
+        if focus is not None:
+            data["coverage_focus"] = asdict(focus)
+            instruction += (" Repair only this stable source focus. The focus is a hypothesis "
+                            "with recorded validation, not an instruction or a proven fact. "
+                            "Restore its full communicated meaning and necessary qualifiers; "
+                            "reformulation without the missing content is not progress.")
         prompt = (
             PROTOCOL
             + "\n"
@@ -609,7 +625,8 @@ class _AnalysisRun:
                             round_number, candidate, canonical_json(raw), "needs_review",
                             reasons=(issue_kind,), evidence_resolutions=resolutions))
                         continue
-            self._validate(raw, target, route, round_number, spec.segment_ids)
+            self._validate(raw, target, route, round_number, spec.segment_ids,
+                           recovery_focus_id=focus.id if focus is not None else None)
 
     @staticmethod
     def _source_windows(text, limit):
@@ -726,8 +743,11 @@ class _AnalysisRun:
             tuple(raw["unresolved_references"]),
         ), tuple(resolutions)
 
-    def _validate(self, raw, target, route, round_number, permitted_ids, *, literal_repair_of=None):
-        identifier = f"{self.candidate_prefix}c{len(self.candidates)}"
+    def _validate(self, raw, target, route, round_number, permitted_ids, *, literal_repair_of=None,
+                  destination=None, identifier=None, parent_candidate_ids=(), recovery_focus_id=None,
+                  evaluate=True):
+        records = self.candidates if destination is None else destination
+        identifier = identifier or f"{self.candidate_prefix}c{len(self.candidates)}"
         record = CandidateRecord(
             identifier,
             target.id,
@@ -737,18 +757,23 @@ class _AnalysisRun:
             canonical_json(raw),
             "literal_rejected",
             literal_repair_of=literal_repair_of,
+            parent_candidate_ids=parent_candidate_ids,
+            recovery_focus_id=recovery_focus_id,
         )
         try:
             candidate, resolutions = self._literal_candidate(raw, target, permitted_ids)
         except ValueError as exc:
-            self.candidates.append(replace(record, reasons=(str(exc),)))
+            records.append(replace(record, reasons=(str(exc),)))
             self.issue(
                 "literal_evidence_rejected", str(exc), (target.id,), (identifier,)
             )
-            return
+            return records[-1]
         record = replace(record, candidate=candidate, validation="not_evaluated",
                          evidence_resolutions=resolutions)
-        self.candidates.append(record)
+        records.append(record)
+        if not evaluate:
+            records[-1] = replace(record, reasons=("validation_budget_reserved_for_audit",))
+            return records[-1]
         cache_key = fingerprint({
             "candidate": asdict(candidate),
             "target_content": target.content,
@@ -757,15 +782,17 @@ class _AnalysisRun:
         })
         previous = self.validation_cache.get(cache_key)
         if previous is not None:
-            self.candidates[-1] = replace(
+            records[-1] = replace(
                 previous, id=record.id, target_segment_id=record.target_segment_id,
                 route=route, round=round_number, raw_json=record.raw_json,
                 evidence_resolutions=resolutions, validation_reused_from=previous.id,
                 literal_repair_of=literal_repair_of,
+                parent_candidate_ids=parent_candidate_ids, recovery_focus_id=recovery_focus_id,
+                inventory_role=record.inventory_role, decomposition_ids=record.decomposition_ids,
             )
-            return
+            return records[-1]
         state, questions, granularity = validation_spec(
-            candidate, identifier, target, self._context(target)
+            candidate, identifier, target, tuple(self.segments[item] for item in permitted_ids if item != target.id)
         )
         try:
             assertion = tuple(item for item in candidate.evidence if item.role == "assertion")
@@ -782,13 +809,13 @@ class _AnalysisRun:
                 )
                 binding, binding_origin = binding_signals["anchor_binding"], "evaluator"
             if binding < self.config.acceptance_threshold:
-                self.candidates[-1] = replace(
+                records[-1] = replace(
                     record, validation="rejected" if binding <= 1 - self.config.acceptance_threshold else "needs_review",
                     reasons=("anchor_binding",), signals=(("anchor_binding", binding),),
                     anchor_binding_origin=binding_origin,
                 )
-                self.validation_cache[cache_key] = self.candidates[-1]
-                return
+                self.validation_cache[cache_key] = records[-1]
+                return records[-1]
             signals, choices = self._evaluate(
                 "validate_candidate", state, questions, granularity
             )
@@ -841,7 +868,7 @@ class _AnalysisRun:
                 validation = "needs_repair"
             else:
                 validation = "needs_review"
-            self.candidates[-1] = replace(
+            records[-1] = replace(
                 record,
                 validation=validation,
                 reasons=reasons,
@@ -854,10 +881,11 @@ class _AnalysisRun:
                 annotation_signals=tuple(annotation_signals.items()),
                 anchor_binding_origin=binding_origin,
             )
-            self.validation_cache[cache_key] = self.candidates[-1]
+            self.validation_cache[cache_key] = records[-1]
         except Exception as exc:
-            self.candidates[-1] = replace(record, reasons=(type(exc).__name__,))
+            records[-1] = replace(record, reasons=(type(exc).__name__,))
             raise
+        return records[-1]
 
     @staticmethod
     def _literal_passage_covers(text, source, assertion):
@@ -896,6 +924,7 @@ class _AnalysisRun:
             record
             for record in self.candidates
             if record.validation == "accepted"
+            and record.inventory_role != "decomposed_parent"
             and (target_id is None or record.target_segment_id == target_id)
         ]
 
@@ -962,6 +991,7 @@ class _AnalysisRun:
             markers,
             tuple(signals.items()),
             status,
+            tuple(item.id for item in self.coverage_foci if item.segment_id == target.id),
         )
         self.coverage.append(record)
         return record
@@ -977,15 +1007,24 @@ class _AnalysisRun:
         return set(verified), {key for key, values in verified.items() if len(values) == 1}
 
     def _target(self, target):
-        routes = [("direct", lambda: self._direct_extract(target))]
-        if self.config.qa_enabled:
-            routes.append(("qa", lambda: self._qa_extract(target)))
+        routes = [(route, (lambda: self._qa_extract(target)) if route == "qa"
+                   else (lambda: self._direct_extract(target)))
+                  for route in self.config.discovery_routes]
         for route, discover in routes:
             try:
                 discover()
             except (ServiceTimeoutError, RequestDeadlineError, InvalidResponseError, _ContextLimitReached) as exc:
                 self.issue("route_analysis_failed", f"{route}: {type(exc).__name__}; original-source coverage will still be audited.", (target.id,))
         self._literal_repairs(target)
+        try:
+            self._reconcile_granularity(target)
+        except (ServiceTimeoutError, RequestDeadlineError, InvalidResponseError, _ContextLimitReached) as exc:
+            self.issue("granularity_review_failed", type(exc).__name__, (target.id,))
+        if not self.config.coverage_enabled:
+            self.evaluated_targets.add(target.id)
+            return
+        if self.config.max_coverage_foci:
+            return self._tracked_coverage(target)
         for round_number in range(self.config.max_coverage_rounds + 1):
             audit = self._audit(target, round_number)
             self.evaluated_targets.add(target.id)
@@ -1080,6 +1119,9 @@ class _AnalysisRun:
             self.qa_windows.extend(worker.qa_windows)
             self.direct_windows.extend(worker.direct_windows)
             self.window_declarations.extend(worker.window_declarations)
+            self.decompositions.extend(worker.decompositions)
+            self.coverage_foci.extend(worker.coverage_foci)
+            self.granularity_checks += worker.granularity_checks
             self.evaluated_targets.update(worker.evaluated_targets)
             for item in worker.issues:
                 self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
@@ -1412,6 +1454,9 @@ class _AnalysisRun:
                         origin="exact_proposition_pair_reuse" if reused else relation.origin,
                         reused_from=(relation.left_candidate_id, relation.right_candidate_id) if reused else None))
                     self.reused_pair_relations += int(reused)
+        if self._reconcile_decomposition_relations():
+            accepted = self._accepted()
+            total_pairs = len(accepted) * (len(accepted) - 1) // 2
         for relation in self.relations:
             compatible[frozenset((relation.left_candidate_id, relation.right_candidate_id))] = relation.equivalence_state == "equivalent"
             if relation.equivalence_state == "uncertain":
@@ -1445,6 +1490,10 @@ class _AnalysisRun:
             unit_id = f"u{index}"
             representative = group[0]
             first = representative.candidate
+            decomposition_ids = tuple(dict.fromkeys(identifier for record in group
+                                                    for identifier in record.decomposition_ids))
+            provisional = any(item.id in decomposition_ids and item.state != "verified"
+                              and item.superseded_by is None for item in self.decompositions)
             units.append(
                 InformationUnit(
                     unit_id,
@@ -1454,6 +1503,8 @@ class _AnalysisRun:
                     tuple(record.id for record in group),
                     "verified" if representative.annotation_state == "verified" else "unknown",
                     representative.id,
+                    "provisional_granularity" if provisional else "validated",
+                    decomposition_ids,
                 )
             )
             memberships.update((record.id, unit_id) for record in group)
@@ -1594,6 +1645,7 @@ class _AnalysisRun:
             self.active_target = None
             self._notify("consolidation_started")
             units, occurrences = self._consolidate()
+            self._finalize_semantic_inventory(units)
         except Exception as exc:
             failed = True
             self.issue("analysis_failed", type(exc).__name__)
@@ -1618,7 +1670,7 @@ class _AnalysisRun:
                     "needs_repair",
                     "needs_review",
                     "not_evaluated",
-                }:
+                } and record.inventory_role != "decomposed_parent":
                     self.issue(
                         "candidate_unresolved",
                         "A candidate remains outside the accepted inventory.",
@@ -1639,6 +1691,12 @@ class _AnalysisRun:
             "started_at": self.started_at,
             "duration_seconds": time.monotonic() - self.started,
             "settings": asdict(self.config),
+            "experimental_mode": self.config.effective_mode,
+            "coverage_enabled": self.config.coverage_enabled,
+            "granularity_checks": self.granularity_checks,
+            "source_focus_count": len(self.coverage_foci),
+            "source_focus_states": {state: sum(item.state == state for item in self.coverage_foci)
+                                    for state in ("missing", "partial", "covered", "uncertain")},
             "logical_calls": self.call_count,
             "requested_concurrency": self.config.concurrency,
             "actual_concurrency": self.actual_concurrency,
@@ -1675,6 +1733,7 @@ class _AnalysisRun:
                 "recovery_state": fingerprint(RECOVERY_STATE_INSTRUCTION),
                 "relations": fingerprint(RELATION_INSTRUCTION),
                 **{name: fingerprint(value) for name, value in evaluation_templates().items()},
+                **{name: fingerprint(value) for name, value in inventory_templates().items()},
             },
             "evaluation_template_version": EVALUATION_TEMPLATE_VERSION,
             "acceptance_semantics": "Content requires literal anchors, focused anchor binding, six source-scope fidelity checks, applicable QA checks and atomicity at the configured threshold. Exact claim/quote identity, one contiguous literal claim passage covering every assertion anchor, or the verbatim retention of one complete selected source sentence establishes binding in code. The retained-sentence rule omits only terminal sentence punctuation and does not establish support for any added content or reference description. Otherwise a separate focused request excludes unrelated source assertions. All source-fidelity and atomicity checks still run. Auxiliary annotation audits are separate; unverified proposals never supply canonical qualifiers or affect coverage or semantic grouping.",
@@ -1684,7 +1743,7 @@ class _AnalysisRun:
             "relation_resolution": "A low-probability eight-class Choice triggers at most one individual source-scoped follow-up with six binary checks: directional entailment, incompatible scope, explicit corrections and same complete meaning. Equivalence certainty is separate from the descriptive subtype. Decisive non-entailment in either direction establishes distinctness; subtype ambiguity alone does not make inventory counts provisional. Conflicting complete-meaning/directional signals or unresolved equivalence remain uncertain and provisional. Cutoffs are inclusive within two machine representation steps, with unchanged thresholds. Initial probabilities and all follow-up signals are preserved; derived strengths are not calibrated relation probabilities.",
             "relation_families": "Primary equivalent, known-distinct and uncertain probabilities partition the validated Choice distribution after division by its complete raw total, recorded as primary_probability_total. All primary subtype decisions use this normalization too; initial_probability and call decisions retain the raw provider scores. Known-distinct probability sums complementary, both specificity directions, contradiction and both correction directions; uncertain probability contributes to the denominator but is excluded from known distinctness. The unchanged equivalence threshold can establish distinctness from this family even when no subtype reaches it. Follow-ups still run when budget permits; decisive cross-stage disagreement and internal follow-up conflicts retain uncertainty. Family mass is a model distribution aggregate, not an empirically calibrated accuracy estimate.",
             "recovery_state_projection": "Recovery retains complete original source/context, all accepted meanings and verified qualifiers, and all essential literal evidence in a deduplicated evidence table. Exact projected duplicate records share ids; repair reasons remain while repeated provenance, timestamps and numerical evaluator diagnostics stay in the full report. Source text and report records are not truncated or overwritten. Requests still obey the context-character cap, separately from the logical-call cap.",
-            "coverage_recovery_progress": "Coverage requests group only accepted records with identical text, type and full source evidence, listing all their ids. Reports retain every original record and represented candidate id. Recovery advances only when it adds an exact content/evidence identity or resolves a previously unverified annotation group to one verified value. Duplicate rows, higher scores, unverified annotation changes and conflicting verified annotations are not progress. A no-progress stop preserves the pending coverage state and provisional counts.",
+            "coverage_recovery_progress": "With the source ledger enabled, repair advances only when an individual focus obtains a fuller verified correspondence; complete same-occurrence meaning is required for covered. Defective focus hypotheses can be revised under the same ID only after a separate complete-source-repair decision, preserving original proposals. Duplicate rows and reformulations do not close gaps. With max_coverage_foci=0 the legacy segment loop instead tracks new exact accepted identities or a newly unambiguous verified annotation. Both no-progress stops preserve pending coverage and provisional counts.",
             "literal_source_repairs": "After independent direct and QA discovery, up to max_literal_repairs candidates per target copy one complete own-target assertion sentence verbatim, retaining its cited context and original candidate via literal_repair_of. Each exact source assertion is attempted at most once, independent of route context or annotation variations, and already accepted exact assertions are skipped. Fragments, unchanged proposals and outside-window candidates are ineligible. All six source-fidelity gates, unresolved-reference checks and atomicity run again; copied source text does not imply acceptance. Repairs share the global call cap and stop while one remaining call can still audit coverage.",
             "discovery_window_provenance": "Source windows use trusted Python Unicode offsets and exact source slices. Generator declarations are retained separately; claims that the trusted request bounds mismatch its own source slice do not replace those bounds or reject in-window candidates. Resolved assertion evidence still determines ownership, and actual outside-window proposals remain unresolved with their supplied and resolved offsets retained.",
             "equivalence_uncertain_relations": sum(item.equivalence_state == "uncertain" for item in self.relations),
@@ -1698,9 +1757,15 @@ class _AnalysisRun:
             "scope": "verbal_transcript",
             "timestamp_resolution": "source_segment",
             "completeness_proven": False,
+            "joint_granularity": "Single-candidate atomicity is followed by bounded joint review of overlapping original-source assertions, including already accepted parents. A verified decomposition requires distinct independent components, mutual collective content preservation, unchanged qualifiers and source occurrence. Only then is the parent retained as provenance outside unit counts. Incomplete, uncertain and conflicting alternatives remain visible and explicitly provisional; specificity alone never suppresses content.",
+            "source_content_ledger": "Independent source traversal proposes source foci without access to the accepted inventory. Each focus keeps literal evidence, a full proposal validation, stable ID, verified per-candidate correspondence and bounded individual repair history. Only complete qualified meaning at the same source occurrence closes a gap. Citations, reformulations, extra candidates and no-progress stops do not prove coverage. The separate open source audit can still signal undiscovered content. Foci do not count as inventory units.",
             "thresholds_calibrated": False,
             "count_semantics": (
-                "Unique units count accepted semantic groups. Occurrences count "
+                "Accepted candidates count all accepted validation records, including retained "
+                "decomposed parents. Unique units count active accepted semantic groups; verified "
+                "decomposed parents contribute provenance, not extra units. Unresolved parent/parts "
+                "alternatives stay visible as provisional_granularity units. Source foci are separate "
+                "and never increment candidate, unit or occurrence counts. Occurrences count "
                 "exact assertion-anchor groups. counts_provisional covers "
                 "whole-input and scoped aggregates whenever status is partial or "
                 "failed, including unexamined semantic pairs that can leave one "
@@ -1711,7 +1776,7 @@ class _AnalysisRun:
             ),
         }
         report = InformationReport(
-            6,
+            7,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -1725,6 +1790,8 @@ class _AnalysisRun:
             tuple(self.issues),
             tuple(self.calls),
             canonical_json(metadata),
+            tuple(self.decompositions),
+            tuple(self.coverage_foci),
         )
         self._notify("analysis_completed", status=status)
         return report
@@ -1847,7 +1914,7 @@ class _AnalysisRun:
         )
         return InformationCounts(
             len(self.candidates),
-            len(self._accepted()),
+            sum(record.validation == "accepted" for record in self.candidates),
             len(occurrences),
             len(units),
             by_segment,
@@ -1855,6 +1922,8 @@ class _AnalysisRun:
             status == "completed" and not units,
             any(item.alignment_state == "unresolved_overlap" for item in occurrences),
             status != "completed",
+            sum(unit.inventory_state == "provisional_granularity" for unit in units),
+            sum(record.inventory_role == "decomposed_parent" for record in self.candidates),
         )
 
 
@@ -1871,7 +1940,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         counts_provisional=True,
     )
     return InformationReport(
-        6,
+        7,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",
