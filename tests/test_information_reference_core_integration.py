@@ -99,6 +99,10 @@ class InformationReferenceCoreIntegrationTests(unittest.TestCase):
             (report.schema_version, report.protocol_version, report.status),
         )
         self.assertEqual(5, report.counts.unique_units)
+        serialized = report.to_dict()
+        for unit in serialized["units"]:
+            self.assertEqual("verified", unit["qualifier_state"])
+            self.assertIsInstance(unit["qualifiers"], dict)
         self.assertEqual(5, result["metrics"]["unit_coverage"]["covered"])
         self.assertEqual(5, result["metrics"]["occurrence_coverage"]["covered"])
         self.assertEqual(

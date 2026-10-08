@@ -1,9 +1,10 @@
 """Evaluate frozen information reports against source-grounded references.
 
 Semantic alignments and literal anchors are different evidence. Only reviewed
-alignments or identical complete text with identical source anchors contribute
-to coverage. Unmatched paraphrases remain unresolved, rather than becoming false
-negatives. Provider decisions are predictions, never the reference labels.
+alignments or identical complete text with identical source anchors and verified
+mandatory qualifiers contribute to coverage. Unmatched paraphrases and missing
+qualifier verification remain unresolved, rather than becoming false negatives.
+Provider decisions are predictions, never the reference labels.
 """
 
 import hashlib
@@ -209,6 +210,63 @@ def _overlapping_occurrence(reference, predicted):
         for segment, start, end in _anchors(reference, "assertion_evidence")
         for other, left, right in _anchors(predicted, "assertion_evidence")
     )
+
+
+def _automatic_qualifier_blockers(reference, predicted):
+    """Require independently labeled qualifier values beyond text coincidence."""
+    reference_values = reference.get("qualifiers") or {}
+    if not isinstance(reference_values, dict):
+        return [{"reason": "unverifiable_reference_qualifier_record"}]
+    required = {
+        field: value
+        for field, value in reference_values.items()
+        if field in QUALIFIER_FIELDS
+        and value is not None
+        and value is not False
+        and value != []
+        and value != ""
+    }
+    reported_values = predicted.get("qualifiers")
+    state = predicted.get("qualifier_state")
+    blockers = []
+    for field, expected in sorted(required.items()):
+        actual = (
+            reported_values.get(field) if isinstance(reported_values, dict) else None
+        )
+        if state != "verified":
+            reason = "report_qualifier_state_not_verified"
+        elif not isinstance(reported_values, dict):
+            reason = "missing_report_qualifier_record"
+        else:
+            if field == "negated":
+                matches = type(expected) is bool and actual is expected
+            elif field in {"conditions", "quantities"}:
+                matches = (
+                    isinstance(expected, list)
+                    and isinstance(actual, list)
+                    and all(isinstance(value, str) for value in expected + actual)
+                    and tuple(_text(value) for value in expected)
+                    == tuple(_text(value) for value in actual)
+                )
+            else:
+                matches = (
+                    isinstance(expected, str)
+                    and isinstance(actual, str)
+                    and _text(expected) == _text(actual)
+                )
+            if matches:
+                continue
+            reason = "missing_or_different_report_qualifier_value"
+        blockers.append(
+            {
+                "field": field,
+                "reason": reason,
+                "reference_value": expected,
+                "report_value": actual,
+                "report_qualifier_state": state,
+            }
+        )
+    return blockers
 
 
 def _reviewed(row, provenance):
@@ -875,6 +933,21 @@ def evaluate_information_report(
             and out_occurrence["id"] not in invalid_occurrences
         )
         if anchored:
+            qualifier_blockers = _automatic_qualifier_blockers(ref_units[ref_id], unit)
+            if qualifier_blockers:
+                unverified_links.append(
+                    {
+                        "id": f"blocked-exact-unit-{ref_id}-{out_id}",
+                        "reference_unit_ids": [ref_id],
+                        "report_unit_ids": [out_id],
+                        "relation": "unresolved",
+                        "review_status": "unverified",
+                        "method": "identical_text_and_anchors_with_unverified_qualifiers",
+                        "reason": "Mandatory reference qualifiers need verified matching report values or a reviewed semantic alignment; text and anchors alone are insufficient.",
+                        "qualifier_verification_blockers": qualifier_blockers,
+                    }
+                )
+                continue
             links.append(
                 {
                     "id": f"exact-unit-{ref_id}-{out_id}",
@@ -882,7 +955,7 @@ def evaluate_information_report(
                     "report_unit_ids": [out_id],
                     "relation": "equivalent",
                     "review_status": "verified",
-                    "method": "identical_complete_text_and_source_anchors",
+                    "method": "identical_complete_text_source_anchors_and_verified_required_qualifiers",
                     "qualifier_errors": [],
                 }
             )

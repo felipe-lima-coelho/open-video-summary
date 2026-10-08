@@ -112,13 +112,31 @@ unresolved, not omissions or false positives.
 
 The only automatic semantic shortcut is **identical complete proposition text
 plus identical valid assertion anchors**, with required reference context also
-cited. Normalization changes Unicode composition and whitespace only; it does
+cited and required qualifier values verified. Nonempty attribution, modality,
+quantities and conditions, or `negated: true`, require a report unit with
+`qualifier_state: "verified"` and matching structured `qualifiers` values.
+These are fields emitted by the real schema-7 producer. A neutral or absent
+reference qualifier record imposes no additional annotation requirement.
+Recorded candidate acceptance alone cannot satisfy this guard. Normalization
+changes Unicode composition and whitespace only; it does
 not remove accents, punctuation, numbers, negation or modality. Identical text
 must identify exactly one reference unit. A paraphrase or broader/narrower
 assertion span needs review. Citation overlap alone cannot recover a different
 proposition. Repeated assertions at different character spans remain separate
 occurrences, even inside one segment. Repeated discovery routes at the same
 verified assertion can be diagnosed as duplicate occurrences.
+
+Missing, uncertain or differently worded qualifier records block the automatic
+match and appear in `alignment.unverified_unit_links` with the required fields,
+recorded values and reasons. They leave unit and occurrence coverage unresolved;
+they do not establish an omission, semantic false positive or annotation error.
+Even a qualifier already expressed in the shared text follows this conservative
+rule when the reference labels it explicitly. An independently reviewed
+semantic alignment can establish whether the complete communicated meaning
+preserves the qualifier despite annotation wording or uncertainty. An actual
+qualifier loss requires a partial/unresolved decision rather than a complete
+match. The source labels, combined validation, granularity and count role remain
+separate.
 
 ## Metrics and interpretation
 
@@ -209,56 +227,69 @@ with the same contract. A single baseline diagnosis or deterministic regression
 is not an empirical ablation study.
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest tests.test_information_reference_evaluation -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_information_reference*.py' -v
 ```
 
 These regressions use synthetic Portuguese controls with sockets disabled.
 They test actual bad counts, repeated/overlapping anchors, unsupported claims,
 reviewed omissions, split/merge and verified decomposition errors, explicit
 qualifier labels, unverified model mappings, gate FP/FN diagnostics, protocol
-isolation, fingerprints, safe exports and the standalone command.
+isolation, verified mandatory qualifiers, real schema-7 qualifier format,
+fingerprints, safe exports and the standalone command.
 
 ## Frozen news baseline diagnosis
 
-The corrected source-only news reference was frozen at commit `b492735` after
-a source-fidelity audit. The source annotator did not consult the model
+The corrected source-only news reference was frozen at commit `45105205` after
+a contextual source-fidelity audit. The source annotator did not consult the model
 inventory. Its canonical content fingerprint is
-`05c40249e72063fd87420da0813044c50d8dc163d7d9004c244b6c07ac9214e1`.
+`e9ee54680142f72f337d503ddbaffb6597d76a2b7821cbc3afccc747cd51d435`.
 There are 53 annotation records and 55 occurrences; two ambiguous identity-bound
 records are excluded, leaving 51 eligible units and 53 eligible occurrences.
-The audit preserves the Monday scope, Huawei attribution and stated purpose,
-and cited subjects. It leaves the manufacturer unnamed in the espionage claim;
-the unsupported Huawei-specific rank occurrence was removed.
+The audit preserves governing temporal and causal scope, Huawei attribution and
+stated purpose, and cited subjects. Seven explicit source ambiguities remain.
+It leaves the manufacturer unnamed in the espionage claim; the unsupported
+Huawei-specific rank occurrence was removed. The reference remains authored by
+agents without human adjudication.
 
 The saved local alignment is
-`outputs/evaluation/google_huawei_baseline_review2_20261008_alignment.json`;
+`outputs/evaluation/google_huawei_baseline_review3_20261008_alignment.json`;
 its result is
-`outputs/evaluation/google_huawei_baseline_review2_20261008_evaluation.json`. These
+`outputs/evaluation/google_huawei_baseline_review3_20261008_evaluation.json`. These
 ignored artifacts bind the original report fingerprint
 `5e4937b9298b49fc39d4aa84583a4ca9aef7f66d11f66cdf8e709a7ca2992aeb`.
 The report was **partial**, with 36 units and 37 occurrences, under protocol v1.
 The reference uses v2, so this is explicitly a cross-protocol diagnosis.
-These artifacts supersede the earlier `google_huawei_baseline_20261008_*`
-diagnosis, whose full `u27` claimant equivalence and parent-redundancy finding
-were withdrawn. The older files remain local history and are not current
-evaluation evidence.
+These artifacts supersede both earlier `google_huawei_baseline_20261008_*` and
+`google_huawei_baseline_review2_20261008_*` diagnoses. The full `u27` claimant
+equivalence and parent-redundancy finding remain withdrawn. The latest review
+also withdraws the complete `u23`/`u28` matches under corrected causal/temporal
+scope. The older files remain local history and are not current evaluation
+evidence.
 
-Under this bounded, agent-reviewed alignment, 33/51 eligible units are covered,
-17 have reviewed omissions and one remains unresolved: coverage bounds are
-64.7–66.7%. Occurrences have 34/53 covered, 18 reviewed omissions and one
-unresolved: bounds are 64.2–66.0%. Source support is verified for 33/36 output
-units; `u27` is partial and `u13`/`u22` remain unresolved. No unsupported output
+Under this bounded, agent-reviewed alignment, 32/51 eligible units are covered,
+16 have reviewed omissions, one is partial and two remain unresolved: coverage
+bounds are 62.7–66.7%. Occurrences have 33/53 covered, 18 reviewed omissions,
+one partial and one unresolved: bounds are 62.3–64.2%. Source support is verified
+for 31/36 output units; `u23`/`u27`/`u28` are partial and `u13`/`u22` remain
+unresolved. No unsupported output
 unit is confirmed, which does not establish that unresolved units are correct.
 The count diagnosis identifies one Android-ownership duplicate unit, five
 merged groups and two extra source occurrences.
 
-`u27` changes the claimant from Donald Trump to the decree; their full meanings
-are not equated. The complete decree parent `u25` still covers the signing,
-Trump's emergency allegation and intended prohibition. Its three-child
-decomposition remains unverified, so neither the parent unit nor its occurrence
-is labeled redundant. `u22` and its narrow citation omit the dispute subject;
-full contextual equivalence remains unresolved. The corrected generic espionage
-claim and `u29` match without inferring the manufacturer's identity.
+`u27` changes the claimant from Donald Trump to the decree and loses prior-week
+scope; their full meanings are not equated. `u28` preserves the prohibition
+purpose but loses the prior-week identification of that decree. The complete
+decree parent `u25` still covers the signing, Trump's emergency allegation and
+intended prohibition with their temporal scope. Its three-child decomposition
+remains unverified, so neither the parent unit nor its occurrence is labeled
+redundant. `u23` preserves phone performance but loses its stated-reason
+relationship to the interviewee's absurdity judgment. `u22` and its narrow
+citation omit the dispute subject; full contextual equivalence remains
+unresolved. The revised impersonal 5G-focus unit `gh-u028` has related stronger
+content in `u19`, with canonical unit identity unresolved; its distinct source
+assertion anchor is still absent. Four content qualifier errors are recorded:
+three temporal/causal scope errors and one claimant error. The corrected generic
+espionage claim and `u29` match without inferring the manufacturer's identity.
 
 Ten deliberately selected source-based candidate controls produce diagnostic
 gate confusion and reliability tables. They include rejected/repair cases and
@@ -278,9 +309,9 @@ To reproduce this diagnostic from the reviewed alignment, choose a new output:
 .\.venv\Scripts\python.exe -m open_video_summary.evaluation `
   --report outputs/information/google_huawei_recovery_20261007T104032Z.json `
   --reference data/evaluation/information/google_huawei_reference_v1.json `
-  --alignment outputs/evaluation/google_huawei_baseline_review2_20261008_alignment.json `
+  --alignment outputs/evaluation/google_huawei_baseline_review3_20261008_alignment.json `
   --allow-protocol-mismatch `
-  --output outputs/evaluation/google_huawei_baseline_review2_recheck.json
+  --output outputs/evaluation/google_huawei_baseline_review3_recheck.json
 ```
 
 Evaluate a final v2/schema-7 report against the frozen reference with:

@@ -74,12 +74,14 @@ def main(argv=None):
             values = metrics[name]
             print(
                 f"{name}: {values['covered']}/{values['reference_total']} verified; "
-                f"{values['confirmed_omitted']} confirmed omitted; {values['unresolved']} unresolved"
+                f"{values['confirmed_omitted']} confirmed omitted; "
+                f"{values['confirmed_partial']} partial; {values['unresolved']} unresolved"
             )
         fidelity = metrics["source_fidelity"]
         print(
             f"Source fidelity: {fidelity['verified_supported']}/{fidelity['report_total']} verified; "
-            f"{fidelity['confirmed_false_positive']} confirmed unsupported; {fidelity['unresolved']} unresolved"
+            f"{fidelity['confirmed_false_positive']} confirmed unsupported; "
+            f"{fidelity['confirmed_partial']} partial; {fidelity['unresolved']} unresolved"
         )
         if result["provenance"]["diagnostic_only"]:
             print(

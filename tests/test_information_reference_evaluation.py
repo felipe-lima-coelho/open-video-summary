@@ -177,6 +177,114 @@ class InformationReferenceEvaluationTests(unittest.TestCase):
         )
         self.assertTrue(result["provenance"]["diagnostic_only"])
 
+    def test_exact_text_and_anchors_require_verified_mandatory_qualifiers(self):
+        source = "Agora, no fim do dia, o governo americano baixou uma regra provisória permitindo atualizações dos celulares por mais noventa dias."
+        claim = "O governo americano baixou uma regra provisória permitindo atualizações dos celulares por mais noventa dias."
+        boundary = source.index("o governo")
+        reference = copy.deepcopy(self.reference)
+        reference["snapshot"]["current_order"] = ["v0:s0"]
+        reference["snapshot"]["source"][0]["segments"] = reference["snapshot"][
+            "source"
+        ][0]["segments"][:1]
+        reference["snapshot"]["source"][0]["segments"][0]["content"] = source
+        qualifiers = {
+            "attribution": None,
+            "negated": False,
+            "modality": "provisional permission",
+            "quantities": ["mais noventa dias"],
+            "conditions": ["agora, no fim do dia"],
+        }
+        occurrence = {
+            "id": "ro0",
+            "segment_id": "v0:s0",
+            "assertion_evidence": [
+                {
+                    "quote": source[boundary:],
+                    "start_char": boundary,
+                    "end_char": len(source),
+                }
+            ],
+            "context_evidence": [
+                {
+                    "quote": source[: boundary - 1],
+                    "start_char": 0,
+                    "end_char": boundary - 1,
+                }
+            ],
+        }
+        reference["units"] = [
+            {
+                "id": "r0",
+                "text": claim,
+                "qualifiers": qualifiers,
+                "occurrences": [occurrence],
+            }
+        ]
+        report = copy.deepcopy(self.report)
+        report["snapshot"] = copy.deepcopy(reference["snapshot"])
+        report["units"] = [{"id": "u0", "text": claim, "candidate_ids": ["c0"]}]
+        report["occurrences"] = [dict(copy.deepcopy(occurrence), id="o0", unit_id="u0")]
+        report["candidates"] = report["candidates"][:1]
+        report["counts"].update(
+            candidates=1, accepted_candidates=1, unique_units=1, occurrences=1
+        )
+        missing_conditions = {
+            key: value for key, value in qualifiers.items() if key != "conditions"
+        }
+        wrong_conditions = dict(qualifiers, conditions=["pela manhã"])
+        for name, values, state, complete in (
+            ("absent", None, None, False),
+            ("required_field_absent", missing_conditions, "verified", False),
+            ("explicitly_uncertain", qualifiers, "uncertain", False),
+            ("explicitly_unknown", qualifiers, "unknown", False),
+            ("present_and_verified", qualifiers, "verified", True),
+            ("different_temporal_scope", wrong_conditions, "verified", False),
+        ):
+            with self.subTest(name=name):
+                trial = copy.deepcopy(report)
+                trial["units"][0].update(qualifiers=values, qualifier_state=state)
+                result = evaluate_information_report(trial, reference)
+                metrics = result["metrics"]
+                for coverage in ("unit_coverage", "occurrence_coverage"):
+                    self.assertEqual(int(complete), metrics[coverage]["covered"])
+                    self.assertEqual(int(not complete), metrics[coverage]["unresolved"])
+                    self.assertEqual(0, metrics[coverage]["confirmed_omitted"])
+                    self.assertEqual(0, metrics[coverage]["confirmed_partial"])
+                self.assertEqual(
+                    int(complete), metrics["source_fidelity"]["verified_supported"]
+                )
+                self.assertEqual(
+                    0, metrics["source_fidelity"]["confirmed_false_positive"]
+                )
+                self.assertEqual(0, metrics["qualifier_errors"]["total"])
+                if not complete:
+                    blocked = metrics["alignment"]["unverified_unit_links"]
+                    self.assertEqual(1, len(blocked))
+                    self.assertIn(
+                        "conditions",
+                        {
+                            row["field"]
+                            for row in blocked[0]["qualifier_verification_blockers"]
+                        },
+                    )
+                    # A recorded accepted candidate cannot bypass this independent guard.
+                    self.assertEqual("accepted", trial["candidates"][0]["validation"])
+                else:
+                    self.assertEqual([], metrics["alignment"]["unverified_unit_links"])
+
+    def test_neutral_reference_qualifiers_do_not_require_report_annotation(self):
+        self.reference["units"][0]["qualifiers"] = {
+            "attribution": None,
+            "negated": False,
+            "modality": None,
+            "quantities": [],
+            "conditions": [],
+        }
+        result = evaluate_information_report(self.report, self.reference)
+        self.assertEqual(3, result["metrics"]["unit_coverage"]["covered"])
+        self.assertEqual(5, result["metrics"]["occurrence_coverage"]["covered"])
+        self.assertEqual([], result["metrics"]["alignment"]["unverified_unit_links"])
+
     def test_lexical_paraphrase_miss_is_unresolved_not_a_false_negative(self):
         self.report["units"][0][
             "text"
