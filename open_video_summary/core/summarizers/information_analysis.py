@@ -1485,15 +1485,15 @@ class _AnalysisRun(SemanticInventory):
             else:
                 group.append(record)
         units, occurrences = [], []
-        memberships = {}
+        memberships = {record.id: f"u{index}" for index, group in enumerate(groups) for record in group}
         for index, group in enumerate(groups):
             unit_id = f"u{index}"
             representative = group[0]
             first = representative.candidate
             decomposition_ids = tuple(dict.fromkeys(identifier for record in group
                                                     for identifier in record.decomposition_ids))
-            provisional = any(item.id in decomposition_ids and item.state != "verified"
-                              and item.superseded_by is None for item in self.decompositions)
+            provisional = any(item.id in decomposition_ids and self._decomposition_is_provisional(item, memberships)
+                              for item in self.decompositions)
             units.append(
                 InformationUnit(
                     unit_id,
@@ -1507,7 +1507,6 @@ class _AnalysisRun(SemanticInventory):
                     decomposition_ids,
                 )
             )
-            memberships.update((record.id, unit_id) for record in group)
             occurrences.extend(self._occurrences(unit_id, group, len(occurrences)))
         self.relations = [
             replace(
@@ -1757,14 +1756,15 @@ class _AnalysisRun(SemanticInventory):
             "scope": "verbal_transcript",
             "timestamp_resolution": "source_segment",
             "completeness_proven": False,
-            "joint_granularity": "Single-candidate atomicity is followed by bounded joint review of overlapping original-source assertions, including already accepted parents. A verified decomposition requires distinct independent components, mutual collective content preservation, unchanged qualifiers and source occurrence. Only then is the parent retained as provenance outside unit counts. Incomplete, uncertain and conflicting alternatives remain visible and explicitly provisional; specificity alone never suppresses content.",
+            "joint_granularity": "Single-candidate atomicity is followed by bounded joint review of overlapping original-source assertions, including already accepted parents. A verified decomposition requires distinct independent components, mutual collective content preservation, unchanged qualifiers and source occurrence. Only then is the parent retained as provenance outside unit counts. Independent equivalence conflicts only with a verified partition or a positively verified proper part, including a source-grounded residual with every other decomposition gate passed. Joint component checks retain both their original index and candidate identity; legacy indices never imply an unknown filtered association. Unresolved alternatives stay visible and provisional unless every member is an accepted atom in one complete-link equivalence group with no positive compound, part or residual evidence. Specificity alone never suppresses content.",
             "source_content_ledger": "Independent source traversal proposes source foci without access to the accepted inventory. Each focus keeps literal evidence, a full proposal validation, stable ID, verified per-candidate correspondence and bounded individual repair history. Only complete qualified meaning at the same source occurrence closes a gap. Final covered states require a verified correspondence to an active inventory unit; inactive matches remain provenance and decomposition alone never transfers coverage to children. Citations, reformulations, extra candidates and no-progress stops do not prove coverage. The separate open source audit can still signal undiscovered content. Foci do not count as inventory units.",
             "thresholds_calibrated": False,
             "count_semantics": (
                 "Accepted candidates count all accepted validation records, including retained "
                 "decomposed parents. Unique units count active accepted semantic groups; verified "
                 "decomposed parents contribute provenance, not extra units. Unresolved parent/parts "
-                "alternatives stay visible as provisional_granularity units. Source foci are separate "
+                "alternatives stay visible as provisional_granularity units, except wholly collapsed "
+                "accepted atomic alternatives without positive structural evidence. Source foci are separate "
                 "and never increment candidate, unit or occurrence counts. Occurrences count "
                 "exact assertion-anchor groups. counts_provisional covers "
                 "whole-input and scoped aggregates whenever status is partial or "

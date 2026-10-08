@@ -13,15 +13,18 @@ from test_information_analysis import ScriptedGenerator, SyntheticEvaluator, can
 from open_video_summary.adapters.typesafe import EvaluationMetadata, EvaluationResult, NoulResult
 from open_video_summary.core.summarizers.information_analysis import InformationAnalyzer, _AnalysisRun
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
-from open_video_summary.core.summarizers.information_contracts import capture_snapshot
+from open_video_summary.core.summarizers.information_contracts import (
+    CoverageFocus, CoverageMatch, InformationRelation, capture_snapshot,
+)
 from open_video_summary.core.summarizers.information_inventory import DECOMPOSITION_QUESTIONS
 from open_video_summary.errors import AuthenticationError, ConfigurationError, InvalidResponseError, RequestCancelledError
 
 
 class InventoryEvaluator(SyntheticEvaluator):
-    def __init__(self, *, splits=None, verification=None, matches=None, revision=.99, **kwargs):
+    def __init__(self, *, splits=None, joint=None, verification=None, matches=None, revision=.99, **kwargs):
         super().__init__(**kwargs)
         self.splits = splits or {}
+        self.joint = joint or {}
         self.verification = verification or {}
         self.matches = matches or {}
         self.revision = revision
@@ -41,6 +44,7 @@ class InventoryEvaluator(SyntheticEvaluator):
                 values = {"splittable": .99 if components else .01}
                 values.update({f"component{index}": .99 if item["candidate"]["text"] in components else .01
                                for index, item in enumerate(state["components"])})
+                values.update(self.joint.get(text, {}))
             else:
                 values = dict.fromkeys(DECOMPOSITION_QUESTIONS, .99)
                 values.update(self.verification.get(text, {}))
@@ -144,6 +148,160 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual("unit_candidate", report.candidates[0].inventory_role)
         self.assertEqual("uncertain", report.relations[0].equivalence_state)
         self.assertTrue(report.counts.counts_provisional)
+
+    def seeded_inventory(self, proposals, *, equivalent=True):
+        relations = {frozenset((left["text"], right["text"])): "equivalent"
+                     for left in proposals for right in proposals} if equivalent else {}
+        analyzer = InformationAnalyzer(ScriptedGenerator(), InventoryEvaluator(relation=relations),
+            InformationAnalysisConfig(experimental_mode="direct", concurrency=1,
+                max_granularity_checks=0, max_coverage_foci=0, pair_batch_size=1,
+                max_relation_adjudications=0, max_literal_repairs=0))
+        run = _AnalysisRun(analyzer, capture_snapshot(videos([self.source])))
+        target = run.snapshot.current_segments[0]
+        for proposal in proposals:
+            run._validate(proposal, target, "direct", 0, (target.id,))
+        run.evaluated_targets.add(target.id)
+        return run
+
+    @staticmethod
+    def finish_seeded_inventory(run):
+        # Exercise actual consolidation, final focus membership and reporting
+        # from already validated synthetic candidates; no discovery is needed.
+        with patch.object(run, "_run_targets"):
+            return run.run()
+
+    def test_unconfirmed_decomposition_preserves_exact_and_probabilistic_equivalence(self):
+        paraphrase = candidate("v0:s0", self.source,
+            text="No Alfa, o intervalo entre backups é de 24 horas.", quantities=("24 horas",))
+        for peer in (self.frequency, paraphrase):
+            for state, signals in (
+                ("uncertain", {"splittable": .73, "component0": .84}),
+                ("uncertain", {"splittable": .42, "component0": .83}),
+                ("partial", {"parent_compound": .42, "parent_covers_components": .8,
+                             "components_cover_parent": .5, "components_distinct": .23}),
+            ):
+                with self.subTest(exact=peer is self.frequency, state=state):
+                    run = self.seeded_inventory([self.frequency, peer])
+                    decomposition = run._record_decomposition(run.candidates[0], run.candidates[1:],
+                                                              state, signals.items())
+                    proposal = replace(run.candidates[0], id="focus")
+                    run.coverage_foci.append(CoverageFocus("focus", "v0:s0", proposal.candidate, proposal,
+                        state="covered", candidate_ids=("c0",),
+                        matches=(CoverageMatch("c0", "covered", origin="fixture"),)))
+                    report = self.finish_seeded_inventory(run)
+                    relation = report.relations[0]
+                    self.assertEqual("equivalent", relation.equivalence_state)
+                    self.assertTrue(relation.merged)
+                    self.assertNotEqual("conflicting_joint_granularity", relation.equivalence_origin)
+                    self.assertEqual(1, report.counts.unique_units)
+                    self.assertEqual("validated", report.units[0].inventory_state)
+                    self.assertEqual(0, report.counts.provisional_granularity_units)
+                    self.assertNotIn("granularity_unresolved", [item.kind for item in report.issues])
+                    self.assertEqual(decomposition, report.decompositions[0])
+                    self.assertTrue(all(item.inventory_role == "unit_candidate" for item in report.candidates))
+                    focus = report.coverage_foci[0]
+                    self.assertEqual(("covered", ("u0",)), (focus.state, focus.unit_ids))
+                    self.assertTrue(set(focus.candidate_ids) <= set(report.units[0].candidate_ids))
+
+    def test_collapsed_atomic_copies_keep_real_compound_conflict_without_losing_equivalence(self):
+        paraphrase = candidate("v0:s0", self.source,
+            text="No Alfa, o intervalo entre backups é de 24 horas.", quantities=("24 horas",))
+        run = self.seeded_inventory([self.frequency, paraphrase, self.frequency])
+        # Concrete native failure shape: a rejected partition of equivalent
+        # copies has positive compound evidence, but no verified proper part.
+        signals = {"parent_compound": .92, "parent_covers_components": .8,
+                   "components_cover_parent": .12, "components_independent": .54,
+                   "components_distinct": .23, "source_occurrence": .89, "qualifiers_preserved": .58}
+        run._record_decomposition(run.candidates[0], run.candidates[1:], "partial", signals.items())
+        report = self.finish_seeded_inventory(run)
+        self.assertTrue(all(item.equivalence_state == "equivalent" and item.merged for item in report.relations))
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual("provisional_granularity", report.units[0].inventory_state)
+        self.assertEqual(1, report.counts.provisional_granularity_units)
+        self.assertIn("granularity_unresolved", [item.kind for item in report.issues])
+        self.assertEqual(0, report.counts.decomposed_parent_candidates)
+
+    def test_joint_component_identity_survives_filtering_and_later_verification(self):
+        evaluator = InventoryEvaluator(
+            joint={self.source: {"splittable": .99, "component0": .1, "component1": .99}},
+            verification={self.source: dict.fromkeys(DECOMPOSITION_QUESTIONS, .5)},
+            relation={frozenset((self.source, self.retention["text"])): "equivalent",
+                      frozenset((self.source, self.frequency["text"])): "equivalent"})
+        report, _ = self.run_inventory(direct=[self.parent, self.retention, self.frequency],
+                                      evaluator=evaluator, experimental_mode="direct")
+        decomposition = next(item for item in report.decompositions if item.parent_candidate_id == "c0")
+        self.assertEqual(("c2",), decomposition.component_candidate_ids)
+        checks = dict(decomposition.signals)
+        self.assertEqual((.1, .99, .1, .99),
+                         tuple(checks[key] for key in ("component0", "component1", "proper_part:c1", "proper_part:c2")))
+        relations = {frozenset((item.left_candidate_id, item.right_candidate_id)): item for item in report.relations}
+        self.assertEqual("equivalent", relations[frozenset(("c0", "c1"))].equivalence_state)
+        self.assertEqual("conflicting_joint_granularity", relations[frozenset(("c0", "c2"))].equivalence_origin)
+        self.assertEqual("unit_candidate", report.candidates[0].inventory_role)
+
+    def test_legacy_component_indices_never_fabricate_filtered_candidate_identity(self):
+        run = self.seeded_inventory([self.parent, self.retention, self.frequency])
+        run._record_decomposition(run.candidates[0], [run.candidates[2]], "uncertain",
+                                  (("splittable", .99), ("component0", .1), ("component1", .99)))
+        report = self.finish_seeded_inventory(run)
+        self.assertTrue(all(item.equivalence_state == "equivalent" for item in report.relations))
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual("provisional_granularity", report.units[0].inventory_state)
+        self.assertFalse(any(key.startswith("proper_part:") for key, _ in report.decompositions[0].signals))
+
+    def test_identified_part_requires_positive_compound_check_at_the_same_cutoff(self):
+        for splittable in (.43, .85):
+            with self.subTest(splittable=splittable):
+                run = self.seeded_inventory([self.parent, self.frequency])
+                run._record_decomposition(run.candidates[0], run.candidates[1:], "uncertain",
+                    (("splittable", splittable), ("component0", .85), ("proper_part:c1", .85)))
+                report = self.finish_seeded_inventory(run)
+                self.assertEqual("equivalent" if splittable == .43 else "uncertain",
+                                 report.relations[0].equivalence_state)
+                self.assertTrue(all(item.inventory_state == "provisional_granularity" for item in report.units))
+
+    def test_legacy_failure_without_components_is_not_a_collapsed_alternative(self):
+        run = self.seeded_inventory([self.frequency])
+        run._record_decomposition(run.candidates[0], (), "uncertain", reason="InvalidResponseError")
+        report = self.finish_seeded_inventory(run)
+        self.assertEqual("provisional_granularity", report.units[0].inventory_state)
+        self.assertIn("granularity_unresolved", [item.kind for item in report.issues])
+        self.assertEqual("unit_candidate", report.candidates[0].inventory_role)
+
+    def test_verified_residual_preserves_parent_part_conflict_but_uncertain_gates_do_not(self):
+        for source_support in (.99, .8):
+            with self.subTest(source_support=source_support):
+                run = self.seeded_inventory([self.parent, self.frequency])
+                signals = dict.fromkeys(DECOMPOSITION_QUESTIONS, .99)
+                signals.update(components_cover_parent=.01, parent_covers_components=source_support)
+                run._record_decomposition(run.candidates[0], run.candidates[1:], "partial", signals.items())
+                report = self.finish_seeded_inventory(run)
+                relation = report.relations[0]
+                self.assertEqual("uncertain" if source_support == .99 else "equivalent", relation.equivalence_state)
+                self.assertEqual(2 if source_support == .99 else 1, report.counts.unique_units)
+                self.assertTrue(all(item.inventory_state == "provisional_granularity" for item in report.units))
+                self.assertEqual("unit_candidate", report.candidates[0].inventory_role)
+
+    def test_verified_partition_also_conflicts_with_parent_equivalence_and_restores_parent(self):
+        run = self.seeded_inventory([self.parent, self.frequency, self.retention])
+        run._record_decomposition(run.candidates[0], run.candidates[1:], "verified",
+                                  dict.fromkeys(DECOMPOSITION_QUESTIONS, .99).items())
+        run.relations = [InformationRelation("c0", "c1", "equivalent", .99, .99)]
+        self.assertTrue(run._reconcile_decomposition_relations())
+        self.assertEqual("uncertain", run.relations[0].equivalence_state)
+        self.assertEqual("conflicting", run.decompositions[0].state)
+        self.assertEqual("unit_candidate", run.candidates[0].inventory_role)
+
+    def test_equivalent_children_do_not_clear_an_unrepresented_compound_parent(self):
+        run = self.seeded_inventory([self.parent, self.frequency, self.frequency])
+        run.candidates[0] = replace(run.candidates[0], validation="needs_repair", granularity="compound")
+        run._record_decomposition(run.candidates[0], run.candidates[1:], "partial")
+        report = self.finish_seeded_inventory(run)
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual(("c1", "c2"), report.units[0].candidate_ids)
+        self.assertEqual("provisional_granularity", report.units[0].inventory_state)
+        self.assertIn("granularity_unresolved", [item.kind for item in report.issues])
+        self.assertEqual("needs_repair", report.candidates[0].validation)
 
     def run_decomposed_focus_refresh(self, *, fail_refresh=True, exact_child=False,
                                      changed_anchor=False, conflicting_pair=False):

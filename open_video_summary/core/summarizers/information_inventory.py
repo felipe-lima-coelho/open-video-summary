@@ -134,12 +134,12 @@ class SemanticInventory:
                 decomposition_ids=tuple(dict.fromkeys(candidate.decomposition_ids + (identifier,))))
         return record
 
-    def _verify_decomposition(self, target, parent, children):
+    def _verify_decomposition(self, target, parent, children, joint_signals=()):
         try:
             signals, _ = self._evaluate("verify_decomposition", self._joint_state(target, parent, children),
                                        DECOMPOSITION_QUESTIONS)
         except Exception as exc:
-            self._record_decomposition(parent, children, "uncertain", reason=type(exc).__name__)
+            self._record_decomposition(parent, children, "uncertain", joint_signals, reason=type(exc).__name__)
             raise
         yes = lambda key: passes_probability_cutoff(signals[key], self.config.acceptance_threshold)
         no = lambda key: passes_probability_cutoff(1 - signals[key], self.config.acceptance_threshold)
@@ -152,7 +152,7 @@ class SemanticInventory:
             state = "partial"
         else:
             state = "uncertain"
-        return self._record_decomposition(parent, children, state, signals.items())
+        return self._record_decomposition(parent, children, state, (*joint_signals, *signals.items()))
 
     def _reconcile_granularity(self, target):
         if not self.config.max_granularity_checks:
@@ -203,12 +203,17 @@ class SemanticInventory:
             threshold = self.config.acceptance_threshold
             yes = lambda value: passes_probability_cutoff(value, threshold)
             no = lambda value: passes_probability_cutoff(1 - value, threshold)
+            # componentN addresses the original peers, not the filtered children.
+            # Keep both the raw checks and their candidate identity for later
+            # comparisons, including when generated components are added.
+            joint_signals = (*signals.items(), *(("proper_part:" + peer.id, signals[f"component{index}"])
+                                                 for index, peer in enumerate(peers)))
             selected = [peer for index, peer in enumerate(peers) if yes(signals[f"component{index}"])]
             if no(signals["splittable"]) and not selected and parent.granularity != "compound":
                 continue
             if not yes(signals["splittable"]):
                 self._record_decomposition(parent, selected or peers, "conflicting" if selected else "uncertain",
-                                           signals.items(), "joint_atomicity_unresolved")
+                                           joint_signals, "joint_atomicity_unresolved")
                 continue
             if len(selected) < 2 and self.budget.remaining > 4:
                 try:
@@ -216,7 +221,7 @@ class SemanticInventory:
                         DECOMPOSITION_INSTRUCTION, {"parent_candidate": asdict(parent.candidate),
                                                    "parent_candidate_id": parent.id})
                 except Exception as exc:
-                    self._record_decomposition(parent, selected, "uncertain", reason=type(exc).__name__)
+                    self._record_decomposition(parent, selected, "uncertain", joint_signals, reason=type(exc).__name__)
                     raise
                 for raw in raw_components:
                     if self.budget.remaining <= 2:
@@ -227,11 +232,11 @@ class SemanticInventory:
                         if exact_proposition_key(record) not in {exact_proposition_key(item) for item in selected}:
                             selected.append(record)
             if self.budget.remaining <= 1:
-                self._record_decomposition(parent, selected, "uncertain", reason="decomposition_verification_budget")
+                self._record_decomposition(parent, selected, "uncertain", joint_signals, reason="decomposition_verification_budget")
             elif selected:
-                self._verify_decomposition(target, parent, selected)
+                self._verify_decomposition(target, parent, selected, joint_signals)
             else:
-                self._record_decomposition(parent, (), "partial", signals.items(), "no_verified_components")
+                self._record_decomposition(parent, (), "partial", joint_signals, "no_verified_components")
 
     def _discover_foci(self, target, audit=None):
         existing = [item for item in self.coverage_foci if item.segment_id == target.id]
@@ -495,10 +500,60 @@ class SemanticInventory:
             if focus.state != "covered":
                 self.issue("coverage_focus_unresolved", f"Source focus {focus.id} remains {focus.state}; no complete correspondence was verified.", (focus.segment_id,))
         for decomposition in self.decompositions:
-            if decomposition.state != "verified" and decomposition.superseded_by is None:
+            if self._decomposition_is_provisional(decomposition, membership):
                 self.issue("granularity_unresolved", "An alternative parent/parts representation remains "
                     + decomposition.state + "; its visible units are provisional, not established distinct contents.",
                     candidates=(decomposition.parent_candidate_id,) + decomposition.component_candidate_ids)
+
+    def _verified_proper_part(self, decomposition, candidate_id):
+        """Require a positive, identified part check or a verified residual.
+
+        Legacy componentN signals cannot identify filtered peers safely. They
+        remain provenance, but never become a claim about a guessed candidate.
+        """
+        if candidate_id not in decomposition.component_candidate_ids:
+            return False
+        signals = dict(decomposition.signals)
+        yes = lambda key: key in signals and passes_probability_cutoff(
+            signals[key], self.config.acceptance_threshold)
+        if yes("splittable") and yes("proper_part:" + candidate_id):
+            return True
+        # If qualified source-grounded parts collectively omit parent content,
+        # each part also omits that residual. Failed or merely uncertain gates
+        # do not establish this directional non-equivalence.
+        return ("components_cover_parent" in signals
+                and passes_probability_cutoff(1 - signals["components_cover_parent"],
+                                               self.config.acceptance_threshold)
+                and all(yes(key) for key in DECOMPOSITION_QUESTIONS if key != "components_cover_parent"))
+
+    def _decomposition_is_provisional(self, decomposition, membership):
+        """Keep real structural uncertainty without duplicating resolved atoms."""
+        if decomposition.state == "verified" or decomposition.superseded_by is not None:
+            return False
+        if not decomposition.component_candidate_ids:
+            return True
+        identifiers = {decomposition.parent_candidate_id, *decomposition.component_candidate_ids}
+        units = {membership.get(identifier) for identifier in identifiers}
+        if None in units or len(units) != 1:
+            return True
+        records = {item.id: item for item in self.candidates}
+        for identifier in identifiers:
+            record = records.get(identifier)
+            if (record is None or record.validation != "accepted" or record.granularity != "atomic"
+                    or any(value is None or not passes_probability_cutoff(value, self.config.acceptance_threshold)
+                           for value in (record.granularity_probability, record.granularity_confidence))):
+                return True
+        # Complete-link equivalence can collapse an unconfirmed alternative,
+        # but cannot settle a positive compound/part/residual disagreement.
+        for key, value in decomposition.signals:
+            if (key in {"splittable", "parent_compound"} or re.fullmatch(r"component\d+", key)
+                    or key.startswith("proper_part:")):
+                if passes_probability_cutoff(value, self.config.acceptance_threshold):
+                    return True
+            if key == "components_cover_parent" and passes_probability_cutoff(
+                    1 - value, self.config.acceptance_threshold):
+                return True
+        return decomposition.reason == "component_equivalence_conflicts_with_joint_distinctness"
 
     def _reconcile_decomposition_relations(self):
         """Do not conceal conflicts between joint structure and later pair checks."""
@@ -511,9 +566,11 @@ class SemanticInventory:
                 pair = {relation.left_candidate_id, relation.right_candidate_id}
                 component_pair = len(pair) == 2 and pair <= components
                 parent_pair = decomposition.parent_candidate_id in pair and bool(pair & components)
+                proper_part = parent_pair and any(self._verified_proper_part(decomposition, identifier)
+                                                 for identifier in pair & components)
                 if relation.equivalence_state != "equivalent" or not (
-                        (decomposition.state == "verified" and component_pair)
-                        or (decomposition.signals and parent_pair)):
+                        (decomposition.state == "verified" and (component_pair or parent_pair))
+                        or proper_part):
                     continue
                 self.relations[position] = replace(relation, relation="uncertain", equivalence_state="uncertain",
                     equivalence_origin="conflicting_joint_granularity", equivalence_strength=None)
