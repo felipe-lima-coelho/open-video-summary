@@ -166,10 +166,26 @@ rejected controls:
 The tables compare expected validation/granularity with recorded outcomes.
 `expected_validation` can be `accepted`, `rejected`, or `uncertain`; the report's
 more specific states such as `needs_review` remain explicit matrix columns.
+It labels overall validation, which includes atomicity, rather than source
+fidelity alone. Omit it or set it to `null` when overall handling is ambiguous
+across protocol/count-role versions; that row contributes no overall matrix
+entry, and the unlabeled rows are reported explicitly. Optional
+`expected_source_fidelity` (`supported`, `unsupported`, `partial`, `unresolved`)
+and `expected_count_role` (`atomic_unit`, `requires_decomposition`,
+`decomposed_parent`, `unresolved`) retain separate reviewed reference labels.
+The output shows those labels alongside recorded inventory role and counted
+unit IDs; it does not infer source truth from the combined validation state.
+A faithful compound may need repair for atomicity or remain a provenance
+parent. Its source-gate results, granularity, overall validation and count role
+must be assessed separately.
 Each labeled binary gate reports TP/FP/TN/FN at the **recorded** acceptance
 threshold, reliability bins, a Brier score and a descriptive sample calibration
-error. Missing signals/thresholds and null labels remain unscored. Record
-`sampling`, particularly for targeted controls. These diagnostics do not
+error. Gate outcomes use the same inclusive cutoff helper as the analyzer,
+including its two-ULP tolerance for machine representation of a boundary value.
+The recorded threshold is neither reduced nor tuned; a value beyond that
+tolerance remains below the threshold. Nonfinite, negative and out-of-range
+probabilities are rejected. Missing signals/thresholds and null labels remain
+unscored. Record `sampling`, particularly for targeted controls. These diagnostics do not
 calibrate a threshold or establish population reliability from a selected,
 small or agent-annotated sample. No test-data threshold tuning occurs.
 
@@ -204,37 +220,68 @@ isolation, fingerprints, safe exports and the standalone command.
 
 ## Frozen news baseline diagnosis
 
-The source-only news reference was frozen at commit `0d6bb72` before a separate
-agent inspected the legacy report. Its canonical content fingerprint is
-`c61c63a9159968532124a99f7a367a8c6b5e858ffbeed027a8ed0be1434e6922`.
-There are 53 annotation records and 56 occurrences; two ambiguous identity-bound
-records are excluded, leaving 51 eligible units and 54 eligible occurrences.
+The corrected source-only news reference was frozen at commit `b492735` after
+a source-fidelity audit. The source annotator did not consult the model
+inventory. Its canonical content fingerprint is
+`05c40249e72063fd87420da0813044c50d8dc163d7d9004c244b6c07ac9214e1`.
+There are 53 annotation records and 55 occurrences; two ambiguous identity-bound
+records are excluded, leaving 51 eligible units and 53 eligible occurrences.
+The audit preserves the Monday scope, Huawei attribution and stated purpose,
+and cited subjects. It leaves the manufacturer unnamed in the espionage claim;
+the unsupported Huawei-specific rank occurrence was removed.
 
 The saved local alignment is
-`outputs/evaluation/google_huawei_baseline_20261008_alignment.json`; its result
-is `outputs/evaluation/google_huawei_baseline_20261008_evaluation.json`. These
+`outputs/evaluation/google_huawei_baseline_review2_20261008_alignment.json`;
+its result is
+`outputs/evaluation/google_huawei_baseline_review2_20261008_evaluation.json`. These
 ignored artifacts bind the original report fingerprint
 `5e4937b9298b49fc39d4aa84583a4ca9aef7f66d11f66cdf8e709a7ca2992aeb`.
 The report was **partial**, with 36 units and 37 occurrences, under protocol v1.
 The reference uses v2, so this is explicitly a cross-protocol diagnosis.
+These artifacts supersede the earlier `google_huawei_baseline_20261008_*`
+diagnosis, whose full `u27` claimant equivalence and parent-redundancy finding
+were withdrawn. The older files remain local history and are not current
+evaluation evidence.
 
 Under this bounded, agent-reviewed alignment, 33/51 eligible units are covered,
 17 have reviewed omissions and one remains unresolved: coverage bounds are
-64.7–66.7%. Occurrences have 34/54 covered, 18 reviewed omissions and two
-unresolved: bounds are 63.0–66.7%. Source support is verified for 34/36 output
-units; two remain unresolved and no unsupported output unit is confirmed.
-The count diagnosis identifies two extra units (one Android-ownership duplicate
-and one decree parent counted with its components), four merged groups and
-three extra source occurrences. The decree decomposition explicitly records
-the agent's contextual emergency-rationale interpretation for `u27`; it is
-available for independent review, not assumed human adjudication.
+64.7–66.7%. Occurrences have 34/53 covered, 18 reviewed omissions and one
+unresolved: bounds are 64.2–66.0%. Source support is verified for 33/36 output
+units; `u27` is partial and `u13`/`u22` remain unresolved. No unsupported output
+unit is confirmed, which does not establish that unresolved units are correct.
+The count diagnosis identifies one Android-ownership duplicate unit, five
+merged groups and two extra source occurrences.
+
+`u27` changes the claimant from Donald Trump to the decree; their full meanings
+are not equated. The complete decree parent `u25` still covers the signing,
+Trump's emergency allegation and intended prohibition. Its three-child
+decomposition remains unverified, so neither the parent unit nor its occurrence
+is labeled redundant. `u22` and its narrow citation omit the dispute subject;
+full contextual equivalence remains unresolved. The corrected generic espionage
+claim and `u29` match without inferring the manufacturer's identity.
 
 Ten deliberately selected source-based candidate controls produce diagnostic
 gate confusion and reliability tables. They include rejected/repair cases and
 known source-supported cases with low scores. This selected, agent-reviewed
 sample is **not representative accuracy or calibration evidence**, and no
-threshold was changed. The unit/occurrence omissions above concern the counted
-inventory, even when an unaccepted candidate had discovered the content.
+threshold was changed. All ten retain separate source-fidelity labels. Seven
+have overall-validation labels; the three faithful compounds have unspecified
+overall handling in this legacy diagnosis while retaining explicit compound
+granularity and decomposition count-role labels. Their source gates are not
+judged through the combined validation state. The unit/occurrence omissions
+above concern the counted inventory, even when an unaccepted candidate had
+discovered the content.
+
+To reproduce this diagnostic from the reviewed alignment, choose a new output:
+
+```powershell
+.\.venv\Scripts\python.exe -m open_video_summary.evaluation `
+  --report outputs/information/google_huawei_recovery_20261007T104032Z.json `
+  --reference data/evaluation/information/google_huawei_reference_v1.json `
+  --alignment outputs/evaluation/google_huawei_baseline_review2_20261008_alignment.json `
+  --allow-protocol-mismatch `
+  --output outputs/evaluation/google_huawei_baseline_review2_recheck.json
+```
 
 Evaluate a final v2/schema-7 report against the frozen reference with:
 

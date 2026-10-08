@@ -16,6 +16,9 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from open_video_summary.core.summarizers.information_evaluation import (
+    passes_probability_cutoff,
+)
 from open_video_summary.utils.paths import portable_path, project_path
 
 
@@ -409,20 +412,51 @@ def _criteria(report, alignment, provenance, candidates):
             skipped.append(identifier)
             continue
         expected = row.get("expected_validation")
-        if expected not in {"accepted", "rejected", "uncertain"}:
+        if expected not in {"accepted", "rejected", "uncertain", None}:
             raise ValueError(
-                "Candidate reference validation must be accepted, rejected or uncertain."
+                "Candidate overall validation must be accepted, rejected, uncertain or unspecified."
             )
+        source_reference = row.get("expected_source_fidelity")
+        if source_reference not in {
+            "supported",
+            "unsupported",
+            "partial",
+            "unresolved",
+            None,
+        }:
+            raise ValueError("Candidate source-fidelity reference label is invalid.")
+        count_reference = row.get("expected_count_role")
+        if count_reference not in {
+            "atomic_unit",
+            "requires_decomposition",
+            "decomposed_parent",
+            "unresolved",
+            None,
+        }:
+            raise ValueError("Candidate count-role reference label is invalid.")
         candidate = candidates[identifier]
         predicted = candidate.get("validation", "not_evaluated")
-        state_confusion[(expected, predicted)] += 1
+        if expected is not None:
+            state_confusion[(expected, predicted)] += 1
         label = {
             "candidate_id": identifier,
             "expected": expected,
             "predicted": predicted,
+            "expected_source_fidelity": source_reference,
+            "expected_count_role": count_reference,
+            "recorded_inventory_role": candidate.get(
+                "inventory_role", "legacy_unspecified"
+            ),
+            "counted_unit_ids": [
+                unit["id"]
+                for unit in report.get("units", [])
+                if identifier in unit.get("candidate_ids", [])
+            ],
             "selection_basis": row.get("selection_basis", "unspecified"),
         }
         expected_granularity = row.get("expected_granularity")
+        label["expected_granularity"] = expected_granularity
+        label["predicted_granularity"] = candidate.get("granularity")
         if expected_granularity is not None:
             granularity_confusion[
                 (expected_granularity, candidate.get("granularity") or "unknown")
@@ -457,7 +491,7 @@ def _criteria(report, alignment, provenance, candidates):
             if probability is None or expected is None or threshold is None:
                 unavailable.append(identifier)
                 continue
-            yes = probability >= threshold
+            yes = passes_probability_cutoff(probability, threshold)
             cells[(expected, yes)] += 1
             scored.append((probability, expected))
             bins[min(int(probability * 10), 9)].append((probability, expected))
@@ -477,6 +511,7 @@ def _criteria(report, alignment, provenance, candidates):
             )
         gates[gate] = {
             "recorded_threshold": threshold,
+            "cutoff_semantics": "Inclusive recorded threshold with the core's two-ULP representation tolerance; no threshold reduction or tuning.",
             "scored": len(scored),
             "true_positive": cells[(True, True)],
             "false_positive": cells[(False, True)],
@@ -506,6 +541,18 @@ def _criteria(report, alignment, provenance, candidates):
 
     return {
         "reviewed_candidate_count": len(labels),
+        "overall_validation_labeled_count": sum(
+            row["expected"] is not None for row in labels
+        ),
+        "overall_validation_unlabeled_candidate_ids": [
+            row["candidate_id"] for row in labels if row["expected"] is None
+        ],
+        "source_fidelity_reference_labeled_count": sum(
+            row["expected_source_fidelity"] is not None for row in labels
+        ),
+        "count_role_reference_labeled_count": sum(
+            row["expected_count_role"] is not None for row in labels
+        ),
         "unverified_candidate_ids": skipped,
         "validation_confusion_matrix": confusion(state_confusion),
         "granularity_confusion_matrix": confusion(granularity_confusion),
@@ -515,7 +562,7 @@ def _criteria(report, alignment, provenance, candidates):
         "sampling": alignment.get(
             "sampling", "unspecified; selection bias cannot be ruled out"
         ),
-        "interpretation": "These are descriptive tables for explicitly reviewed labels. Targeted controls, small samples and agent labels do not establish population accuracy or calibration. No threshold is tuned.",
+        "interpretation": "Overall validation, source-fidelity reference, granularity and count-role labels are separate. Source-gate outcomes never use the combined validation state as a fidelity prediction. An unspecified overall label contributes no row to that matrix. These are descriptive tables for explicitly reviewed labels; targeted controls, small samples and agent labels do not establish population accuracy or calibration. No threshold is tuned.",
     }
 
 

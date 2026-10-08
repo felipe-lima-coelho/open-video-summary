@@ -2,6 +2,7 @@
 
 import copy
 import json
+import math
 import shutil
 import tempfile
 import unittest
@@ -509,6 +510,166 @@ class InformationReferenceEvaluationTests(unittest.TestCase):
         self.assertFalse(tables["thresholds_calibrated"])
         self.assertEqual("targeted_controls", tables["sampling"])
 
+    def test_gate_boundary_uses_core_two_ulp_decision_semantics(self):
+        threshold = 0.85
+        below = math.nextafter(threshold, 0)
+        two_below = math.nextafter(below, 0)
+        three_below = math.nextafter(two_below, 0)
+        for probability, accepted in (
+            (threshold, True),
+            (below, True),
+            (two_below, True),
+            (three_below, False),
+            (math.nextafter(threshold, 1), True),
+        ):
+            for expected_yes in (True, False):
+                with self.subTest(probability=probability, expected_yes=expected_yes):
+                    report = copy.deepcopy(self.report)
+                    report["candidates"][0]["signals"] = [["support", probability]]
+                    alignment = reviewed(
+                        report,
+                        self.reference,
+                        candidate_labels=[
+                            {
+                                "candidate_id": "c0",
+                                "expected_validation": "accepted",
+                                "review_status": "verified",
+                                "gates": {"support": expected_yes},
+                            }
+                        ],
+                    )
+                    gate = evaluate_information_report(
+                        report, self.reference, alignment
+                    )["metrics"]["criteria_validation"]["gates"]["support"]
+                    self.assertEqual(threshold, gate["recorded_threshold"])
+                    self.assertEqual(
+                        int(expected_yes and accepted), gate["true_positive"]
+                    )
+                    self.assertEqual(
+                        int(expected_yes and not accepted), gate["false_negative"]
+                    )
+                    self.assertEqual(
+                        int(not expected_yes and accepted), gate["false_positive"]
+                    )
+                    self.assertEqual(
+                        int(not expected_yes and not accepted), gate["true_negative"]
+                    )
+
+    def test_faithful_compound_repaired_for_atomicity_is_not_a_source_false_negative(
+        self,
+    ):
+        source = self.report["snapshot"]["source"][0]["segments"][0]["content"]
+        repaired_child = copy.deepcopy(self.report["candidates"][0])
+        repaired_child["id"] = "c3"
+        self.report["candidates"].append(repaired_child)
+        self.report["units"][0]["candidate_ids"] = ["c3"]
+        self.report["candidates"][0].update(
+            validation="needs_repair",
+            granularity="compound",
+            inventory_role="unit_candidate",
+            candidate={
+                "text": source,
+                "evidence": [
+                    {
+                        "segment_id": "v0:s0",
+                        "quote": source,
+                        "start_char": 0,
+                        "end_char": len(source),
+                        "role": "assertion",
+                    }
+                ],
+            },
+        )
+        self.report["candidates"][0]["signals"] = [
+            ["support", 0.99],
+            ["conditions", 0.99],
+        ]
+        self.report["counts"].update(candidates=4, accepted_candidates=3)
+        for expected_validation in ("rejected", None):
+            with self.subTest(expected_validation=expected_validation):
+                alignment = reviewed(
+                    self.report,
+                    self.reference,
+                    candidate_labels=[
+                        {
+                            "candidate_id": "c0",
+                            "expected_validation": expected_validation,
+                            "expected_source_fidelity": "supported",
+                            "expected_granularity": "compound",
+                            "expected_count_role": "requires_decomposition",
+                            "review_status": "verified",
+                            "gates": {"support": True, "conditions": True},
+                        }
+                    ],
+                )
+                tables = evaluate_information_report(
+                    self.report, self.reference, alignment
+                )["metrics"]["criteria_validation"]
+                self.assertEqual(
+                    (1, 0),
+                    (
+                        tables["gates"]["support"]["true_positive"],
+                        tables["gates"]["support"]["false_negative"],
+                    ),
+                )
+                self.assertEqual(
+                    [{"expected": "compound", "predicted": "compound", "count": 1}],
+                    tables["granularity_confusion_matrix"],
+                )
+                self.assertEqual(
+                    "supported",
+                    tables["candidate_results"][0]["expected_source_fidelity"],
+                )
+                self.assertEqual([], tables["candidate_results"][0]["counted_unit_ids"])
+                self.assertFalse(
+                    any(
+                        row["predicted"] == "accepted"
+                        for row in tables["validation_confusion_matrix"]
+                    )
+                )
+                if expected_validation is None:
+                    self.assertEqual(0, tables["overall_validation_labeled_count"])
+                    self.assertEqual(
+                        ["c0"], tables["overall_validation_unlabeled_candidate_ids"]
+                    )
+                    self.assertEqual([], tables["validation_confusion_matrix"])
+                else:
+                    self.assertEqual(
+                        [
+                            {
+                                "expected": "rejected",
+                                "predicted": "needs_repair",
+                                "count": 1,
+                            }
+                        ],
+                        tables["validation_confusion_matrix"],
+                    )
+
+    def test_invalid_gate_probabilities_and_thresholds_cannot_enter_tables(self):
+        for value in (-0.01, 1.01, True, float("nan"), float("inf"), -float("inf")):
+            with self.subTest(probability=value):
+                report = copy.deepcopy(self.report)
+                report["candidates"][0]["signals"] = [["support", value]]
+                with self.assertRaises(ValueError):
+                    alignment = reviewed(
+                        report,
+                        self.reference,
+                        candidate_labels=[
+                            {
+                                "candidate_id": "c0",
+                                "expected_validation": "accepted",
+                                "review_status": "verified",
+                                "gates": {"support": True},
+                            }
+                        ],
+                    )
+                    evaluate_information_report(report, self.reference, alignment)
+            with self.subTest(threshold=value):
+                report = copy.deepcopy(self.report)
+                report["metadata"]["settings"]["acceptance_threshold"] = value
+                with self.assertRaises(ValueError):
+                    evaluate_information_report(report, self.reference)
+
     def test_count_integrity_detects_bad_aggregate_even_when_semantic_matches_are_correct(
         self,
     ):
@@ -571,6 +732,124 @@ class InformationReferenceEvaluationTests(unittest.TestCase):
         self.assertEqual(2, result["metrics"]["occurrence_coverage"]["reference_total"])
         self.assertEqual(1, len(result["metrics"]["reference_exclusions"]["units"]))
         self.assertEqual(3, len(result["reference_unit_results"]))
+
+    def test_changed_claimant_child_does_not_make_its_supported_parent_redundant(self):
+        source = "Na semana passada, Donald Trump assinou um decreto alegando emergência nacional."
+        snapshot = copy.deepcopy(self.report["snapshot"])
+        snapshot["current_order"] = ["v0:s0"]
+        snapshot["source"][0]["segments"] = snapshot["source"][0]["segments"][:1]
+        snapshot["source"][0]["segments"][0]["content"] = source
+
+        def occurrence(identifier, unit_id, start, end, contexts=()):
+            return {
+                "id": identifier,
+                "unit_id": unit_id,
+                "segment_id": "v0:s0",
+                "assertion_evidence": [
+                    {"quote": source[start:end], "start_char": start, "end_char": end}
+                ],
+                "context_evidence": [
+                    {
+                        "quote": source[left:right],
+                        "start_char": left,
+                        "end_char": right,
+                        "segment_id": "v0:s0",
+                    }
+                    for left, right in contexts
+                ],
+            }
+
+        reference = copy.deepcopy(self.reference)
+        reference["snapshot"] = snapshot
+        reference["units"] = [
+            {
+                "id": "r0",
+                "text": "Na semana passada, Donald Trump assinou um decreto.",
+                "occurrences": [occurrence("ro0", "r0", 0, 50)],
+            },
+            {
+                "id": "r1",
+                "text": "Donald Trump alegou emergência nacional ao assinar o decreto.",
+                "occurrences": [occurrence("ro1", "r1", 51, 79, ((19, 50),))],
+            },
+        ]
+        report = copy.deepcopy(self.report)
+        report["snapshot"] = copy.deepcopy(snapshot)
+        report["units"] = [
+            {"id": "u0", "text": reference["units"][0]["text"]},
+            {"id": "u1", "text": "O decreto alegava emergência nacional."},
+            {"id": "up", "text": source},
+        ]
+        report["occurrences"] = [
+            occurrence("o0", "u0", 0, 50),
+            occurrence("o1", "u1", 40, 79),
+            occurrence("op", "up", 0, len(source)),
+        ]
+        report["counts"].update(occurrences=3)
+        alignment = reviewed(
+            report,
+            reference,
+            unit_links=[
+                link(["r0"], ["u0"]),
+                link(
+                    ["r1"],
+                    ["u1"],
+                    "partial",
+                    qualifier_errors=[
+                        {
+                            "field": "attribution",
+                            "kind": "content",
+                            "detail": "The decree replaced Donald Trump as claimant; authorship does not establish mutual entailment.",
+                        }
+                    ],
+                ),
+                link(["r0", "r1"], ["up"], "merged"),
+                link(
+                    ["r0", "r1"],
+                    ["up", "u0", "u1"],
+                    "unresolved",
+                    review_status="unverified",
+                    parent_report_unit_ids=["up"],
+                    component_report_unit_ids=["u0", "u1"],
+                    decomposition_verified=False,
+                ),
+            ],
+            report_decisions=[
+                {
+                    "report_unit_id": "u1",
+                    "state": "partial",
+                    "review_status": "verified",
+                }
+            ],
+            occurrence_links=[
+                {
+                    "reference_occurrence_ids": ["ro0", "ro1"],
+                    "report_occurrence_ids": ["op"],
+                    "relation": "merged_occurrences",
+                    "review_status": "verified",
+                }
+            ],
+        )
+        result = evaluate_information_report(report, reference, alignment)
+        self.assertEqual(2, result["metrics"]["unit_coverage"]["covered"])
+        self.assertEqual(2, result["metrics"]["occurrence_coverage"]["covered"])
+        self.assertEqual(1, result["metrics"]["source_fidelity"]["confirmed_partial"])
+        self.assertEqual(
+            1, result["metrics"]["qualifier_errors"]["by_field"]["attribution"]
+        )
+        self.assertEqual(
+            0,
+            result["metrics"]["consolidation"]["compound_plus_components_extra_units"],
+        )
+        self.assertEqual(
+            0,
+            result["metrics"]["consolidation"][
+                "compound_occurrence_parent_extra_count"
+            ],
+        )
+        self.assertEqual(
+            1, len(result["metrics"]["alignment"]["unverified_unit_links"])
+        )
 
     def test_verified_compound_occurrence_parent_counts_extra_only_with_matching_components(
         self,
