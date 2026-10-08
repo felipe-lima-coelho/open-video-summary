@@ -8,12 +8,12 @@
     "qualifier_policy": "Preserve attribution, negation, modality, quantities, time, scope, conditions, exceptions, and stated purpose. Do not promote a condition or purpose to an asserted event or outcome.",
     "equivalence_policy": "Group occurrences only when complete proposition, entity, scope, and qualifiers match. Related topic or shared wording is insufficient.",
     "coverage_policy": "Audit every segment against the unit inventory. This source pass did not consult model outputs; model omissions must be computed by reference comparison.",
-    "evidence_policy": "Evidence quotes are exact substrings with zero-based Unicode character offsets. Context spans resolve references or supply a subject; they do not add a new assertion."
+    "evidence_policy": "Evidence quotes are exact substrings with zero-based Unicode character offsets. Assertion evidence identifies an occurrence; its cited context preserves any governing subject, antecedent, attribution, time, or other qualifier needed for complete meaning. A short assertion span requires that context; parent evidence is not implicit component evidence."
   },
   "provenance": {
     "annotation_kind": "source_anchored_reference_inventory",
     "annotator_type": "agent",
-    "annotator": "single Codex agent annotator",
+    "annotator": "Original Codex agent annotator, with subsequent source-context remediation by a separate Codex agent",
     "reviewer_status": "pending_independent_review",
     "reference_status": "agent_annotated_not_human_gold",
     "source_path": "data/processed/google_huawei_segments.json",
@@ -21,9 +21,9 @@
     "source_fingerprint": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7",
     "annotation_date": "2026-10-08",
     "scope": "All 16 source segments in the three videos in data/processed/google_huawei_segments.json.",
-    "blindness": "Annotated directly from the source dataset; generated inventories and provider outputs were not consulted.",
+    "blindness": "The initial annotation and this source-context remediation were prepared directly from the source dataset without consulting generated inventories, provider outputs, or baseline predictions. Earlier review findings were available to the remediation annotator.",
     "development_scope": "Development reference; no held-out human-reviewed split is claimed.",
-    "annotation_revision": "Source-fidelity audit completed 2026-10-08; original source and snapshot are unchanged, and independent review remains pending."
+    "annotation_revision": "Source-context remediation completed 2026-10-08 after two independent reviews identified fidelity defects. All 53 unit records and their source occurrences were re-read against the 16 original segments. The source and snapshot are unchanged; this revision awaits a fresh independent review."
   },
   "snapshot": {
     "source_fingerprint": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7",
@@ -422,8 +422,8 @@
           "context_evidence": [
             {
               "segment_id": "v0:s0",
-              "quote": "segunda maior fabricante de smartphones do mundo",
-              "start_char": 76,
+              "quote": "celulares da Huawei, segunda maior fabricante de smartphones do mundo",
+              "start_char": 55,
               "end_char": 124
             }
           ]
@@ -650,7 +650,7 @@
     },
     {
       "id": "gh-u009",
-      "text": "O alvo principal da medida era a Huawei.",
+      "text": "A Huawei era o alvo principal da proibição do governo americano de empresas dos Estados Unidos negociarem com companhias estrangeiras de telecomunicações consideradas perigosas para a segurança nacional.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -674,14 +674,16 @@
           "context_evidence": [
             {
               "segment_id": "v0:s2",
-              "quote": "diretrizes do governo americano, que proibiu empresas dos Estados Unidos de fazer negócios",
+              "quote": "diretrizes do governo americano, que proibiu empresas dos Estados Unidos de fazer negócios com companhias estrangeiras de telecomunicações consideradas perigosas para a segurança nacional.",
               "start_char": 30,
-              "end_char": 120
+              "end_char": 218
             }
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The prohibition identifies the measure whose principal target is asserted here; it is antecedent context, not an additional independently counted assertion."
+      }
     },
     {
       "id": "gh-u010",
@@ -728,7 +730,7 @@
         "modality": null,
         "quantities": [],
         "conditions": [
-          "Temporal scope: Nesta segunda-feira; the calendar date is unspecified in this segment."
+          "Nesta segunda-feira"
         ]
       },
       "occurrences": [
@@ -758,7 +760,8 @@
         ],
         "alternative_valid_readings": [
           "Keep the proposition generic; do not name either giant from topic knowledge."
-        ]
+        ],
+        "temporal_scope_note": "The source gives a weekday relative to the report, not a calendar date."
       }
     },
     {
@@ -906,7 +909,7 @@
         "modality": "possibility (pode ter acabado)",
         "quantities": [],
         "conditions": [
-          "Temporal scope: agora (relative to the source report)."
+          "agora"
         ]
       },
       "occurrences": [
@@ -942,14 +945,15 @@
         "strict_unit_alignment_scorable": false,
         "alternative_valid_readings": [
           "Keep the partnership unnamed; retain only the source-stated possibility."
-        ]
+        ],
+        "temporal_scope_note": "The source time is relative to the report; no calendar date is supplied."
       },
       "scorable": false,
       "exclusion_reason": "The proposition uses an unresolved “essa parceria” referent; no single partner identity is required."
     },
     {
       "id": "gh-u017",
-      "text": "O governo proibiu empresas americanas de negociar com a empresa chinesa mencionada como Huawei no contexto anterior.",
+      "text": "O governo proibiu empresas americanas de negociar com a Huawei.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -972,28 +976,30 @@
           ],
           "context_evidence": [
             {
-              "segment_id": "v1:s2",
-              "quote": "presidente Donald Trump",
-              "start_char": 61,
-              "end_char": 84
-            },
-            {
               "segment_id": "v1:s1",
               "quote": "A Huawei",
               "start_char": 170,
               "end_char": 178
+            },
+            {
+              "segment_id": "v1:s2",
+              "quote": "telefones da Huawei",
+              "start_char": 318,
+              "end_char": 337
             }
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "reference_resolution_note": "The preceding source segment explicitly names Huawei. The current segment refers to the Chinese company and then explicitly names Huawei phones; no country identity is inferred solely from Donald Trump's name."
+      }
     },
     {
       "id": "gh-u018",
-      "text": "O Google anunciou que deixaria de atualizar o sistema operacional em telefones da Huawei para cumprir a ordem.",
+      "text": "O Google anunciou que não atualizaria mais o sistema operacional em telefones da Huawei para cumprir a ordem que proibia empresas americanas de negociar com a empresa chinesa.",
       "unit_type": "assertion",
       "qualifiers": {
-        "attribution": null,
+        "attribution": "Google",
         "negated": true,
         "modality": "announced future intention (não ia)",
         "quantities": [],
@@ -1019,15 +1025,23 @@
               "quote": "A Google, dona do Android",
               "start_char": 200,
               "end_char": 225
+            },
+            {
+              "segment_id": "v1:s2",
+              "quote": "O governo proibiu empresas americanas de fazer negócios com a empresa chinesa.",
+              "start_char": 121,
+              "end_char": 199
             }
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The reported announcement concerns Google's intended response to the government order; it is not a claim that updates had already ceased."
+      }
     },
     {
       "id": "gh-u019",
-      "text": "Mas agora, no fim do dia, o governo americano voltou atrás.",
+      "text": "Agora, no fim do dia, o governo americano voltou atrás quanto às atualizações dos celulares da Huawei.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1035,7 +1049,7 @@
         "modality": null,
         "quantities": [],
         "conditions": [
-          "Temporal scope: agora, no fim do dia (relative to the source report)."
+          "agora, no fim do dia"
         ]
       },
       "occurrences": [
@@ -1050,14 +1064,30 @@
               "end_char": 397
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v1:s2",
+              "quote": "A Google, dona do Android, chegou a anunciar que, pra cumprir a ordem, não ia mais atualizar o sistema operacional em telefones da Huawei.",
+              "start_char": 200,
+              "end_char": 338
+            },
+            {
+              "segment_id": "v1:s2",
+              "quote": "baixou uma regra provisória permitindo as atualizações dos celulares por mais noventa dias.",
+              "start_char": 400,
+              "end_char": 491
+            }
+          ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The immediately following clause specifies a provisional update permission. The reversal is scoped to those updates and does not assert a complete repeal of the business prohibition.",
+        "temporal_scope_note": "The source time is relative to the report, not a calendar date."
+      }
     },
     {
       "id": "gh-u020",
-      "text": "O governo americano baixou uma regra provisória permitindo atualizações dos celulares por mais noventa dias.",
+      "text": "Agora, no fim do dia, o governo americano baixou uma regra provisória permitindo as atualizações dos celulares da Huawei por mais noventa dias.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1067,7 +1097,7 @@
           "mais noventa dias"
         ],
         "conditions": [
-          "Temporal scope: agora, no fim do dia (inherited from the immediately preceding clause)."
+          "agora, no fim do dia"
         ]
       },
       "occurrences": [
@@ -1085,14 +1115,23 @@
           "context_evidence": [
             {
               "segment_id": "v1:s2",
-              "quote": "o governo americano voltou atrás e",
-              "start_char": 365,
+              "quote": "Mas agora, no fim do dia, o governo americano voltou atrás e",
+              "start_char": 339,
               "end_char": 399
+            },
+            {
+              "segment_id": "v1:s2",
+              "quote": "o sistema operacional em telefones da Huawei.",
+              "start_char": 293,
+              "end_char": 338
             }
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The time and government subject govern both coordinated clauses. The previous announcement identifies the Huawei phones whose updates receive temporary permission.",
+        "temporal_scope_note": "The source time is relative to the report, not a calendar date."
+      }
     },
     {
       "id": "gh-u021",
@@ -1209,6 +1248,12 @@
               "quote": "celulares da Huawei",
               "start_char": 9,
               "end_char": 28
+            },
+            {
+              "segment_id": "v1:s3",
+              "quote": "os aplicativos da Google.",
+              "start_char": 70,
+              "end_char": 95
             }
           ]
         }
@@ -1282,7 +1327,7 @@
     },
     {
       "id": "gh-u027",
-      "text": "Proibir empresas americanas de negociar com a Huawei é mais um passo na guerra comercial entre os dois países.",
+      "text": "Proibir empresas americanas de negociar com a Huawei é mais um passo na guerra comercial entre Estados Unidos e China.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1303,14 +1348,21 @@
               "end_char": 115
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v1:s5",
+              "quote": "os Estados Unidos e a China",
+              "start_char": 207,
+              "end_char": 234
+            }
+          ]
         }
       ],
       "annotation": {}
     },
     {
       "id": "gh-u028",
-      "text": "Estados Unidos e China já estão de olho no mercado do 5G.",
+      "text": "Na guerra comercial entre Estados Unidos e China, o mercado do 5G já está em vista.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1334,20 +1386,34 @@
           "context_evidence": [
             {
               "segment_id": "v1:s5",
-              "quote": "na guerra comercial entre os dois países",
-              "start_char": 75,
+              "quote": "Proibir empresas americanas de fazer negócios com a Huawei é mais um passo na guerra comercial entre os dois países",
+              "start_char": 0,
               "end_char": 115
             },
             {
-              "segment_id": "v1:s0",
-              "quote": "guerra comercial entre China e Estados Unidos",
-              "start_char": 23,
-              "end_char": 68
+              "segment_id": "v1:s5",
+              "quote": "os Estados Unidos e a China",
+              "start_char": 207,
+              "end_char": 234
             }
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "unresolved_references": [
+          "The elliptical phrase “já de olho” does not explicitly identify whose focus it describes."
+        ],
+        "scorable_components": [
+          "The 5G market is already in view in the trade-war context."
+        ],
+        "non_scorable_components": [
+          "The actor of the 5G-focus aside; do not require a claim that both countries share this stated focus."
+        ],
+        "alternative_valid_readings": [
+          "Keep the focus statement impersonal; do not name an actor for “já de olho”."
+        ],
+        "scope_note": "The business prohibition is source context for the focus statement. The following market-control contest does not retroactively establish the grammatical actor of this aside."
+      }
     },
     {
       "id": "gh-u029",
@@ -1442,7 +1508,7 @@
     },
     {
       "id": "gh-u032",
-      "text": "A decisão segue uma ordem do presidente dos Estados Unidos.",
+      "text": "A decisão do Google de suspender o uso do Android em celulares da Huawei segue uma ordem do presidente dos Estados Unidos.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1505,7 +1571,7 @@
     },
     {
       "id": "gh-u034",
-      "text": "A repercussão da disputa é mundial.",
+      "text": "A disputa entre Estados Unidos e China tem repercussão mundial.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1521,8 +1587,8 @@
           "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
           "assertion_evidence": [
             {
-              "quote": "A briga é entre os Estados Unidos e a China, mas a repercussão mundial.",
-              "start_char": 134,
+              "quote": "mas a repercussão mundial.",
+              "start_char": 179,
               "end_char": 205
             }
           ],
@@ -1540,7 +1606,7 @@
     },
     {
       "id": "gh-u035",
-      "text": "O entrevistado diz considerar algo absurdo.",
+      "text": "O italiano que usa um smartphone da marca chinesa diz considerar algo absurdo.",
       "unit_type": "opinion",
       "qualifiers": {
         "attribution": "Italian user of a smartphone from a Chinese brand",
@@ -1588,14 +1654,16 @@
     },
     {
       "id": "gh-u036",
-      "text": "O entrevistado diz que o telefone funciona bem.",
+      "text": "O italiano que usa um smartphone da marca chinesa cita o bom funcionamento do telefone como razão para considerar algo absurdo.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": "Italian user of a smartphone from a Chinese brand",
         "negated": false,
         "modality": null,
         "quantities": [],
-        "conditions": []
+        "conditions": [
+          "como razão para considerar algo absurdo"
+        ]
       },
       "occurrences": [
         {
@@ -1612,39 +1680,10 @@
           "context_evidence": [
             {
               "segment_id": "v2:s0",
-              "quote": "disse o italiano que usa um smartphone da marca chinesa.",
-              "start_char": 270,
-              "end_char": 326
-            }
-          ]
-        }
-      ],
-      "annotation": {}
-    },
-    {
-      "id": "gh-u037",
-      "text": "O entrevistado diz que o telefone é eficiente.",
-      "unit_type": "assertion",
-      "qualifiers": {
-        "attribution": "Italian user of a smartphone from a Chinese brand",
-        "negated": false,
-        "modality": null,
-        "quantities": [],
-        "conditions": []
-      },
-      "occurrences": [
-        {
-          "id": "gh-occ-040",
-          "segment_id": "v2:s0",
-          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
-          "assertion_evidence": [
-            {
-              "quote": "eficiente",
-              "start_char": 258,
-              "end_char": 267
-            }
-          ],
-          "context_evidence": [
+              "quote": "Acho um absurdo porque",
+              "start_char": 207,
+              "end_char": 229
+            },
             {
               "segment_id": "v2:s0",
               "quote": "disse o italiano que usa um smartphone da marca chinesa.",
@@ -1654,7 +1693,54 @@
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The property is asserted by the interviewee as a reason for the generic evaluation in gh-u035. The evaluation target remains unspecified; the phone property is not an unqualified narrator assertion."
+      }
+    },
+    {
+      "id": "gh-u037",
+      "text": "O italiano que usa um smartphone da marca chinesa cita a eficiência do telefone como razão para considerar algo absurdo.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "Italian user of a smartphone from a Chinese brand",
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": [
+          "como razão para considerar algo absurdo"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "gh-occ-040",
+          "segment_id": "v2:s0",
+          "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s0",
+          "assertion_evidence": [
+            {
+              "quote": "é eficiente",
+              "start_char": 256,
+              "end_char": 267
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v2:s0",
+              "quote": "Acho um absurdo porque o telefone funciona bem e",
+              "start_char": 207,
+              "end_char": 255
+            },
+            {
+              "segment_id": "v2:s0",
+              "quote": "disse o italiano que usa um smartphone da marca chinesa.",
+              "start_char": 270,
+              "end_char": 326
+            }
+          ]
+        }
+      ],
+      "annotation": {
+        "scope_note": "The property is asserted by the interviewee as a reason for the generic evaluation in gh-u035. The evaluation target remains unspecified; the phone property is not an unqualified narrator assertion."
+      }
     },
     {
       "id": "gh-u038",
@@ -1688,14 +1774,16 @@
     },
     {
       "id": "gh-u039",
-      "text": "Donald Trump alegou emergência nacional ao assinar o decreto.",
+      "text": "Na semana passada, Donald Trump alegou emergência nacional ao assinar um decreto.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": "Donald Trump",
         "negated": false,
         "modality": null,
         "quantities": [],
-        "conditions": []
+        "conditions": [
+          "Na semana passada"
+        ]
       },
       "occurrences": [
         {
@@ -1719,16 +1807,18 @@
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "temporal_scope_note": "The preceding temporal phrase governs the signing and its accompanying emergency allegation; no calendar date is inferred."
+      }
     },
     {
       "id": "gh-u040",
-      "text": "O decreto visava impedir empresas americanas de negociar com algumas companhias chinesas, entre elas a Huawei.",
+      "text": "O decreto assinado por Donald Trump na semana passada visava impedir empresas americanas de negociar com algumas companhias chinesas, entre elas a Huawei.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
         "negated": false,
-        "modality": null,
+        "modality": "stated purpose (para impedir)",
         "quantities": [],
         "conditions": []
       },
@@ -1754,7 +1844,9 @@
           ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The signed decree is the antecedent of the stated purpose. The purpose is not promoted to a claim that the listed companies actually stopped trading."
+      }
     },
     {
       "id": "gh-u041",
@@ -1834,7 +1926,9 @@
         "negated": false,
         "modality": null,
         "quantities": [],
-        "conditions": []
+        "conditions": [
+          "Atualmente"
+        ]
       },
       "occurrences": [
         {
@@ -1862,7 +1956,7 @@
     },
     {
       "id": "gh-u044",
-      "text": "Cumprindo a determinação, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca Huawei.",
+      "text": "Cumprindo a determinação do presidente dos Estados Unidos, o Google decidiu não fornecer mais o sistema operacional Android para os telefones da marca Huawei.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1905,7 +1999,7 @@
     },
     {
       "id": "gh-u045",
-      "text": "A decisão afetará principalmente os novos aparelhos da Huawei.",
+      "text": "A decisão do Google de não fornecer mais o Android afetará principalmente os novos aparelhos da Huawei.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": null,
@@ -1945,7 +2039,7 @@
       "qualifiers": {
         "attribution": null,
         "negated": true,
-        "modality": null,
+        "modality": "future change (não vão ter)",
         "quantities": [],
         "conditions": []
       },
@@ -2003,7 +2097,7 @@
     },
     {
       "id": "gh-u048",
-      "text": "O porta-voz afirmou que os Estados Unidos não apresentam qualquer evidência que comprove as acusações.",
+      "text": "O porta-voz do Ministério das Relações Exteriores da China afirmou que os Estados Unidos não apresentam qualquer evidência que comprove as acusações.",
       "unit_type": "assertion",
       "qualifiers": {
         "attribution": "Porta-voz do Ministério das Relações Exteriores da China",
@@ -2065,15 +2159,30 @@
           "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s4",
           "assertion_evidence": [
             {
-              "quote": "A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras.",
-              "start_char": 211,
-              "end_char": 325
+              "quote": "pressionar",
+              "start_char": 277,
+              "end_char": 287
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v2:s4",
+              "quote": "A China ainda acusa os Estados Unidos de usarem a influência para",
+              "start_char": 211,
+              "end_char": 276
+            },
+            {
+              "segment_id": "v2:s4",
+              "quote": "as empresas estrangeiras.",
+              "start_char": 300,
+              "end_char": 325
+            }
+          ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The action remains an alleged purpose of using influence under China's accusation, not an asserted completed outcome."
+      }
     },
     {
       "id": "gh-u050",
@@ -2093,15 +2202,24 @@
           "source_identity": "d3da855fbbaa8cdb43198f6f34d2fdc8e9ab78bfb0a19119b61991b7f9a9fbb7:v2:s4",
           "assertion_evidence": [
             {
-              "quote": "A China ainda acusa os Estados Unidos de usarem a influência para pressionar e aniquilar as empresas estrangeiras.",
-              "start_char": 211,
+              "quote": "aniquilar as empresas estrangeiras.",
+              "start_char": 290,
               "end_char": 325
             }
           ],
-          "context_evidence": []
+          "context_evidence": [
+            {
+              "segment_id": "v2:s4",
+              "quote": "A China ainda acusa os Estados Unidos de usarem a influência para",
+              "start_char": 211,
+              "end_char": 276
+            }
+          ]
         }
       ],
-      "annotation": {}
+      "annotation": {
+        "scope_note": "The action remains an alleged purpose of using influence under China's accusation, not an asserted completed outcome."
+      }
     },
     {
       "id": "gh-u051",
@@ -2272,7 +2390,7 @@
         "parent_counted_as_unit": false,
         "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
         "annotation_state": "agent_annotated_pending_review",
-        "reason": "The prohibition's place in the trade war and the countries' focus on 5G are distinct."
+        "reason": "The prohibition's role in the trade war and the passage's focus on the 5G market are distinct; the focus actor remains unspecified."
       },
       {
         "id": "gh-parent-07",
@@ -2307,7 +2425,7 @@
         "parent_counted_as_unit": false,
         "counting_rule": "Count linked component units once; the source parent is not an extra unit.",
         "annotation_state": "agent_annotated_pending_review",
-        "reason": "The attributed evaluation and its two stated reasons are linked; count only components."
+        "reason": "The attributed evaluation and its two stated reasons are distinct components. Each reason retains its link to the evaluation; its target remains unspecified."
       },
       {
         "id": "gh-parent-09",
@@ -2444,10 +2562,10 @@
           "gh-u002",
           "gh-u053"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 3,
         "strict_unit_alignment_unit_ids": [
           "gh-u001",
@@ -2463,10 +2581,10 @@
           "gh-u005",
           "gh-u006"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 4,
         "strict_unit_alignment_unit_ids": [
           "gh-u003",
@@ -2481,10 +2599,10 @@
           "gh-u007",
           "gh-u008"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 2,
         "strict_unit_alignment_unit_ids": [
           "gh-u007",
@@ -2497,10 +2615,10 @@
           "gh-u009",
           "gh-u010"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 2,
         "strict_unit_alignment_unit_ids": [
           "gh-u009",
@@ -2512,12 +2630,12 @@
         "reference_unit_ids": [
           "gh-u011"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [
           "gh-gap-01"
         ],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 1,
         "strict_unit_alignment_unit_ids": [
           "gh-u011"
@@ -2531,10 +2649,10 @@
           "gh-u013",
           "gh-u014"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 4,
         "strict_unit_alignment_unit_ids": [
           "gh-u002",
@@ -2554,13 +2672,13 @@
           "gh-u019",
           "gh-u020"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [
           "gh-gap-02",
           "gh-gap-03"
         ],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 7,
         "strict_unit_alignment_unit_ids": [
           "gh-u005",
@@ -2578,10 +2696,10 @@
           "gh-u023",
           "gh-u024"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 4,
         "strict_unit_alignment_unit_ids": [
           "gh-u021",
@@ -2596,10 +2714,10 @@
           "gh-u025",
           "gh-u026"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 2,
         "strict_unit_alignment_unit_ids": [
           "gh-u025",
@@ -2614,10 +2732,12 @@
           "gh-u029",
           "gh-u030"
         ],
-        "status": "first_pass_units_annotated",
-        "unresolved_issue_ids": [],
+        "status": "source_reaudited_pending_review",
+        "unresolved_issue_ids": [
+          "gh-gap-07"
+        ],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 4,
         "strict_unit_alignment_unit_ids": [
           "gh-u027",
@@ -2637,12 +2757,12 @@
           "gh-u036",
           "gh-u037"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [
           "gh-gap-05"
         ],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 7,
         "strict_unit_alignment_unit_ids": [
           "gh-u031",
@@ -2662,12 +2782,12 @@
           "gh-u040",
           "gh-u041"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [
           "gh-gap-06"
         ],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 4,
         "strict_unit_alignment_unit_ids": [
           "gh-u038",
@@ -2682,10 +2802,10 @@
           "gh-u042",
           "gh-u043"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 2,
         "strict_unit_alignment_unit_ids": [
           "gh-u042",
@@ -2699,10 +2819,10 @@
           "gh-u045",
           "gh-u046"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 3,
         "strict_unit_alignment_unit_ids": [
           "gh-u044",
@@ -2718,12 +2838,12 @@
           "gh-u049",
           "gh-u050"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [
           "gh-gap-04"
         ],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 4,
         "strict_unit_alignment_unit_ids": [
           "gh-u047",
@@ -2738,10 +2858,10 @@
           "gh-u051",
           "gh-u052"
         ],
-        "status": "first_pass_units_annotated",
+        "status": "source_reaudited_pending_review",
         "unresolved_issue_ids": [],
         "review_status": "pending_independent_review",
-        "note": "First-pass annotation only; no listed gap does not establish complete coverage.",
+        "note": "Source-context re-audit completed by the remediation annotator; this is not independent approval or evidence of complete scientific coverage.",
         "reference_unit_count": 2,
         "strict_unit_alignment_unit_ids": [
           "gh-u051",
@@ -2750,7 +2870,7 @@
       }
     ],
     "source_issues": [],
-    "annotator_notes": "Parent sentences are provenance for component units and excluded from counts. Occurrences preserve repeated source statements only when the complete meaning is supported. The Samsung comparison in v0:s0 is separate from Huawei’s rank. The v2:s1 government claim does not name the second-largest manufacturer, so its identity remains generic. Six gap entries bound identity, reference, and evaluation-target interpretation; gh-u015 and gh-u016 are excluded from strict unit matching. First-pass judgments are pending independent review.",
+    "annotator_notes": "Parent sentences are provenance for component units and excluded from counts. Occurrences preserve repeated source statements only when the complete meaning is supported. The Samsung comparison in v0:s0 is separate from Huawei’s rank. The v2:s1 government claim does not name the second-largest manufacturer, so its identity remains generic. Seven gap entries bound identity, reference, evaluation-target, and focus-actor interpretation; gh-u015 and gh-u016 are excluded from strict unit matching. All records underwent a source-context re-audit, but the current revision still awaits fresh independent review and is not human gold.",
     "metric_guidance": {
       "annotated_unit_record_count": 53,
       "occurrence_count": 55,
@@ -2763,7 +2883,8 @@
       "identity_component_exclusions": {
         "gh-u011": "The generic proposition is scorable; identities of the two giants are not.",
         "gh-u048": "The generic no-evidence assertion is scorable; the antecedent of “acusações” is not.",
-        "gh-u041": "The attributed espionage claim is scorable; the second-largest manufacturer identity is unresolved."
+        "gh-u041": "The attributed espionage claim is scorable; the second-largest manufacturer identity is unresolved.",
+        "gh-u028": "The impersonal 5G-focus statement is scorable; the aside's actor identity is unresolved."
       },
       "interpretation": "53 is the number of agent-annotated reference records under this protocol, not a measured or absolute information count. Report strict alignment with the 51 eligible units and identity-specific components excluded; an inclusive reading can show 53 as a sensitivity bound. These development annotations are pending independent review, not calibrated accuracy.",
       "non_scorable_component_exclusions": {
@@ -2898,6 +3019,33 @@
         }
       ],
       "context_note": "The nearby clause lists Huawei as one targeted Chinese company; it does not explicitly identify Huawei as the second-largest manufacturer in the following claim."
+    },
+    {
+      "id": "gh-gap-07",
+      "segment_id": "v1:s5",
+      "kind": "unresolved_identity",
+      "evidence": {
+        "quote": "já de olho no mercado do 5G.",
+        "start_char": 117,
+        "end_char": 145
+      },
+      "detail": "The clause situates the 5G market within the trade-war passage but does not explicitly name the actor whose focus “já de olho” describes.",
+      "metric_treatment": "Score the impersonal focus statement; exclude actor-specific matching for the aside.",
+      "review_status": "pending_independent_review",
+      "scorable": false,
+      "non_scorable_scope": "focus_actor_identity_only",
+      "excluded_unit_ids": [],
+      "alternative_valid_readings": [
+        "Keep the 5G-focus statement impersonal; do not require either one country or both countries as its actor."
+      ],
+      "context_evidence": [
+        {
+          "segment_id": "v1:s5",
+          "quote": "Proibir empresas americanas de fazer negócios com a Huawei é mais um passo na guerra comercial entre os dois países",
+          "start_char": 0,
+          "end_char": 115
+        }
+      ]
     }
   ]
 }
