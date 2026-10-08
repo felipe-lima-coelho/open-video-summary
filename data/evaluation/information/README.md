@@ -23,3 +23,9 @@ The annotation has one agent annotator and no independent reviewer yet. Its `gap
 The transcript is Portuguese. Evidence preserves the source text exactly, including its Unicode accents and punctuation; comparisons must use the recorded source offsets rather than re-encoding displayed terminal output.
 
 No held-out human-reviewed contrast split is claimed. The inventory contains no provider outputs, model decisions, or fabricated reviewer decisions. A reviewer can independently inspect the source spans and revise the annotations before the fixture is used for calibration or scientific claims.
+
+## Synthetic protocol checks
+
+`synthetic_contrast_cases_v1.json` is a separate, agent-authored fixture with three Portuguese source segments, five units, and two non-counted decomposition parents. It contrasts independent actions, a condition-bound negated rule, an attributed possibility, and a statement that a causal link was not confirmed. Its embedded source manifest has its own SHA-256 digest and snapshot fingerprint. Timestamps are placeholders because these are text-only examples.
+
+These examples check protocol behavior only. They are not held-out data, a statistically independent benchmark, or evidence of performance on real transcripts, and their counts must not be pooled with the Google/Huawei corpus.

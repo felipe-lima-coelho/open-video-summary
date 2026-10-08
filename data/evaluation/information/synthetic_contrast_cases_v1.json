@@ -1,0 +1,380 @@
+{
+  "schema_version": 1,
+  "protocol": {
+    "id": "contextual-propositions-v2",
+    "version": "2",
+    "granularity": "One independently assessable proposition. Split independent coordinated assertions. Keep a conditional rule with its condition and consequent. A source sentence used as a decomposition parent is not an additional counted unit.",
+    "unit_policy": "Contextualize only from the supplied synthetic text; preserve who asserted, denied, or qualified each proposition.",
+    "qualifier_policy": "Preserve attribution, negation, modality, quantities, time, scope, and conditions. Do not infer that a conditional event occurred or that a stated possibility is a fact.",
+    "equivalence_policy": "Group only complete propositions with matching entities, scope, and qualifiers.",
+    "coverage_policy": "These are separate synthetic protocol checks; do not pool them with the real-data reference or treat them as statistically independent evidence.",
+    "evidence_policy": "Quotes are exact source substrings with zero-based Unicode character offsets; context evidence resolves references but cannot add assertions."
+  },
+  "provenance": {
+    "annotation_kind": "synthetic_contrast_reference",
+    "annotator_type": "agent",
+    "annotator": "single Codex agent annotator",
+    "reviewer_status": "pending_independent_review",
+    "reference_status": "agent_annotated_not_human_gold",
+    "split": "separate_synthetic_protocol_checks",
+    "source_path": "embedded://synthetic_portuguese_contrast_checks_v1/source_manifest",
+    "source_sha256": "02fe766cd876eddd5bb350c9bdf81bffd71c26b67e6678933a149367737d0473",
+    "source_sha256_scope": "SHA-256 of canonical UTF-8 JSON in source_manifest",
+    "source_fingerprint": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502",
+    "annotation_date": "2026-10-08",
+    "scope": "Three agent-authored Portuguese contrast segments; synthetic and not drawn from the news corpus.",
+    "timestamps_are_placeholders": true,
+    "blindness": "No generated inventories or provider outputs were consulted.",
+    "development_scope": "A qualitative protocol fixture only; not a held-out benchmark, statistically independent sample, or evidence of real-world evaluation."
+  },
+  "source_manifest": {
+    "fixture_id": "synthetic_portuguese_contrast_checks_v1",
+    "source_type": "agent_authored_synthetic_text",
+    "segments": [
+      {
+        "id": "v0:s0",
+        "content": "O painel registra cada aviso e envia uma cópia ao operador."
+      },
+      {
+        "id": "v0:s1",
+        "content": "Se o sensor ficar sem energia, o alarme não será enviado."
+      },
+      {
+        "id": "v0:s2",
+        "content": "A engenheira afirmou que o atraso pode ocorrer após uma atualização; a equipe não confirmou que a atualização seja a causa desse atraso."
+      }
+    ]
+  },
+  "snapshot": {
+    "source_fingerprint": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502",
+    "current_order": [
+      "v0:s0",
+      "v0:s1",
+      "v0:s2"
+    ],
+    "source": [
+      {
+        "id": "v0",
+        "name": "synthetic_portuguese_contrast_checks",
+        "path": "",
+        "topics": [
+          "synthetic protocol checks"
+        ],
+        "segments": [
+          {
+            "id": "v0:s0",
+            "source_identity": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502:v0:s0",
+            "video_id": "v0",
+            "video_index": 0,
+            "segment_index": 0,
+            "content": "O painel registra cada aviso e envia uma cópia ao operador.",
+            "start": 0.0,
+            "end": 0.0,
+            "order": 0,
+            "video_topic": "synthetic check",
+            "global_topic": "synthetic check",
+            "video_path": ""
+          },
+          {
+            "id": "v0:s1",
+            "source_identity": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502:v0:s1",
+            "video_id": "v0",
+            "video_index": 0,
+            "segment_index": 1,
+            "content": "Se o sensor ficar sem energia, o alarme não será enviado.",
+            "start": 0.0,
+            "end": 0.0,
+            "order": 1,
+            "video_topic": "synthetic check",
+            "global_topic": "synthetic check",
+            "video_path": ""
+          },
+          {
+            "id": "v0:s2",
+            "source_identity": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502:v0:s2",
+            "video_id": "v0",
+            "video_index": 0,
+            "segment_index": 2,
+            "content": "A engenheira afirmou que o atraso pode ocorrer após uma atualização; a equipe não confirmou que a atualização seja a causa desse atraso.",
+            "start": 0.0,
+            "end": 0.0,
+            "order": 2,
+            "video_topic": "synthetic check",
+            "global_topic": "synthetic check",
+            "video_path": ""
+          }
+        ]
+      }
+    ]
+  },
+  "units": [
+    {
+      "id": "sc-u001",
+      "text": "O painel registra cada aviso.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "sc-occ-001",
+          "segment_id": "v0:s0",
+          "source_identity": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502:v0:s0",
+          "assertion_evidence": [
+            {
+              "quote": "O painel registra cada aviso",
+              "start_char": 0,
+              "end_char": 28
+            }
+          ],
+          "context_evidence": []
+        }
+      ]
+    },
+    {
+      "id": "sc-u002",
+      "text": "O painel envia uma cópia de cada aviso ao operador.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": null,
+        "negated": false,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "sc-occ-002",
+          "segment_id": "v0:s0",
+          "source_identity": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502:v0:s0",
+          "assertion_evidence": [
+            {
+              "quote": "envia uma cópia ao operador.",
+              "start_char": 31,
+              "end_char": 59
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s0",
+              "quote": "O painel",
+              "start_char": 0,
+              "end_char": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sc-u003",
+      "text": "Se o sensor ficar sem energia, o alarme não será enviado.",
+      "unit_type": "conditional",
+      "qualifiers": {
+        "attribution": null,
+        "negated": true,
+        "modality": null,
+        "quantities": [],
+        "conditions": [
+          "Se o sensor ficar sem energia"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "sc-occ-003",
+          "segment_id": "v0:s1",
+          "source_identity": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502:v0:s1",
+          "assertion_evidence": [
+            {
+              "quote": "Se o sensor ficar sem energia, o alarme não será enviado.",
+              "start_char": 0,
+              "end_char": 57
+            }
+          ],
+          "context_evidence": []
+        }
+      ]
+    },
+    {
+      "id": "sc-u004",
+      "text": "A engenheira afirmou que o atraso pode ocorrer após uma atualização.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "A engenheira",
+        "negated": false,
+        "modality": "possibility (pode)",
+        "quantities": [],
+        "conditions": [
+          "após uma atualização"
+        ]
+      },
+      "occurrences": [
+        {
+          "id": "sc-occ-004",
+          "segment_id": "v0:s2",
+          "source_identity": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502:v0:s2",
+          "assertion_evidence": [
+            {
+              "quote": "A engenheira afirmou que o atraso pode ocorrer após uma atualização;",
+              "start_char": 0,
+              "end_char": 68
+            }
+          ],
+          "context_evidence": []
+        }
+      ]
+    },
+    {
+      "id": "sc-u005",
+      "text": "A equipe não confirmou que a atualização seja a causa desse atraso.",
+      "unit_type": "assertion",
+      "qualifiers": {
+        "attribution": "A equipe",
+        "negated": true,
+        "modality": null,
+        "quantities": [],
+        "conditions": []
+      },
+      "occurrences": [
+        {
+          "id": "sc-occ-005",
+          "segment_id": "v0:s2",
+          "source_identity": "332898d4af3d86ef5c0b61f1a7ae9b472aaec65d0b9bdc7e7262bc38bb2c3502:v0:s2",
+          "assertion_evidence": [
+            {
+              "quote": "a equipe não confirmou que a atualização seja a causa desse atraso.",
+              "start_char": 69,
+              "end_char": 136
+            }
+          ],
+          "context_evidence": [
+            {
+              "segment_id": "v0:s2",
+              "quote": "A engenheira afirmou que o atraso pode ocorrer após uma atualização;",
+              "start_char": 0,
+              "end_char": 68
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "annotations": {
+    "decompositions": [
+      {
+        "id": "sc-parent-01",
+        "segment_id": "v0:s0",
+        "parent_evidence": {
+          "quote": "O painel registra cada aviso e envia uma cópia ao operador.",
+          "start_char": 0,
+          "end_char": 59
+        },
+        "component_unit_ids": [
+          "sc-u001",
+          "sc-u002"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count the two separately assessable actions once; the full sentence is not a third unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "Recording an alert and sending its copy are distinct actions."
+      },
+      {
+        "id": "sc-parent-02",
+        "segment_id": "v0:s2",
+        "parent_evidence": {
+          "quote": "A engenheira afirmou que o atraso pode ocorrer após uma atualização; a equipe não confirmou que a atualização seja a causa desse atraso.",
+          "start_char": 0,
+          "end_char": 136
+        },
+        "component_unit_ids": [
+          "sc-u004",
+          "sc-u005"
+        ],
+        "parent_counted_as_unit": false,
+        "counting_rule": "Count the two separately attributed propositions once; the sentence is not an extra unit.",
+        "annotation_state": "agent_annotated_pending_review",
+        "reason": "A possible delay and a non-confirmed causal link are distinct communicated propositions."
+      }
+    ],
+    "coverage_audit": [
+      {
+        "segment_id": "v0:s0",
+        "reference_unit_ids": [
+          "sc-u001",
+          "sc-u002"
+        ],
+        "status": "synthetic_protocol_check",
+        "review_status": "pending_independent_review",
+        "note": "Synthetic contrast check, not a real transcript or completeness claim."
+      },
+      {
+        "segment_id": "v0:s1",
+        "reference_unit_ids": [
+          "sc-u003"
+        ],
+        "status": "synthetic_protocol_check",
+        "review_status": "pending_independent_review",
+        "note": "Synthetic contrast check, not a real transcript or completeness claim."
+      },
+      {
+        "segment_id": "v0:s2",
+        "reference_unit_ids": [
+          "sc-u004",
+          "sc-u005"
+        ],
+        "status": "synthetic_protocol_check",
+        "review_status": "pending_independent_review",
+        "note": "Synthetic contrast check, not a real transcript or completeness claim."
+      }
+    ],
+    "contrast_controls": [
+      {
+        "id": "sc-control-01",
+        "source_unit_ids": [
+          "sc-u003"
+        ],
+        "candidate_text": "O alarme não será enviado.",
+        "expected_relation": "partial",
+        "reason": "This drops the explicit sensor-power condition; the condition must remain linked to the negated consequent."
+      },
+      {
+        "id": "sc-control-02",
+        "source_unit_ids": [
+          "sc-u001",
+          "sc-u002"
+        ],
+        "candidate_text": "O painel registra cada aviso e envia uma cópia ao operador.",
+        "expected_relation": "compound_parent",
+        "reason": "The candidate covers two units but is their parent representation, not a third unit."
+      },
+      {
+        "id": "sc-control-03",
+        "source_unit_ids": [
+          "sc-u004"
+        ],
+        "candidate_text": "O atraso ocorre após uma atualização.",
+        "expected_relation": "partial",
+        "reason": "This omits the engineer's attribution and upgrades possibility to an asserted event."
+      },
+      {
+        "id": "sc-control-04",
+        "source_unit_ids": [
+          "sc-u005"
+        ],
+        "candidate_text": "A atualização causou o atraso.",
+        "expected_relation": "unsupported",
+        "reason": "The source says the team did not confirm the causal link; this candidate turns it into a fact."
+      }
+    ],
+    "metric_guidance": {
+      "unit_record_count": 5,
+      "occurrence_count": 5,
+      "decomposition_parent_count": 2,
+      "interpretation": "Use only to inspect protocol behavior. Do not pool its counts or results with real transcript evaluations."
+    }
+  },
+  "gaps": []
+}
