@@ -6,6 +6,7 @@ import time
 import uuid
 import math
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import nullcontext
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from heapq import nsmallest
@@ -24,6 +25,9 @@ from open_video_summary.contracts import (
 )
 from open_video_summary.core.summarizers.information_config import (
     InformationAnalysisConfig,
+)
+from open_video_summary.core.summarizers.information_discovery import (
+    DiscoveryLookahead, DiscoveryOutcome,
 )
 from open_video_summary.core.summarizers.information_contracts import (
     AnalysisCall,
@@ -297,6 +301,10 @@ class _AnalysisRun(SemanticInventory):
         self.granularity_checks = 0
         self.granularity_reviewed = set()
         self.focus_match_cache = {}
+        self.discovery = parent.discovery if parent else None
+        self.lookahead = {}
+        self.lookahead_seed_attempted = False
+        self.source_attempts = {"direct": 0, "qa": 0}
 
     @property
     def call_count(self):
@@ -355,7 +363,10 @@ class _AnalysisRun(SemanticInventory):
         try:
             with heartbeat(self.progress, lambda: self._event("waiting", operation=operation, provider=provider, segment_id=target_id, operation_seconds=time.monotonic() - started), self.progress_interval):
                 check_cancelled(self.budget.cancel_event)
-                result = callback()
+                with (self.discovery.request_slot(self.budget.request_signal)
+                      if self.discovery is not None and self.target_index is not None
+                      else nullcontext()):
+                    result = callback()
         except Exception as exc:
             if isinstance(exc, (AuthenticationError, ProviderConfigurationError)):
                 self.budget.stop(exc)
@@ -528,7 +539,7 @@ class _AnalysisRun(SemanticInventory):
                                    if any(record.id == item.parent_candidate_id and record.target_segment_id == target.id
                                           for record in self.candidates)]}
 
-    def _extract(self, target, route, round_number, audit=None, *, window=None, focus=None, context=None):
+    def _extraction_request(self, target, route, audit=None, *, window=None, focus=None, context=None):
         context = self._context(target) if context is None else context
         spec = OutputSpec(
             kind="information_qa" if route == "qa" else "information_units",
@@ -573,17 +584,139 @@ class _AnalysisRun(SemanticInventory):
             + "\nInput:\n"
             + canonical_json(data)
         )
-        self._permit(prompt, operation=f"extract_{route}")
-        result = self._invoke(
+        return prompt, spec, data
+
+    def _generate_request(self, operation, prompt, spec):
+        ahead = self.lookahead.pop(operation, None)
+        if ahead is not None:
+            if ahead.prompt != prompt or ahead.spec != spec:
+                self._discard_lookahead(operation, ahead)
+                raise ConfigurationError("An immutable discovery lookahead request changed before application.")
+            outcome = ahead.future.result()
+            self.discovery.consumed()
+            self.calls.extend(outcome.calls)
+            for item in outcome.issues:
+                self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
+            if outcome.error is not None:
+                raise outcome.error
+            return outcome.result
+        self._permit(prompt, operation=operation)
+        return self._invoke(
             self.generator,
-            f"extract_{route}",
+            operation,
             {"prompt": prompt, "spec": asdict(spec)},
             lambda: self.generator.generate(
                 GenerationRequest(prompt, spec, temperature=0.0)
             ),
             "generator",
         )
+
+    def _lookahead_worker(self, operation, prompt, spec, reservation):
+        generator, worker, result, error = None, None, None, None
+        try:
+            check_cancelled(self.budget.request_signal)
+            generator = self.generator.fork()
+            analyzer = InformationAnalyzer(generator, self.evaluator, self.config,
+                progress=self.progress, progress_interval_seconds=self.progress_interval)
+            worker = _AnalysisRun(analyzer, self.snapshot, budget=self.budget,
+                                  parent=self, target_index=self.target_index)
+            worker.active_target = self.active_target
+            worker._permit(prompt, operation=operation, reservation=reservation)
+            result = worker._invoke(generator, operation, {"prompt": prompt, "spec": asdict(spec)},
+                lambda: generator.generate(GenerationRequest(prompt, spec, temperature=0.0)), "generator")
+        except BaseException as exc:
+            error = exc
+            if not isinstance(exc, Exception):
+                self.budget.cancel()
+        finally:
+            if generator is not None:
+                try:
+                    generator.close()
+                except Exception as exc:
+                    if worker is not None:
+                        worker.issue("adapter_cleanup_failed", type(exc).__name__, (self.active_target,))
+        return DiscoveryOutcome(result, tuple(worker.calls) if worker else (),
+                                tuple(worker.issues) if worker else (), error)
+
+    def _seed_discovery(self, target, route, round_number, window, proposals):
+        """Admit only two immutable first requests with conservative target headroom."""
+        if self.discovery is None or self.lookahead_seed_attempted:
+            return
+        if round_number or route != self.config.discovery_routes[0]:
+            return
+        self.lookahead_seed_attempted = True
+        per_window = 1 + 2 * min(4, self.config.max_candidates_per_route)
+        prefix = 2 * proposals
+        if window is not None:
+            maximum = (self.config.max_direct_windows if route == "direct"
+                       else self.config.max_qa_windows)
+            prefix += max(0, maximum - self.source_attempts[route]) * per_window
+        requests = []
+        if route == "direct" and "qa" in self.config.discovery_routes:
+            qa_window = self._source_windows(target.content, self.config.qa_window_chars)[0]
+            prompt, spec, _ = self._extraction_request(target, "qa", window=qa_window)
+            requests.append(("extract_qa", prompt, spec, prefix + 1))
+        if self.config.coverage_enabled and self.config.max_coverage_foci:
+            focus_prefix = prefix
+            if route == "direct" and "qa" in self.config.discovery_routes:
+                focus_prefix += self.config.max_qa_windows * per_window
+            focus_prefix += 2 * self.config.max_literal_repairs
+            focus_prefix += self.config.max_granularity_checks * (
+                3 + 2 * self.config.max_candidates_per_route)
+            prompt, spec = self._inventory_request(target, "discover_coverage_foci",
+                inventory_templates()["focus_discovery"], {},
+                limit=min(self.config.max_coverage_foci, self.config.max_candidates_per_route))
+            # The seed is prepaid before _discover_foci's remaining > 3 gate.
+            requests.append(("discover_coverage_foci", prompt, spec, focus_prefix + 5))
+        for operation, prompt, spec, required in requests:
+            if len(prompt) > self.config.max_context_chars:
+                self.discovery.disable("context_headroom")
+                continue
+            with self.budget.lock:
+                if self.budget.cancel_event.is_set() or self.budget.permanent_failure is not None:
+                    self.discovery.disable("stopped")
+                    break
+                remaining = self.budget.limit - self.budget.used - self.budget.reserved
+                if remaining < required:
+                    self.discovery.disable("target_prefix_budget")
+                    continue
+                self.budget.reserved += 1
+                reservation = _CallReservation(self.budget)
+            self.lookahead[operation] = self.discovery.submit(prompt, spec, reservation,
+                lambda operation=operation, prompt=prompt, spec=spec, reservation=reservation:
+                    self._lookahead_worker(operation, prompt, spec, reservation))
+
+    def _discard_lookahead(self, operation, ahead):
+        outcome = self.discovery.discarded(ahead)
+        if outcome is None:
+            return
+        self.calls.extend(outcome.calls)
+        for item in outcome.issues:
+            self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
+        if outcome.calls:
+            self.issue("discovery_lookahead_unused",
+                f"The started {operation} lookahead was not applied after the target stopped; its calls remain audited.",
+                (self.active_target,))
+        if outcome.error is not None and not isinstance(outcome.error, Exception):
+            raise outcome.error
+
+    def _drain_lookahead(self):
+        pending, self.lookahead = self.lookahead, {}
+        error = None
+        for operation, ahead in pending.items():
+            try:
+                self._discard_lookahead(operation, ahead)
+            except BaseException as exc:
+                error = error or exc
+        if error is not None:
+            raise error
+
+    def _extract(self, target, route, round_number, audit=None, *, window=None, focus=None, context=None):
+        prompt, spec, data = self._extraction_request(target, route, audit,
+            window=window, focus=focus, context=context)
+        result = self._generate_request(f"extract_{route}", prompt, spec)
         value = validate_information(result.value, spec)
+        self._seed_discovery(target, route, round_number, window, len(value["candidates"]))
         verified_window = False
         if window is not None:
             supplied_window = data["discovery_window"]
@@ -662,6 +795,7 @@ class _AnalysisRun(SemanticInventory):
         while pending and attempts < max_windows:
             window = pending.pop(0)
             attempts += 1
+            self.source_attempts[route] += 1
             row = {"segment_id": target.id, "start_char": window[0],
                    "end_char": window[1], "attempt": attempts}
             try:
@@ -1070,6 +1204,7 @@ class _AnalysisRun(SemanticInventory):
                 worker.issue("target_context_limited", str(exc), (target.id,))
             except Exception as exc:
                 worker.issue("target_analysis_failed", type(exc).__name__, (target.id,))
+            worker._drain_lookahead()
             worker._notify("target_completed", segment_id=target.id,
                            status="partial" if worker.issues else "completed")
             return worker
@@ -1079,6 +1214,12 @@ class _AnalysisRun(SemanticInventory):
             self.budget.cancel()
             raise
         finally:
+            cleanup_error = None
+            if worker is not None:
+                try:
+                    worker._drain_lookahead()
+                except BaseException as exc:
+                    cleanup_error = exc
             for adapter in reversed(owned):
                 closer = getattr(adapter, "close", None)
                 if closer is not None:
@@ -1087,6 +1228,8 @@ class _AnalysisRun(SemanticInventory):
                     except Exception as exc:
                         if worker is not None:
                             worker.issue("adapter_cleanup_failed", type(exc).__name__, (target.id,))
+            if cleanup_error is not None:
+                raise cleanup_error
 
     def _run_targets(self):
         targets = self.snapshot.current_segments
@@ -1627,6 +1770,9 @@ class _AnalysisRun(SemanticInventory):
                           for adapter in (self.generator, self.evaluator))
         self.actual_concurrency = (min(self.config.concurrency,
             max(1, len(self.snapshot.current_order))) if can_isolate else 1)
+        if self.actual_concurrency > 1 and (len(self.config.discovery_routes) > 1
+                or self.config.coverage_enabled and self.config.max_coverage_foci):
+            self.discovery = DiscoveryLookahead(self.actual_concurrency)
         self._notify("analysis_started")
         try:
             current = set(self.snapshot.current_order)
@@ -1648,6 +1794,9 @@ class _AnalysisRun(SemanticInventory):
             failed = True
             self.issue("analysis_failed", type(exc).__name__)
             units, occurrences = (), ()
+        finally:
+            if self.discovery is not None:
+                self.discovery.close()
         self._finalize_semantic_inventory(units)
         if not failed:
             for identifier in self.snapshot.current_order:
@@ -1689,6 +1838,8 @@ class _AnalysisRun(SemanticInventory):
         metadata = {
             "started_at": self.started_at,
             "duration_seconds": time.monotonic() - self.started,
+            "discovery_lookahead": (self.discovery.snapshot() if self.discovery is not None
+                                    else {"enabled": False}),
             "settings": asdict(self.config),
             "experimental_mode": self.config.effective_mode,
             "coverage_enabled": self.config.coverage_enabled,

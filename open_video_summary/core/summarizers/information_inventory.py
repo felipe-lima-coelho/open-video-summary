@@ -8,7 +8,7 @@ import re
 from dataclasses import asdict, replace
 
 from open_video_summary.adapters.information_schema import information_schema, validate_information
-from open_video_summary.contracts import GenerationRequest, OutputSpec
+from open_video_summary.contracts import OutputSpec
 from open_video_summary.core.summarizers.information_contracts import (
     CoverageFocus, CoverageMatch, GapRepair, InformationDecomposition,
     canonical_json, fingerprint,
@@ -79,7 +79,7 @@ def assertion_overlap(left, right):
 class SemanticInventory:
     """Methods use the owning run's existing budget, adapter and progress controls."""
 
-    def _inventory_generate(self, target, task, instruction, extra=None, *, limit=None):
+    def _inventory_request(self, target, task, instruction, extra=None, *, limit=None):
         from open_video_summary.core.summarizers.information_analysis import PROTOCOL
 
         context = self._context(target)
@@ -91,9 +91,11 @@ class SemanticInventory:
                 "analysis_task": task, **(extra or {})}
         prompt = (PROTOCOL + "\n" + instruction + "\nReturn exactly this JSON schema:\n"
                   + canonical_json(information_schema(spec)) + "\nInput:\n" + canonical_json(data))
-        self._permit(prompt, operation=task)
-        result = self._invoke(self.generator, task, {"prompt": prompt, "spec": asdict(spec)},
-            lambda: self.generator.generate(GenerationRequest(prompt, spec, temperature=0.0)), "generator")
+        return prompt, spec
+
+    def _inventory_generate(self, target, task, instruction, extra=None, *, limit=None):
+        prompt, spec = self._inventory_request(target, task, instruction, extra, limit=limit)
+        result = self._generate_request(task, prompt, spec)
         value = validate_information(result.value, spec)
         for issue in value["issues"]:
             self.issue("generator_" + issue["kind"], issue["detail"], issue["segment_ids"])

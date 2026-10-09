@@ -673,7 +673,23 @@ proves completeness; unresolved coverage keeps counts provisional.
 Configured CLI analyses process independent source segments concurrently, using
 separate provider clients for each worker. The default is two targets; set
 `--information-concurrency 4` or `OVS_INFORMATION_CONCURRENCY=4` to increase it,
-up to eight. Operations within each target keep their dependency order. Pair
+up to eight. After the first primary discovery request succeeds, the first
+independent QA request and initial source-focus request may fetch responses ahead
+when conservative target-prefix call headroom is available. Their exact prompts
+and source context stay unchanged; responses, candidate validation, adaptive
+window recovery, IDs and subsequent audits are applied in the original order.
+Target generation and evaluation share the configured physical-request bound,
+including foreground and lookahead calls. Local queue waiting occurs before the
+provider operation deadline starts. Lookahead uses private native adapter forks;
+non-forkable adapters, serial runs and constrained budgets retain ordinary
+admission. Report metadata records submitted, started, consumed and discarded
+lookahead requests, queue waits and disabled reasons. The prefix headroom guard
+is target-local; other concurrent targets can still deplete the global budget.
+Started responses left unused after a stop remain audited and keep the report
+partial. Permanent provider failures stop dependent dispatch through the existing
+shared controls, so their timing can affect which earlier work finishes.
+
+Operations within each target keep their dependency order. Pair
 consolidation runs afterward with up to eight requests, each carrying at most
 four independently keyed pair decisions. Each question explicitly names its pair
 block and both candidate IDs; only that pair's marked original source scopes and
