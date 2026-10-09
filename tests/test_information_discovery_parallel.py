@@ -329,6 +329,63 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
         self.assertEqual({"enabled": False}, json.loads(report.metadata_json)["discovery_lookahead"])
         self.assertLessEqual(tape.maximum, 1)
 
+    def test_forkable_stateless_generator_can_omit_optional_close(self):
+        class StatelessGenerator:
+            can_fork = True
+
+            def __init__(self, tape):
+                self.delegate = _Generator(tape)
+                self.config, self.records = self.delegate.config, self.delegate.records
+
+            def preflight(self):
+                pass
+
+            def fork(self):
+                return type(self)(self.delegate.tape)
+
+            def generate(self, request):
+                return self.delegate.generate(request)
+
+        reports = []
+        for lookahead in (False, True):
+            tape = _Tape(delay=0)
+            generator, evaluator = StatelessGenerator(tape), _Evaluator(tape)
+            self.assertFalse(hasattr(generator, "close"))
+            config = InformationAnalysisConfig(concurrency=2, max_calls=1000,
+                direct_window_chars=160, qa_window_chars=160, max_pair_comparisons=0)
+            analyzer = InformationAnalyzer(generator, evaluator, config)
+            snapshot = capture_snapshot(videos([SENTENCES[0], "Bom dia."]))
+            if lookahead:
+                report = analyzer.analyze(snapshot)
+            else:
+                with patch.object(_AnalysisRun, "_seed_discovery", return_value=None):
+                    report = analyzer.analyze(snapshot)
+            self.assertEqual("completed", report.status)
+            self.assertNotIn("adapter_cleanup_failed", [issue.kind for issue in report.issues])
+            reports.append(report)
+        self.assert_same_semantics(*reports)
+        self.assertEqual(4, json.loads(reports[1].metadata_json)["discovery_lookahead"]["consumed"])
+
+    def test_callable_cleanup_failures_remain_visible_after_lookahead(self):
+        closed = []
+
+        def fail_close(generator):
+            closed.append(generator)
+            generator.closed = True
+            raise RuntimeError("offline cleanup")
+
+        tape = _Tape(delay=0)
+        config = InformationAnalysisConfig(concurrency=2, max_calls=1000,
+            direct_window_chars=160, qa_window_chars=160, max_pair_comparisons=0)
+        with patch.object(_Generator, "close", fail_close):
+            report = InformationAnalyzer(_Generator(tape), _Evaluator(tape), config).analyze(
+                capture_snapshot(videos([SENTENCES[0], "Bom dia."])))
+        self.assertEqual("partial", report.status)
+        self.assertEqual(6, len(closed))  # Four lookaheads and two target-owned generators.
+        self.assertTrue(any(issue.kind == "adapter_cleanup_failed" and issue.detail == "RuntimeError"
+                            for issue in report.issues))
+        self.assertEqual(4, json.loads(report.metadata_json)["discovery_lookahead"]["consumed"])
+
 
 if __name__ == "__main__":
     unittest.main()

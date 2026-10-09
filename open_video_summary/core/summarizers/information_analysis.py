@@ -629,9 +629,10 @@ class _AnalysisRun(SemanticInventory):
             if not isinstance(exc, Exception):
                 self.budget.cancel()
         finally:
-            if generator is not None:
+            closer = getattr(generator, "close", None)
+            if callable(closer):
                 try:
-                    generator.close()
+                    closer()
                 except Exception as exc:
                     if worker is not None:
                         worker.issue("adapter_cleanup_failed", type(exc).__name__, (self.active_target,))
