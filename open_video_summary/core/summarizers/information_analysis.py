@@ -348,7 +348,7 @@ class _AnalysisRun(SemanticInventory):
             self.issue("call_budget_exhausted", "Remaining analysis work was not executed.")
             raise
 
-    def _invoke(self, adapter, operation, input_data, callback, provider):
+    def _invoke(self, adapter, operation, input_data, callback, provider, *, request_role):
         started = time.monotonic()
         target_id = getattr(self, "active_target", None)
         self._notify("call_started", operation=operation, provider=provider, segment_id=target_id)
@@ -363,7 +363,7 @@ class _AnalysisRun(SemanticInventory):
         try:
             with heartbeat(self.progress, lambda: self._event("waiting", operation=operation, provider=provider, segment_id=target_id, operation_seconds=time.monotonic() - started), self.progress_interval):
                 check_cancelled(self.budget.cancel_event)
-                with (self.discovery.request_slot(self.budget.request_signal)
+                with (self.discovery.request_slot(self.budget.request_signal, request_role)
                       if self.discovery is not None and self.target_index is not None
                       else nullcontext()):
                     result = callback()
@@ -430,6 +430,7 @@ class _AnalysisRun(SemanticInventory):
             {"context": encoded, "noul": noul, "choice": choice},
             lambda: self.evaluator.evaluate(encoded, noul=noul, choice=choice),
             getattr(getattr(self.evaluator, "config", None), "provider", "unknown"),
+            request_role="evaluator",
         )
         signals = {item.id: item.probability for item in result.noul}
         choices = {item.id: item for item in result.choice}
@@ -609,6 +610,7 @@ class _AnalysisRun(SemanticInventory):
                 GenerationRequest(prompt, spec, temperature=0.0)
             ),
             "generator",
+            request_role="generator",
         )
 
     def _lookahead_worker(self, operation, prompt, spec, reservation):
@@ -623,7 +625,8 @@ class _AnalysisRun(SemanticInventory):
             worker.active_target = self.active_target
             worker._permit(prompt, operation=operation, reservation=reservation)
             result = worker._invoke(generator, operation, {"prompt": prompt, "spec": asdict(spec)},
-                lambda: generator.generate(GenerationRequest(prompt, spec, temperature=0.0)), "generator")
+                lambda: generator.generate(GenerationRequest(prompt, spec, temperature=0.0)), "generator",
+                request_role="generator")
         except BaseException as exc:
             error = exc
             if not isinstance(exc, Exception):
@@ -1773,7 +1776,8 @@ class _AnalysisRun(SemanticInventory):
             max(1, len(self.snapshot.current_order))) if can_isolate else 1)
         if self.actual_concurrency > 1 and (len(self.config.discovery_routes) > 1
                 or self.config.coverage_enabled and self.config.max_coverage_foci):
-            self.discovery = DiscoveryLookahead(self.actual_concurrency)
+            self.discovery = DiscoveryLookahead(self.actual_concurrency,
+                                               generator=self.generator, evaluator=self.evaluator)
         self._notify("analysis_started")
         try:
             current = set(self.snapshot.current_order)

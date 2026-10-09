@@ -5,6 +5,7 @@ import threading
 import time
 import unittest
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -19,6 +20,7 @@ from open_video_summary.core.summarizers.information_analysis import (
 )
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
 from open_video_summary.core.summarizers.information_contracts import capture_snapshot
+from open_video_summary.core.summarizers.information_discovery import DiscoveryLookahead
 from open_video_summary.errors import AuthenticationError, ServiceTimeoutError
 from open_video_summary.utils.providers import LLMConfig
 from test_information_analysis import candidate, videos
@@ -36,6 +38,7 @@ class _Tape:
     def __init__(self, *, failure=None, barrier=False, delay=.015, other_delay=None):
         self.lock = threading.Lock()
         self.active = self.maximum = self.generator_active = self.generator_maximum = 0
+        self.evaluator_active = self.evaluator_maximum = 0
         self.requests, self.evaluations, self.instances = [], [], []
         self.failure, self.barrier, self.delay = failure, barrier, delay
         self.other_delay = other_delay
@@ -48,11 +51,15 @@ class _Tape:
             if generator:
                 self.generator_active += 1
                 self.generator_maximum = max(self.generator_maximum, self.generator_active)
+            else:
+                self.evaluator_active += 1
+                self.evaluator_maximum = max(self.evaluator_maximum, self.evaluator_active)
 
     def leave(self, generator=False):
         with self.lock:
             self.active -= 1
             self.generator_active -= int(generator)
+            self.evaluator_active -= int(not generator)
 
 
 class _Generator:
@@ -209,7 +216,9 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
                          Counter(json.dumps(item, sort_keys=True) for item in new.evaluations))
         stats = json.loads(parallel.metadata_json)["discovery_lookahead"]
         self.assertEqual((4, 4, 0), (stats["started"], stats["consumed"], stats["discarded"]))
-        self.assertLessEqual(new.maximum, 2)
+        self.assertLessEqual(new.generator_maximum, 2)
+        self.assertLessEqual(new.evaluator_maximum, 2)
+        self.assertEqual(2, stats["service_scope_count"])
         self.assertEqual(0, new.active)
         self.assertTrue(all(item.closed for item in new.instances[2:]))
         self.assertEqual([], new.instances[0].records)
@@ -223,7 +232,8 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
         self.assert_same_semantics(serial, parallel)
         self.assertEqual(2, tape.generator_maximum)
         self.assertLess(parallel_seconds, serial_seconds - .035)
-        self.assertLessEqual(tape.maximum, 2)
+        self.assertLessEqual(tape.generator_maximum, 2)
+        self.assertLessEqual(tape.evaluator_maximum, 2)
 
     def test_timeout_keeps_depth_first_window_recovery_and_failed_focus_audit(self):
         for failure in ("qa_timeout", "focus_timeout"):
@@ -294,7 +304,8 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
         self.assertNotEqual("completed", report.status)
         self.assertIn("AuthenticationError", [call.status for call in report.calls])
         self.assertEqual("AuthenticationError", json.loads(report.metadata_json)["permanent_provider_failure"])
-        self.assertLessEqual(tape.maximum, 2)
+        self.assertLessEqual(tape.generator_maximum, 2)
+        self.assertLessEqual(tape.evaluator_maximum, 2)
         self.assertEqual(0, tape.active)
         self.assertTrue(all(item.closed for item in tape.instances[2:]))
         self.assertFalse(any(thread.name.startswith("ovs-information-discovery")
@@ -385,6 +396,99 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
         self.assertTrue(any(issue.kind == "adapter_cleanup_failed" and issue.detail == "RuntimeError"
                             for issue in report.issues))
         self.assertEqual(4, json.loads(report.metadata_json)["discovery_lookahead"]["consumed"])
+
+    def test_eight_blocked_generator_callbacks_allow_independent_evaluation(self):
+        generator = SimpleNamespace(config=SimpleNamespace(provider="openai", base_url="https://openai.invalid/v1"))
+        evaluator = SimpleNamespace(config=SimpleNamespace(provider="typesafe", base_url="https://jev.invalid"))
+        scheduler = DiscoveryLookahead(8, generator=generator, evaluator=evaluator)
+        signal, release, evaluator_entered, ninth_entered = (threading.Event() for _ in range(4))
+        all_generators = threading.Barrier(9)
+
+        def blocked_generator():
+            with scheduler.request_slot(signal, "generator"):
+                all_generators.wait(timeout=2)
+                release.wait(timeout=2)
+
+        def enter(role, entered):
+            with scheduler.request_slot(signal, role):
+                entered.set()
+
+        try:
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                held = [executor.submit(blocked_generator) for _ in range(8)]
+                all_generators.wait(timeout=2)
+                evaluator_future = executor.submit(enter, "evaluator", evaluator_entered)
+                ninth_future = executor.submit(enter, "generator", ninth_entered)
+                try:
+                    self.assertTrue(evaluator_entered.wait(timeout=.5))
+                    self.assertFalse(ninth_entered.wait(timeout=.05))
+                finally:
+                    release.set()
+                for future in held + [evaluator_future, ninth_future]:
+                    future.result(timeout=2)
+            stats = scheduler.snapshot()
+            self.assertEqual(2, stats["service_scope_count"])
+            self.assertGreater(stats["request_slot_wait_seconds_by_role"]["generator"], .04)
+        finally:
+            release.set()
+            scheduler.close()
+
+    def test_same_service_models_accounts_and_unknown_roles_share_a_cap(self):
+        first = SimpleNamespace(config=SimpleNamespace(provider="openai", base_url="https://same.invalid/v1/",
+                                                       model="a", limit_group="a", api_key="account-a"))
+        second = SimpleNamespace(config=SimpleNamespace(provider="openai", base_url="https://same.invalid/v1",
+                                                        model="b", limit_group="b", api_key="account-b"))
+        for generator, evaluator in ((first, second), (SimpleNamespace(), second),
+                                     (SimpleNamespace(controller=first), SimpleNamespace(controller=first))):
+            with self.subTest(generator=type(generator).__name__):
+                scheduler = DiscoveryLookahead(1, generator=generator, evaluator=evaluator)
+                signal, entered = threading.Event(), threading.Event()
+
+                def evaluate():
+                    with scheduler.request_slot(signal, "evaluator"):
+                        entered.set()
+
+                try:
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        with scheduler.request_slot(signal, "generator"):
+                            future = executor.submit(evaluate)
+                            self.assertFalse(entered.wait(timeout=.04))
+                        future.result(timeout=2)
+                    self.assertEqual(1, scheduler.snapshot()["service_scope_count"])
+                    self.assertTrue(entered.is_set())
+                finally:
+                    scheduler.close()
+
+    def test_provider_callback_and_deadline_start_after_local_slot_wait(self):
+        tape = _Tape(delay=0)
+        generator, evaluator = _Generator(tape), _Evaluator(tape)
+        run = _AnalysisRun(InformationAnalyzer(generator, evaluator, InformationAnalysisConfig()),
+                           capture_snapshot(videos(["Bom dia."])))
+        run.active_target, run.target_index = "v0:s0", 0
+        run.discovery = DiscoveryLookahead(1, generator=generator, evaluator=evaluator)
+        callback_started = threading.Event()
+        deadline_started = []
+
+        def callback():
+            # Native adapters initialize their operation deadline here, inside generate/evaluate.
+            deadline_started.append(time.monotonic())
+            callback_started.set()
+            metadata = ServiceMetadata("openai", "fixture", duration_seconds=.001)
+            generator.records.append(metadata)
+            return GenerationResult("{}", {}, metadata)
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                with run.discovery.request_slot(run.budget.request_signal, "generator"):
+                    future = executor.submit(run._invoke, generator, "extract_direct", {}, callback,
+                                             "generator", request_role="generator")
+                    self.assertFalse(callback_started.wait(timeout=.04))
+                    released = time.monotonic()
+                future.result(timeout=2)
+            self.assertGreaterEqual(deadline_started[0], released)
+            self.assertGreater(run.discovery.snapshot()["request_slot_wait_seconds_by_role"]["generator"], .03)
+        finally:
+            run.discovery.close()
 
 
 if __name__ == "__main__":

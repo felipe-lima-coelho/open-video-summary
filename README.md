@@ -678,12 +678,16 @@ independent QA request and initial source-focus request may fetch responses ahea
 when conservative target-prefix call headroom is available. Their exact prompts
 and source context stay unchanged; responses, candidate validation, adaptive
 window recovery, IDs and subsequent audits are applied in the original order.
-Target generation and evaluation share the configured physical-request bound,
-including foreground and lookahead calls. Local queue waiting occurs before the
+Each independent provider endpoint has the configured physical-request bound,
+including foreground and lookahead generation. Jev validation can proceed while
+OpenAI generation occupies its slots. Roles using the same provider endpoint
+share a conservative cap across accounts, models and rate groups; unidentified
+services also share slots. Existing provider rate controls remain independent of
+this concurrency cap. Local queue waiting occurs before the
 provider operation deadline starts. Lookahead uses private native adapter forks;
 non-forkable adapters, serial runs and constrained budgets retain ordinary
 admission. Report metadata records submitted, started, consumed and discarded
-lookahead requests, queue waits and disabled reasons. The prefix headroom guard
+lookahead requests, queue waits by role and disabled reasons. The prefix headroom guard
 is target-local; other concurrent targets can still deplete the global budget.
 Started responses left unused after a stop remain audited and keep the report
 partial. Permanent provider failures stop dependent dispatch through the existing
