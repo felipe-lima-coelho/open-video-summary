@@ -2,6 +2,7 @@
 
 import base64
 import ast
+import hashlib
 import json
 import math
 import random
@@ -9,12 +10,14 @@ import re
 import time
 from abc import ABC, abstractmethod
 from ast import literal_eval
-from dataclasses import replace
+from dataclasses import asdict, replace
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from open_video_summary.contracts import (
     GenerationRequest,
+    GenerationRetryPlan,
+    GenerationAttemptMetadata,
     GenerationResult,
     OutputSpec,
     ProviderProgress,
@@ -96,6 +99,22 @@ def _external_error(exc: Exception, provider: str) -> ProviderError:
             f"{provider} rejected the model or request settings (HTTP {status}){suffix}."
         )
     return ServiceUnavailableError(f"{provider} request failed ({name}).")
+
+
+def _timeout_phase(exc):
+    """Inspect local exception types only; dispatch does not prove remote receipt."""
+    seen, phases = set(), set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        name = type(exc).__name__
+        for label in ("Read", "Connect", "Pool", "Write"):
+            if name == label + "Timeout":
+                phases.add(label.lower())
+        exc = exc.__cause__ or exc.__context__
+    for phase in ("connect", "pool", "write", "read"):
+        if phase in phases:
+            return phase
+    return "unknown"
 
 
 class DomainResponseInterpreter:
@@ -375,7 +394,23 @@ class LLMAdapter(ABC):
         self, request: GenerationRequest
     ) -> tuple[str, str | None, str | None]: ...
 
-    def generate(self, request: GenerationRequest) -> GenerationResult:
+    def generate_with_timeout_fallback(self, primary: GenerationRequest,
+                                       fallback: GenerationRequest) -> GenerationResult:
+        """Use the existing attempt/deadline budget for a focus-format fallback."""
+        return self.generate(GenerationRetryPlan(primary, fallback))
+
+    def generate(self, request: GenerationRequest | GenerationRetryPlan) -> GenerationResult:
+        plan = request if isinstance(request, GenerationRetryPlan) else None
+        if plan is not None:
+            primary, fallback = plan.primary, plan.timeout_fallback
+            if (primary.output.kind != "information_units"
+                    or fallback.output != replace(primary.output, kind="information_foci")
+                    or primary.images or fallback.images
+                    or primary.temperature != fallback.temperature
+                    or not fallback.prompt.strip()):
+                raise ConfigurationError("A focus timeout fallback must preserve source scope and generation settings.")
+            request = primary
+        variant = "primary"
         if not request.prompt.strip():
             raise ConfigurationError("The generation prompt must not be empty.")
         self._operation_deadline = self.controller.deadline(self.config.operation_timeout_seconds)
@@ -394,6 +429,7 @@ class LLMAdapter(ABC):
             self._reported_model = None
             self._reported_effort = None
             self._usage = (None, None)
+            response_received = False
             metadata = ServiceMetadata(
                 provider=self.config.provider,
                 requested_model=self.model,
@@ -401,8 +437,24 @@ class LLMAdapter(ABC):
                 sdk_version=_sdk_version(self.config.provider),
                 attempts=attempt,
             )
+            if plan is not None:
+                from open_video_summary.adapters.information_schema import information_schema
+
+                # Hash the complete active domain request, not an SDK envelope.
+                request_json = json.dumps(asdict(request), ensure_ascii=False, sort_keys=True,
+                                          allow_nan=False, separators=(",", ":"))
+                schema_json = json.dumps(information_schema(request.output), ensure_ascii=False,
+                    sort_keys=True, allow_nan=False, separators=(",", ":"))
+                metadata = GenerationAttemptMetadata(**asdict(metadata), retry_plan=plan,
+                    request_variant=variant,
+                    request_fingerprint=hashlib.sha256(request_json.encode("utf-8")).hexdigest(),
+                    prompt_fingerprint=hashlib.sha256(request.prompt.encode("utf-8")).hexdigest(),
+                    output_schema_fingerprint=hashlib.sha256(schema_json.encode("utf-8")).hexdigest())
             try:
                 text, model, effort = self._generate_once(request)
+                response_received = True
+                if plan is not None:
+                    metadata = replace(metadata, response_received=True)
                 self.controller.remaining(self._operation_deadline)
                 self.controller.complete(self._admission, headers=self._response_headers)
                 metadata = replace(
@@ -430,6 +482,9 @@ class LLMAdapter(ABC):
                 )
             except Exception as exc:
                 error = _external_error(exc, self.config.provider)
+                timeout_phase = _timeout_phase(exc) if isinstance(error, ServiceTimeoutError) else None
+                if plan is not None:
+                    metadata = replace(metadata, timeout_phase=timeout_phase)
                 headers = getattr(getattr(exc, "response", None), "headers", None) or self._response_headers
                 delay = retry_delay(attempt, self.attempts_interval, backoff_cap=10.0,
                     retry_after_seconds=retry_after(headers), jitter=self._jitter)
@@ -465,6 +520,11 @@ class LLMAdapter(ABC):
                     self.controller.wait(delay, self._sleep, self.cancel_event,
                                          self._operation_deadline)
                     pending_retry_wait = delay
+                if (plan is not None and variant == "primary" and self._request_sent
+                        and not response_received and timeout_phase == "read"
+                        and isinstance(error, ServiceTimeoutError)):
+                    self.controller.remaining(self._operation_deadline)
+                    request, variant = plan.timeout_fallback, "timeout_fallback"
         raise InvalidResponseError("The language model exhausted its attempt budget.")
 
     def generate_pattern(self, prompt: str, pattern: str, **kwargs) -> str:

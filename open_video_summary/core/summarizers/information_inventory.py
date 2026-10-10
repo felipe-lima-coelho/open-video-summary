@@ -8,7 +8,7 @@ import re
 from dataclasses import asdict, replace
 
 from open_video_summary.adapters.information_schema import information_schema, validate_information
-from open_video_summary.contracts import OutputSpec
+from open_video_summary.contracts import GenerationRequest, OutputSpec
 from open_video_summary.core.summarizers.information_contracts import (
     CoverageFocus, CoverageMatch, GapRepair, InformationDecomposition,
     canonical_json, fingerprint,
@@ -24,7 +24,10 @@ FOCUS_INSTRUCTION = (
     "source focus, with literal evidence and every necessary qualifier. These are "
     "coverage hypotheses, not accepted inventory units. Do not infer coverage from "
     "citations. Do not turn conditions, attribution or modality into asserted events. "
-    "No existing inventory is supplied. Set question and answer to null. "
+    "No existing inventory is supplied. Set question and answer to null."
+)
+FOCUS_TIMEOUT_FALLBACK_INSTRUCTION = FOCUS_INSTRUCTION + (
+    " "
     "For this source-focus request, copy precise literal evidence quotes and set "
     "BOTH start_char and end_char to null when a quote occurs exactly once in its "
     "cited original segment; the application computes the exact Unicode offsets. "
@@ -69,7 +72,7 @@ MATCH_INSTRUCTION = (
 
 
 def focus_protocol():
-    """Change only the focus wire representation, not canonical evidence rules."""
+    """Use the nullable representation only after a sent focus attempt times out."""
     from open_video_summary.core.summarizers.information_analysis import PROTOCOL
 
     return PROTOCOL.replace(
@@ -83,6 +86,7 @@ def focus_protocol():
 
 def inventory_templates():
     return {"focus_discovery": FOCUS_INSTRUCTION,
+            "focus_timeout_fallback": FOCUS_TIMEOUT_FALLBACK_INSTRUCTION,
             "focus_protocol": focus_protocol(),
             "decomposition_generation": DECOMPOSITION_INSTRUCTION,
             "joint_granularity": JOINT_INSTRUCTION,
@@ -101,11 +105,14 @@ def assertion_overlap(left, right):
 class SemanticInventory:
     """Methods use the owning run's existing budget, adapter and progress controls."""
 
-    def _inventory_request(self, target, task, instruction, extra=None, *, limit=None):
+    def _inventory_request(self, target, task, instruction, extra=None, *, limit=None,
+                           focus_fallback=False):
         from open_video_summary.core.summarizers.information_analysis import PROTOCOL
 
         context = self._context(target)
-        focus = task == "discover_coverage_foci"
+        if focus_fallback and task != "discover_coverage_foci":
+            raise ValueError("Nullable timeout fallback is restricted to source-focus discovery.")
+        focus = focus_fallback
         spec = OutputSpec(kind="information_foci" if focus else "information_units",
             max_items=limit or self.config.max_candidates_per_route,
             segment_ids=(target.id,) + tuple(item.id for item in context))
@@ -113,14 +120,30 @@ class SemanticInventory:
                 "context": [self._segment_data(item) for item in context],
                 "analysis_task": task, **(extra or {})}
         protocol = focus_protocol() if focus else PROTOCOL
+        if focus:
+            instruction = FOCUS_TIMEOUT_FALLBACK_INSTRUCTION
         prompt = (protocol + "\n" + instruction + "\nReturn exactly this JSON schema:\n"
                   + canonical_json(information_schema(spec)) + "\nInput:\n" + canonical_json(data))
         return prompt, spec
 
+    def _focus_timeout_fallback(self, target, extra=None, *, limit=None):
+        prompt, spec = self._inventory_request(target, "discover_coverage_foci",
+            FOCUS_INSTRUCTION, extra, limit=limit, focus_fallback=True)
+        if len(prompt) > self.config.max_context_chars:
+            self.issue("focus_timeout_fallback_context_limit",
+                "The complete timeout fallback exceeds the context limit; ordinary retries remain available.",
+                (target.id,))
+            return None
+        return GenerationRequest(prompt, spec, temperature=0.0)
+
     def _inventory_generate(self, target, task, instruction, extra=None, *, limit=None):
         prompt, spec = self._inventory_request(target, task, instruction, extra, limit=limit)
-        result = self._generate_request(task, prompt, spec)
-        value = validate_information(result.value, spec)
+        fallback = (self._focus_timeout_fallback(target, extra, limit=limit)
+                    if task == "discover_coverage_foci" else None)
+        result = self._generate_request(task, prompt, spec, timeout_fallback=fallback)
+        result_spec = (fallback.output if fallback is not None
+            and getattr(result.metadata, "request_variant", None) == "timeout_fallback" else spec)
+        value = validate_information(result.value, result_spec)
         for issue in value["issues"]:
             self.issue("generator_" + issue["kind"], issue["detail"], issue["segment_ids"])
         return value["candidates"], spec.segment_ids

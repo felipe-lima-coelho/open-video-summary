@@ -78,6 +78,27 @@ class GenerationRequest:
 
 
 @dataclass(frozen=True)
+class GenerationRetryPlan:
+    """One logical request may switch format after a sent attempt times out."""
+
+    primary: GenerationRequest
+    timeout_fallback: GenerationRequest
+
+
+@dataclass(frozen=True)
+class GenerationAttemptMetadata(ServiceMetadata):
+    """Audit the full domain request plan without provider envelopes or secrets."""
+
+    retry_plan: GenerationRetryPlan | None = None
+    request_variant: Literal["primary", "timeout_fallback"] | None = None
+    request_fingerprint: str | None = None
+    prompt_fingerprint: str | None = None
+    output_schema_fingerprint: str | None = None
+    timeout_phase: Literal["read", "connect", "pool", "write", "unknown"] | None = None
+    response_received: bool = False
+
+
+@dataclass(frozen=True)
 class GenerationResult:
     text: str
     value: Any

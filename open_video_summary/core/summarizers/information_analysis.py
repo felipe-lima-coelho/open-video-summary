@@ -587,10 +587,13 @@ class _AnalysisRun(SemanticInventory):
         )
         return prompt, spec, data
 
-    def _generate_request(self, operation, prompt, spec):
+    def _generate_request(self, operation, prompt, spec, *, timeout_fallback=None):
+        if timeout_fallback is not None and operation != "discover_coverage_foci":
+            raise ConfigurationError("Timeout format fallback is restricted to source-focus discovery.")
         ahead = self.lookahead.pop(operation, None)
         if ahead is not None:
-            if ahead.prompt != prompt or ahead.spec != spec:
+            if (ahead.prompt != prompt or ahead.spec != spec
+                    or ahead.timeout_fallback != timeout_fallback):
                 self._discard_lookahead(operation, ahead)
                 raise ConfigurationError("An immutable discovery lookahead request changed before application.")
             outcome = ahead.future.result()
@@ -602,18 +605,26 @@ class _AnalysisRun(SemanticInventory):
                 raise outcome.error
             return outcome.result
         self._permit(prompt, operation=operation)
+        return self._invoke_generation(operation, prompt, spec, timeout_fallback)
+
+    def _invoke_generation(self, operation, prompt, spec, timeout_fallback):
+        primary = GenerationRequest(prompt, spec, temperature=0.0)
+        fallback_call = getattr(self.generator, "generate_with_timeout_fallback", None)
+        use_fallback = timeout_fallback is not None and callable(fallback_call)
+        input_data = {"prompt": prompt, "spec": asdict(spec)}
+        if use_fallback:
+            input_data["timeout_fallback"] = asdict(timeout_fallback)
         return self._invoke(
             self.generator,
             operation,
-            {"prompt": prompt, "spec": asdict(spec)},
-            lambda: self.generator.generate(
-                GenerationRequest(prompt, spec, temperature=0.0)
-            ),
+            input_data,
+            lambda: (fallback_call(primary, timeout_fallback) if use_fallback
+                     else self.generator.generate(primary)),
             "generator",
             request_role="generator",
         )
 
-    def _lookahead_worker(self, operation, prompt, spec, reservation):
+    def _lookahead_worker(self, operation, prompt, spec, reservation, timeout_fallback=None):
         generator, worker, result, error = None, None, None, None
         try:
             check_cancelled(self.budget.request_signal)
@@ -624,9 +635,7 @@ class _AnalysisRun(SemanticInventory):
                                   parent=self, target_index=self.target_index)
             worker.active_target = self.active_target
             worker._permit(prompt, operation=operation, reservation=reservation)
-            result = worker._invoke(generator, operation, {"prompt": prompt, "spec": asdict(spec)},
-                lambda: generator.generate(GenerationRequest(prompt, spec, temperature=0.0)), "generator",
-                request_role="generator")
+            result = worker._invoke_generation(operation, prompt, spec, timeout_fallback)
         except BaseException as exc:
             error = exc
             if not isinstance(exc, Exception):
@@ -659,7 +668,7 @@ class _AnalysisRun(SemanticInventory):
         if route == "direct" and "qa" in self.config.discovery_routes:
             qa_window = self._source_windows(target.content, self.config.qa_window_chars)[0]
             prompt, spec, _ = self._extraction_request(target, "qa", window=qa_window)
-            requests.append(("extract_qa", prompt, spec, prefix + 1))
+            requests.append(("extract_qa", prompt, spec, prefix + 1, None))
         if self.config.coverage_enabled and self.config.max_coverage_foci:
             focus_prefix = prefix
             if route == "direct" and "qa" in self.config.discovery_routes:
@@ -671,8 +680,10 @@ class _AnalysisRun(SemanticInventory):
                 inventory_templates()["focus_discovery"], {},
                 limit=min(self.config.max_coverage_foci, self.config.max_candidates_per_route))
             # The seed is prepaid before _discover_foci's remaining > 3 gate.
-            requests.append(("discover_coverage_foci", prompt, spec, focus_prefix + 5))
-        for operation, prompt, spec, required in requests:
+            fallback = self._focus_timeout_fallback(target, {},
+                limit=min(self.config.max_coverage_foci, self.config.max_candidates_per_route))
+            requests.append(("discover_coverage_foci", prompt, spec, focus_prefix + 5, fallback))
+        for operation, prompt, spec, required, fallback in requests:
             if len(prompt) > self.config.max_context_chars:
                 self.discovery.disable("context_headroom")
                 continue
@@ -687,8 +698,9 @@ class _AnalysisRun(SemanticInventory):
                 self.budget.reserved += 1
                 reservation = _CallReservation(self.budget)
             self.lookahead[operation] = self.discovery.submit(prompt, spec, reservation,
-                lambda operation=operation, prompt=prompt, spec=spec, reservation=reservation:
-                    self._lookahead_worker(operation, prompt, spec, reservation))
+                lambda operation=operation, prompt=prompt, spec=spec, reservation=reservation, fallback=fallback:
+                    self._lookahead_worker(operation, prompt, spec, reservation, fallback),
+                timeout_fallback=fallback)
 
     def _discard_lookahead(self, operation, ahead):
         outcome = self.discovery.discarded(ahead)
@@ -1939,7 +1951,7 @@ class _AnalysisRun(SemanticInventory):
             ),
         }
         report = InformationReport(
-            8,
+            9,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -2103,7 +2115,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         counts_provisional=True,
     )
     return InformationReport(
-        8,
+        9,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",

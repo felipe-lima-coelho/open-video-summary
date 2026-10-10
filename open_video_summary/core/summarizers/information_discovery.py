@@ -28,6 +28,7 @@ class DiscoveryFuture:
     spec: object
     future: object
     reservation: object
+    timeout_fallback: object = None
 
 
 class DiscoveryLookahead:
@@ -87,7 +88,7 @@ class DiscoveryLookahead:
         with self.lock:
             self.disabled[reason] += 1
 
-    def submit(self, prompt, spec, reservation, callback):
+    def submit(self, prompt, spec, reservation, callback, *, timeout_fallback=None):
         queued = time.monotonic()
         with self.lock:
             self.stats["eligible"] += 1
@@ -107,7 +108,7 @@ class DiscoveryLookahead:
         except BaseException:
             reservation.release()
             raise
-        return DiscoveryFuture(prompt, spec, future, reservation)
+        return DiscoveryFuture(prompt, spec, future, reservation, timeout_fallback)
 
     def consumed(self):
         with self.lock:

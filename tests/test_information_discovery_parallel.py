@@ -270,8 +270,9 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
                 root.active_target = "v0:s0"
                 root.source_attempts["direct"] = 1
                 root.discovery = SimpleNamespace(disable=lambda reason: None,
-                    submit=lambda prompt, spec, reservation, callback:
-                        SimpleNamespace(prompt=prompt, spec=spec, reservation=reservation))
+                    submit=lambda prompt, spec, reservation, callback, timeout_fallback=None:
+                        SimpleNamespace(prompt=prompt, spec=spec, reservation=reservation,
+                                        timeout_fallback=timeout_fallback))
                 root._seed_discovery(root.snapshot.current_segments[0], "direct", 0, (0, 160), 4)
                 self.assertEqual(expected, len(root.lookahead))
                 self.assertEqual(expected, root.budget.reserved)
@@ -289,8 +290,9 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
                                     capture_snapshot(videos(["Bom dia."])))
                 root.active_target = "v0:s0"
                 root.discovery = SimpleNamespace(disable=lambda reason: None,
-                    submit=lambda prompt, spec, reservation, callback:
-                        SimpleNamespace(prompt=prompt, spec=spec, reservation=reservation))
+                    submit=lambda prompt, spec, reservation, callback, timeout_fallback=None:
+                        SimpleNamespace(prompt=prompt, spec=spec, reservation=reservation,
+                                        timeout_fallback=timeout_fallback))
                 root._seed_discovery(root.snapshot.current_segments[0], "direct", 0, None, 0)
                 self.assertEqual(expected, len(root.lookahead))
                 self.assertEqual(expected, root.budget.reserved)

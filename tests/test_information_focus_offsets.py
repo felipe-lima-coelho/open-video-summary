@@ -4,12 +4,15 @@ import copy
 import importlib.util
 import json
 import unittest
+from dataclasses import asdict, replace
 
 from test_information_analysis import ScriptedGenerator, candidate, videos
 from test_information_inventory import InventoryEvaluator
 from open_video_summary.adapters.information_schema import information_schema, validate_information
 from open_video_summary.adapters.llm import DomainResponseInterpreter, OpenAIAdapter
-from open_video_summary.contracts import GenerationRequest, OutputSpec
+from open_video_summary.contracts import (
+    GenerationAttemptMetadata, GenerationRequest, GenerationRetryPlan, OutputSpec,
+)
 from open_video_summary.core.summarizers.information_analysis import (
     InformationAnalyzer, PROTOCOL, _AnalysisRun,
 )
@@ -33,6 +36,14 @@ class FocusEvidenceOffsetTests(unittest.TestCase):
     def run_for(self, texts, *, proposals=(), evaluator=None):
         generator = ScriptedGenerator(callback=lambda data, route:
             copy.deepcopy(proposals) if route == "discover_coverage_foci" else [])
+        # These binding tests exercise a scripted successful fallback. The actual
+        # sent-timeout transition is tested at the native adapter boundary.
+        def fallback_result(primary, fallback):
+            result = generator.generate(fallback)
+            return replace(result, metadata=GenerationAttemptMetadata(**asdict(result.metadata),
+                retry_plan=GenerationRetryPlan(primary, fallback), request_variant="timeout_fallback",
+                request_fingerprint=fingerprint(asdict(fallback))))
+        generator.generate_with_timeout_fallback = fallback_result
         analyzer = InformationAnalyzer(generator, evaluator or InventoryEvaluator(),
             InformationAnalysisConfig(concurrency=1, qa_enabled=False,
                 max_coverage_rounds=0, max_literal_repairs=0,
@@ -168,18 +179,22 @@ class FocusEvidenceOffsetTests(unittest.TestCase):
         self.assertTrue(evaluator.calls)
         report = run.run()
         exported = report.to_dict()
-        self.assertEqual(8, exported["schema_version"])
+        self.assertEqual(9, exported["schema_version"])
         self.assertEqual(fingerprint(focus_protocol()), exported["metadata"]["prompt_template_hashes"]["focus_protocol"])
         exported_focus = exported["coverage_foci"][0]
         self.assertIsNone(exported_focus["proposal_record"]["raw"]["evidence"][0]["start_char"])
         self.assertIsInstance(exported_focus["proposition"]["evidence"][0]["start_char"], int)
 
-    def test_only_focus_wire_protocol_and_schema_change(self):
+    def test_only_timeout_fallback_focus_wire_protocol_and_schema_change(self):
         run, _ = self.run_for(["Alfa.", "Contexto."])
         target = run.snapshot.current_segments[0]
-        initial, spec = run._inventory_request(target, "discover_coverage_foci", FOCUS_INSTRUCTION)
+        primary, primary_spec = run._inventory_request(target, "discover_coverage_foci", FOCUS_INSTRUCTION)
+        self.assertEqual("information_units", primary_spec.kind)
+        self.assertTrue(primary.startswith(PROTOCOL))
+        initial, spec = run._inventory_request(target, "discover_coverage_foci", FOCUS_INSTRUCTION,
+            focus_fallback=True)
         supplemental, other_spec = run._inventory_request(target, "discover_coverage_foci",
-            FOCUS_INSTRUCTION, {"open_source_audit": {"round": 1}})
+            FOCUS_INSTRUCTION, {"open_source_audit": {"round": 1}}, focus_fallback=True)
         self.assertEqual("information_foci", spec.kind)
         self.assertEqual(spec, other_spec)
         self.assertTrue(initial.startswith(focus_protocol()))

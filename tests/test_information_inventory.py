@@ -101,7 +101,7 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertTrue(all(record.parent_candidate_ids == ("c0",) for record in report.candidates[1:]))
         self.assertFalse(report.counts.counts_provisional)
         self.assertEqual("contextual-propositions-v2", report.protocol_version)
-        self.assertEqual(8, report.schema_version)
+        self.assertEqual(9, report.schema_version)
         self.assertEqual(3, report.counts.accepted_candidates)
 
     def test_joint_structure_retains_each_component_source_span(self):

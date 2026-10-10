@@ -329,7 +329,7 @@ claim does not. Source foci do not count as candidate units or occurrences.
 The separate open audit still traverses the original source for content that
 never became a focus. No-progress and budget stops leave unresolved records
 visible; even a completed run does not prove exhaustive coverage. Reports use
-schema 8, retain model and prompt versions, and treat probability/confidence as
+schema 9, retain model and prompt versions, and treat probability/confidence as
 routing signals rather than measured application accuracy.
 
 For matched experiments, `--information-mode direct`, `qa`, `hybrid`, and
@@ -463,7 +463,11 @@ units, assertion evidence groups and their alignment state, context evidence,
 pair relations, joint decompositions, individual source foci, coverage records,
 counts by segment/video/whole input and unresolved issues. Calls record requested
 and returned models, input/output hashes, usage when available, latency and retry
-attempts. Report schema 8 retains nullable supplied offsets in evidence-resolution
+attempts. Report schema 9 records the complete source-focus retry plan and each
+physical attempt's effective request, prompt and schema fingerprints and format.
+Request and schema fingerprints use sorted, compact UTF-8 JSON; prompt
+fingerprints use the exact UTF-8 text.
+It retains nullable supplied offsets in evidence-resolution
 records, separates content validation from annotation audit, and keeps canonical
 qualifiers nullable. Canonical evidence offsets remain integers.
 Source data and older reports are not rewritten. Generator and evaluator template hashes, the evaluator
@@ -650,8 +654,20 @@ The rule applies only to that target's window metadata; evidence and reference
 problems remain operative. Actual outside-window assertions remain
 unresolved, with their original and resolved offsets preserved.
 
-Independent source-focus generation uses the `information_foci` output schema.
-It copies precise literal quotes and may leave both character offsets `null` for
+Independent source-focus generation starts with its original prompt and integer
+`information_units` schema. Only a dispatched attempt with a known read timeout without
+a valid response can switch the next permitted attempt to the `information_foci`
+schema. This uses the same logical call, original operation deadline, configured
+attempt limit, backoff and shared provider controls. Rate limits, connection
+failures, connection/write/pool timeouts, unknown timeout phases and invalid outputs
+do not trigger the format switch. Client dispatch does not prove server receipt.
+A healthy first attempt sends the original request unchanged;
+`max_attempts=1` permits no fallback.
+The complete source and context remain identical in both requests. Adapters that
+do not support the retry plan continue with the original request. A fallback
+exceeding the context limit is reported and omitted without truncating content.
+
+The timeout fallback copies precise literal quotes and may leave both offsets `null` for
 a quote that occurs exactly once in its cited segment. Code locates that exact
 Unicode substring and records the supplied nulls and resolved integer offsets.
 Repeated quotes still require correct supplied integer offsets identifying their
@@ -660,7 +676,7 @@ Mixed null/integer pairs, nonliteral quotes, normalization and evidence from a
 forbidden source remain rejected. Other generation routes retain their existing
 integer-offset schemas. The source, model, reasoning effort, output ceiling,
 provider deadlines and all semantic acceptance checks remain unchanged. This
-removes unnecessary model-side coordinate calculation; real latency and quality
+avoids model-side coordinate calculation on timeout retries; real latency and quality
 must still be measured for each experiment.
 
 Recovery requests share repeated literal citations through one `evidence_table`.
