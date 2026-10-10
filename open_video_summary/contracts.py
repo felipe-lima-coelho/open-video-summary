@@ -87,7 +87,11 @@ class GenerationRetryPlan:
 
 @dataclass(frozen=True)
 class GenerationAttemptMetadata(ServiceMetadata):
-    """Audit the full domain request plan without provider envelopes or secrets."""
+    """Audit the domain plan without provider envelopes or secrets.
+
+    ``generation_returned`` means ``_generate_once`` returned to the retry loop,
+    not that any HTTP/provider response arrived or passed output validation.
+    """
 
     retry_plan: GenerationRetryPlan | None = None
     request_variant: Literal["primary", "timeout_fallback"] | None = None
@@ -95,7 +99,7 @@ class GenerationAttemptMetadata(ServiceMetadata):
     prompt_fingerprint: str | None = None
     output_schema_fingerprint: str | None = None
     timeout_phase: Literal["read", "connect", "pool", "write", "unknown"] | None = None
-    response_received: bool = False
+    generation_returned: bool = False
 
 
 @dataclass(frozen=True)

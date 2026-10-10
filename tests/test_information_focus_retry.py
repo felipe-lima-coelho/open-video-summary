@@ -100,7 +100,7 @@ class FocusRetryTests(unittest.TestCase):
         self.assertTrue(all(r.request_sent and r.retry_plan == GenerationRetryPlan(primary, fallback) for r in adapter.records))
         self.assertEqual(3, result.metadata.attempts)
         self.assertEqual(fingerprint(asdict(fallback)), result.metadata.request_fingerprint)
-        self.assertEqual([False, False, True], [r.response_received for r in adapter.records])
+        self.assertEqual([False, False, True], [r.generation_returned for r in adapter.records])
 
     def test_admission_estimates_only_each_active_request_and_rate_retry_keeps_fallback(self):
         limited = ExternalStatusError(429)
@@ -178,6 +178,20 @@ class FocusRetryTests(unittest.TestCase):
         with patch.object(adapter.interpreter, "interpret", side_effect=[ReadTimeout("local"), self.body]):
             adapter.generate_with_timeout_fallback(primary, fallback)
         self.assertEqual(["ovs_information_units"] * 2, self.formats(create))
+        self.assertTrue(all(record.generation_returned for record in adapter.records))
+
+    def test_provider_responses_that_raise_before_return_never_trigger_fallback(self):
+        refused = self.success()
+        refused["output"] = [{"type": "message", "content": [{"type": "refusal"}]}]
+        for raw in (response("", status="incomplete"), response("", status="failed"), refused):
+            with self.subTest(status=raw["status"], output=raw["output"]):
+                adapter, create = self.adapter([raw, self.success()])
+                _, primary, fallback = self.requests(adapter)
+                adapter.generate_with_timeout_fallback(primary, fallback)
+                self.assertEqual(["ovs_information_units"] * 2, self.formats(create))
+                self.assertEqual("InvalidResponseError", adapter.records[0].status)
+                self.assertFalse(adapter.records[0].generation_returned)
+                self.assertTrue(adapter.records[1].generation_returned)
 
     def test_max_attempts_one_and_expired_deadline_do_not_send_fallback(self):
         for attempts, expired in ((1, False), (3, True)):

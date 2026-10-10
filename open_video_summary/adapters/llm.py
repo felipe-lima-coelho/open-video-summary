@@ -429,7 +429,7 @@ class LLMAdapter(ABC):
             self._reported_model = None
             self._reported_effort = None
             self._usage = (None, None)
-            response_received = False
+            generation_returned = False
             metadata = ServiceMetadata(
                 provider=self.config.provider,
                 requested_model=self.model,
@@ -452,9 +452,9 @@ class LLMAdapter(ABC):
                     output_schema_fingerprint=hashlib.sha256(schema_json.encode("utf-8")).hexdigest())
             try:
                 text, model, effort = self._generate_once(request)
-                response_received = True
+                generation_returned = True
                 if plan is not None:
-                    metadata = replace(metadata, response_received=True)
+                    metadata = replace(metadata, generation_returned=True)
                 self.controller.remaining(self._operation_deadline)
                 self.controller.complete(self._admission, headers=self._response_headers)
                 metadata = replace(
@@ -521,7 +521,7 @@ class LLMAdapter(ABC):
                                          self._operation_deadline)
                     pending_retry_wait = delay
                 if (plan is not None and variant == "primary" and self._request_sent
-                        and not response_received and timeout_phase == "read"
+                        and not generation_returned and timeout_phase == "read"
                         and isinstance(error, ServiceTimeoutError)):
                     self.controller.remaining(self._operation_deadline)
                     request, variant = plan.timeout_fallback, "timeout_fallback"

@@ -661,6 +661,10 @@ schema. This uses the same logical call, original operation deadline, configured
 attempt limit, backoff and shared provider controls. Rate limits, connection
 failures, connection/write/pool timeouts, unknown timeout phases and invalid outputs
 do not trigger the format switch. Client dispatch does not prove server receipt.
+The attempt audit's `generation_returned` flag means `_generate_once` returned to
+the retry loop; it does not indicate HTTP receipt or successful output validation.
+Incomplete, failed or refused provider responses raise before that return and keep
+the flag false, but their `InvalidResponseError` still prevents the format switch.
 A healthy first attempt sends the original request unchanged;
 `max_attempts=1` permits no fallback.
 The complete source and context remain identical in both requests. Adapters that
