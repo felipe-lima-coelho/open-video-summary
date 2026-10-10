@@ -40,12 +40,13 @@ def information_schema(spec: OutputSpec) -> dict:
     identifier = dict(text)
     if spec.segment_ids:
         identifier["enum"] = list(spec.segment_ids)
+    offset_type = ["integer", "null"] if spec.kind == "information_foci" else "integer"
     evidence = _object(
         {
             "segment_id": identifier,
             "quote": text,
-            "start_char": {"type": "integer", "minimum": 0},
-            "end_char": {"type": "integer", "minimum": 1},
+            "start_char": {"type": offset_type, "minimum": 0},
+            "end_char": {"type": offset_type, "minimum": 1},
             "role": {"type": "string", "enum": ["assertion", "context"]},
         }
     )
@@ -145,12 +146,11 @@ def validate_information(value, spec: OutputSpec):
                 invalid()
             if spec.segment_ids and evidence["segment_id"] not in spec.segment_ids:
                 invalid()
-            if (
-                type(evidence["start_char"]) is not int
-                or type(evidence["end_char"]) is not int
-            ):
-                invalid()
-            if not 0 <= evidence["start_char"] < evidence["end_char"]:
+            start, end = evidence["start_char"], evidence["end_char"]
+            if start is None or end is None:
+                if spec.kind != "information_foci" or start is not None or end is not None:
+                    invalid()
+            elif type(start) is not int or type(end) is not int or not 0 <= start < end:
                 invalid()
             if not isinstance(evidence["role"], str) or evidence["role"] not in {
                 "assertion",

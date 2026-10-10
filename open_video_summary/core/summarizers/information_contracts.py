@@ -233,8 +233,8 @@ class EvidenceResolution:
 
     evidence_index: int
     segment_id: str
-    supplied_start_char: int
-    supplied_end_char: int
+    supplied_start_char: int | None
+    supplied_end_char: int | None
     resolved_start_char: int
     resolved_end_char: int
     method: str = "unique_exact_quote"

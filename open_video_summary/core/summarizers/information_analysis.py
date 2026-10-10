@@ -821,7 +821,7 @@ class _AnalysisRun(SemanticInventory):
         if pending:
             self.issue(route + "_window_budget_exhausted", f"{route} source windows remain pending at the bounded recovery limit.", (target.id,))
 
-    def _literal_candidate(self, raw, target, permitted_ids):
+    def _literal_candidate(self, raw, target, permitted_ids, *, allow_null_offsets=False):
         evidence, resolutions = [], []
         for index, item in enumerate(raw["evidence"]):
             if (
@@ -837,7 +837,13 @@ class _AnalysisRun(SemanticInventory):
                     "Assertion evidence must belong to the target; other evidence is context."
                 )
             start, end = item["start_char"], item["end_char"]
-            if segment.content[start:end] != item["quote"] or end > len(segment.content):
+            missing_offsets = start is None and end is None
+            if missing_offsets:
+                if not allow_null_offsets:
+                    raise ValueError("Only source-focus proposals may omit both evidence offsets.")
+            elif type(start) is not int or type(end) is not int or not 0 <= start < end:
+                raise ValueError("Evidence offsets must be two valid integers or an allowed null pair.")
+            if missing_offsets or segment.content[start:end] != item["quote"] or end > len(segment.content):
                 start = segment.content.find(item["quote"])
                 if start < 0:
                     raise ValueError("Evidence quote does not occur literally in the original transcript.")
@@ -899,7 +905,8 @@ class _AnalysisRun(SemanticInventory):
             recovery_focus_id=recovery_focus_id,
         )
         try:
-            candidate, resolutions = self._literal_candidate(raw, target, permitted_ids)
+            candidate, resolutions = self._literal_candidate(raw, target, permitted_ids,
+                allow_null_offsets=route == "coverage_focus")
         except ValueError as exc:
             records.append(replace(record, reasons=(str(exc),)))
             self.issue(
@@ -1908,7 +1915,7 @@ class _AnalysisRun(SemanticInventory):
             "relation_budget_reserve": "Primary comparisons run in bounded waves, retaining up to one-third of remaining logical calls, capped by remaining configured follow-ups, for focused relation adjudication. Unused reserve is reclaimed by subsequent primary waves. Every paid decision and request still obeys the explicit pair and global call caps; a reserve does not prove the total remaining work fits.",
             "qa_discovery": "Independent QA traverses disjoint original-source windows, with at most four candidates per generation and original target/context retained for reference and governing qualifiers. Bounded timeout recovery splits only the failed window. Calls and windows, including failed attempts, remain recorded. Route failures do not bypass the original-source coverage audit. No coverage or semantic completeness is proven by a successful window.",
             "direct_discovery": "Targets longer than direct_window_chars are traversed through disjoint original-source discovery windows. Each window emits at most four candidates and keeps the full original target/context, original offsets and governing qualifiers. Only failed windows are decomposed, under the same provider and global call limits and the independent max_direct_windows bound. Shorter targets keep their ordinary direct request. Successful discovery does not establish semantic coverage; the original-source audit remains mandatory when calls are available.",
-            "literal_alignment": "Matching supplied offsets are retained. Otherwise only a unique exact quote within the same permitted segment is resolved, with raw offsets and evidence_resolutions retained; ambiguous and nonliteral evidence is rejected.",
+            "literal_alignment": "Matching supplied offsets are retained. Source-focus proposals alone may omit both offsets; their unique exact literal quotes are resolved in code. Missing or mismatched offsets never select a repeated quote. Raw supplied values, including null pairs, and evidence_resolutions remain recorded; canonical evidence always has exact integer offsets. Ambiguous and nonliteral evidence is rejected without normalization.",
             "scope": "verbal_transcript",
             "timestamp_resolution": "source_segment",
             "completeness_proven": False,
@@ -1932,7 +1939,7 @@ class _AnalysisRun(SemanticInventory):
             ),
         }
         report = InformationReport(
-            7,
+            8,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -2096,7 +2103,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         counts_provisional=True,
     )
     return InformationReport(
-        7,
+        8,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",

@@ -58,7 +58,7 @@ class OutputSpec:
 
     kind: Literal[
         "text", "topics", "topic", "string_list", "answers", "pattern",
-        "information_units", "information_qa",
+        "information_units", "information_qa", "information_foci",
     ] = (
         "text"
     )

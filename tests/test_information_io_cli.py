@@ -99,7 +99,7 @@ class InformationIOTests(unittest.TestCase):
         save_information_report(report, path, csv_path=csv_path)
         exported = json.loads(path.read_text(encoding="utf-8"))
         unit, record = exported["units"][0], exported["candidates"][0]
-        self.assertEqual(7, exported["schema_version"])
+        self.assertEqual(8, exported["schema_version"])
         self.assertIsNone(unit["qualifiers"])
         self.assertEqual("unknown", unit["qualifier_state"])
         self.assertEqual(record["id"], unit["representative_candidate_id"])

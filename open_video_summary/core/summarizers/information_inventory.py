@@ -24,7 +24,15 @@ FOCUS_INSTRUCTION = (
     "source focus, with literal evidence and every necessary qualifier. These are "
     "coverage hypotheses, not accepted inventory units. Do not infer coverage from "
     "citations. Do not turn conditions, attribution or modality into asserted events. "
-    "No existing inventory is supplied. Set question and answer to null."
+    "No existing inventory is supplied. Set question and answer to null. "
+    "For this source-focus request, copy precise literal evidence quotes and set "
+    "BOTH start_char and end_char to null when a quote occurs exactly once in its "
+    "cited original segment; the application computes the exact Unicode offsets. "
+    "Do not calculate offsets for unique quotes. If a quote occurs more than once, "
+    "supply exact integer offsets identifying the intended occurrence; never choose "
+    "an arbitrary repetition. Keep every separately asserted occurrence. A null "
+    "offset pair cannot identify a repeated quote and will remain unresolved. "
+    "Do not expand evidence to unrelated assertions just to make a quote unique."
 )
 DECOMPOSITION_INSTRUCTION = (
     "Propose a complete decomposition of the supplied parent into independently "
@@ -60,8 +68,22 @@ MATCH_INSTRUCTION = (
 )
 
 
+def focus_protocol():
+    """Change only the focus wire representation, not canonical evidence rules."""
+    from open_video_summary.core.summarizers.information_analysis import PROTOCOL
+
+    return PROTOCOL.replace(
+        "Evidence is an exact substring at zero-based\n"
+        "Python Unicode character offsets [start_char,end_char).",
+        "Evidence quotes must be exact substrings of their cited original segments.\n"
+        "For unique quotes, set both offsets to null; the application computes canonical\n"
+        "zero-based Python Unicode character offsets [start_char,end_char).",
+    )
+
+
 def inventory_templates():
     return {"focus_discovery": FOCUS_INSTRUCTION,
+            "focus_protocol": focus_protocol(),
             "decomposition_generation": DECOMPOSITION_INSTRUCTION,
             "joint_granularity": JOINT_INSTRUCTION,
             "decomposition_checks": DECOMPOSITION_QUESTIONS,
@@ -83,13 +105,15 @@ class SemanticInventory:
         from open_video_summary.core.summarizers.information_analysis import PROTOCOL
 
         context = self._context(target)
-        spec = OutputSpec(kind="information_units",
+        focus = task == "discover_coverage_foci"
+        spec = OutputSpec(kind="information_foci" if focus else "information_units",
             max_items=limit or self.config.max_candidates_per_route,
             segment_ids=(target.id,) + tuple(item.id for item in context))
         data = {"target": self._segment_data(target),
                 "context": [self._segment_data(item) for item in context],
                 "analysis_task": task, **(extra or {})}
-        prompt = (PROTOCOL + "\n" + instruction + "\nReturn exactly this JSON schema:\n"
+        protocol = focus_protocol() if focus else PROTOCOL
+        prompt = (protocol + "\n" + instruction + "\nReturn exactly this JSON schema:\n"
                   + canonical_json(information_schema(spec)) + "\nInput:\n" + canonical_json(data))
         return prompt, spec
 

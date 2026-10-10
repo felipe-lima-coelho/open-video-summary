@@ -463,8 +463,9 @@ units, assertion evidence groups and their alignment state, context evidence,
 pair relations, joint decompositions, individual source foci, coverage records,
 counts by segment/video/whole input and unresolved issues. Calls record requested
 and returned models, input/output hashes, usage when available, latency and retry
-attempts. Report schema 7 retains evidence-resolution records, separates content
-validation from annotation audit, and keeps canonical qualifiers nullable.
+attempts. Report schema 8 retains nullable supplied offsets in evidence-resolution
+records, separates content validation from annotation audit, and keeps canonical
+qualifiers nullable. Canonical evidence offsets remain integers.
 Source data and older reports are not rewritten. Generator and evaluator template hashes, the evaluator
 template version, protocol version and settings are retained without keys.
 The optional CSV is an occurrence evidence table with alignment state, report
@@ -648,6 +649,19 @@ when the supplied bounds and literal slice verify against the original target.
 The rule applies only to that target's window metadata; evidence and reference
 problems remain operative. Actual outside-window assertions remain
 unresolved, with their original and resolved offsets preserved.
+
+Independent source-focus generation uses the `information_foci` output schema.
+It copies precise literal quotes and may leave both character offsets `null` for
+a quote that occurs exactly once in its cited segment. Code locates that exact
+Unicode substring and records the supplied nulls and resolved integer offsets.
+Repeated quotes still require correct supplied integer offsets identifying their
+own occurrence; missing or incorrect bounds never select the first occurrence.
+Mixed null/integer pairs, nonliteral quotes, normalization and evidence from a
+forbidden source remain rejected. Other generation routes retain their existing
+integer-offset schemas. The source, model, reasoning effort, output ceiling,
+provider deadlines and all semantic acceptance checks remain unchanged. This
+removes unnecessary model-side coordinate calculation; real latency and quality
+must still be measured for each experiment.
 
 Recovery requests share repeated literal citations through one `evidence_table`.
 Exact duplicate projected candidates share an `ids` list. Every accepted claim,

@@ -140,7 +140,7 @@ class DomainResponseInterpreter:
         try:
             value = json.loads(text, object_pairs_hook=unique_keys)
         except (TypeError, ValueError):
-            if spec.kind in {"information_units", "information_qa"}:
+            if spec.kind in {"information_units", "information_qa", "information_foci"}:
                 raise InvalidResponseError("Information candidates require valid JSON.") from None
             # Existing local notebooks also accept Python literal dictionaries.
             try:
@@ -164,7 +164,7 @@ class DomainResponseInterpreter:
                     "The language model returned malformed structured text."
                 ) from None
 
-        if spec.kind in {"information_units", "information_qa"}:
+        if spec.kind in {"information_units", "information_qa", "information_foci"}:
             from open_video_summary.adapters.information_schema import validate_information
 
             return validate_information(value, spec)
@@ -741,7 +741,7 @@ class OpenAIAdapter(LLMAdapter):
                 "required": ["answers"],
                 "additionalProperties": False,
             }
-        elif spec.kind in {"information_units", "information_qa"}:
+        elif spec.kind in {"information_units", "information_qa", "information_foci"}:
             from open_video_summary.adapters.information_schema import information_schema
 
             schema = information_schema(spec)
