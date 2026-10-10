@@ -329,7 +329,7 @@ claim does not. Source foci do not count as candidate units or occurrences.
 The separate open audit still traverses the original source for content that
 never became a focus. No-progress and budget stops leave unresolved records
 visible; even a completed run does not prove exhaustive coverage. Reports use
-schema 7, retain model and prompt versions, and treat probability/confidence as
+schema 8, retain model and prompt versions, and treat probability/confidence as
 routing signals rather than measured application accuracy.
 
 For matched experiments, `--information-mode direct`, `qa`, `hybrid`, and
