@@ -17,6 +17,7 @@ from open_video_summary.core.summarizers.information_contracts import (
     CoverageFocus, CoverageMatch, InformationRelation, capture_snapshot,
 )
 from open_video_summary.core.summarizers.information_inventory import DECOMPOSITION_QUESTIONS
+from open_video_summary.core.summarizers.information_evaluation import validation_spec
 from open_video_summary.errors import AuthenticationError, ConfigurationError, InvalidResponseError, RequestCancelledError
 
 
@@ -95,6 +96,42 @@ class InformationInventoryTests(unittest.TestCase):
 
     def split_evaluator(self, **kwargs):
         return InventoryEvaluator(splits={self.source: (self.frequency["text"], self.retention["text"])}, **kwargs)
+
+    def test_incomplete_optional_qa_retains_record_without_judging_or_crashing_recovery(self):
+        source = "O backup foi concluído. A retenção mudou."
+        malformed = candidate("v0:s0", source, quote="O backup foi concluído.")
+        malformed.update(question="O que foi concluído?", answer=None,
+                         unresolved_references=["O que foi concluído."])
+        valid = candidate("v0:s0", source, quote="A retenção mudou.")
+        evaluator = InventoryEvaluator(coverage={"v0:s0": [.99, .01]})
+        report, _ = self.run_inventory(texts=[source], recovery=[malformed, valid],
+            evaluator=evaluator, max_coverage_foci=0, max_granularity_checks=0)
+        damaged = report.candidates[0]
+        self.assertEqual(("recovery", "needs_repair", ("incomplete_qa",)),
+            (damaged.route, damaged.validation, damaged.reasons))
+        self.assertEqual(malformed, json.loads(damaged.raw_json))
+        self.assertEqual((malformed["question"], None, tuple(malformed["unresolved_references"])),
+            (damaged.candidate.question, damaged.candidate.answer, damaged.candidate.unresolved_references))
+        self.assertEqual((), damaged.signals)
+        self.assertEqual("not_evaluated", damaged.annotation_state)
+        self.assertEqual("accepted", report.candidates[1].validation)
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertTrue(all(damaged.id not in unit.candidate_ids for unit in report.units))
+        self.assertIn("incomplete_candidate_qa", [item.kind for item in report.issues])
+        self.assertNotIn("gap_repair_failed", [item.kind for item in report.issues])
+        with self.assertRaisesRegex(ValueError, "both be nonempty strings or both null"):
+            validation_spec(damaged.candidate, damaged.id, report.snapshot.current_segments[0])
+
+    def test_answer_without_question_is_also_preserved_as_needing_repair(self):
+        raw = dict(self.frequency, question=None, answer=self.frequency["text"])
+        report, _ = self.run_inventory(direct=[raw], experimental_mode="direct")
+        record = report.candidates[0]
+        self.assertEqual("needs_repair", record.validation)
+        self.assertEqual(("incomplete_qa",), record.reasons)
+        self.assertEqual(raw, json.loads(record.raw_json))
+        self.assertEqual(0, report.counts.unique_units)
+        self.assertFalse(any(call.operation in {"validate_candidate", "bind_candidate_anchor"}
+                             for call in report.calls))
 
     def test_joint_structure_replaces_misclassified_accepted_parent_with_verified_parts(self):
         report, _ = self.run_inventory(direct=[self.parent, self.frequency, self.retention],

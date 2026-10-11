@@ -277,6 +277,13 @@ fixtures are under `outputs/evaluation/jev_ab_predeclared_20261011T150237Z/`.
 
 ## Comparing results
 
+Optional candidate questions and answers must either both be present or both be
+null. An incomplete pair is retained verbatim as `needs_repair` with an
+`incomplete_qa` reason and a candidate-linked issue. It is not evaluated or
+counted, and it does not abort recovery of other candidates. The analyzer never
+fills in the missing answer from the claim or silently discards the malformed
+annotation.
+
 For a comparison, keep and report every run's signature, digest, status, settings,
 counts and diagnostics. A changed signature means a recorded manifest field
 differs. A matching signature with a changed digest shows that the canonical

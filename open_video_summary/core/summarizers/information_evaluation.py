@@ -256,8 +256,19 @@ def _source_scope(candidate, target, context):
     ]
 
 
+def validate_qa_pair(candidate):
+    """Keep a malformed optional QA pair distinct from an absent pair."""
+    if candidate.question is None and candidate.answer is None:
+        return False
+    if not all(isinstance(value, str) and value.strip()
+               for value in (candidate.question, candidate.answer)):
+        raise ValueError("Candidate question and answer must both be nonempty strings or both null.")
+    return True
+
+
 def validation_spec(candidate, candidate_id, target, context=()):
     """Return source-scope fidelity checks and a separate annotation audit."""
+    has_qa = validate_qa_pair(candidate)
     blocks = [
         f"Candidate id: {candidate_id}\nTarget id: {target.id}",
         SCOPE_INSTRUCTION,
@@ -278,7 +289,7 @@ def validation_spec(candidate, candidate_id, target, context=()):
     questions["negation_annotation"] = NEGATION_ANNOTATION_QUESTIONS[
         qualifiers.negated
     ]
-    if candidate.question is not None:
+    if has_qa:
         blocks += [
             "Candidate question:\n" + candidate.question,
             "Candidate answer:\n" + candidate.answer,

@@ -66,6 +66,7 @@ from open_video_summary.core.summarizers.information_evaluation import (
     reconcile_equivalence,
     passes_probability_cutoff,
     validation_spec,
+    validate_qa_pair,
     SENTENCE_BOUNDARY,
 )
 from open_video_summary.core.summarizers.information_inventory import (
@@ -973,6 +974,12 @@ class _AnalysisRun(SemanticInventory):
         record = replace(record, candidate=candidate, validation="not_evaluated",
                          evidence_resolutions=resolutions)
         records.append(record)
+        try:
+            validate_qa_pair(candidate)
+        except ValueError as exc:
+            records[-1] = replace(record, validation="needs_repair", reasons=("incomplete_qa",))
+            self.issue("incomplete_candidate_qa", str(exc), (target.id,), (identifier,))
+            return records[-1]
         if not evaluate:
             records[-1] = replace(record, reasons=("validation_budget_reserved_for_audit",))
             return records[-1]
