@@ -388,7 +388,7 @@ class InformationStabilityTests(unittest.TestCase):
         short = [candidate("v0:s0", source, text=text) for text in
                  ("O telefone funciona com o sistema.", "O sistema permite o funcionamento do telefone.",
                   "Usar aplicativos é possível com o sistema.", "O sistema viabiliza o uso de aplicativos.")]
-        evaluator = GranularityEvaluator(atomicity=.5,
+        evaluator = InventoryEvaluator(
             splits={source: tuple(item["text"] for item in parts)})
         generator = ScriptedGenerator(callback=lambda data, route: [*short, *parts] if route == "direct" else [])
         report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
@@ -482,7 +482,8 @@ class InformationStabilityTests(unittest.TestCase):
         self.assertEqual(("not_reviewed", None), (alias.atomicity_state, alias.atomicity_review_origin))
         self.assertFalse(run._component_eligible(alias))
         # Even two independently accepted aliases are only one distinct meaning.
-        children = [replace(row, validation="accepted", granularity="atomic") for row in (first, alias)]
+        children = [replace(row, validation="accepted", granularity="atomic", atomicity_state="atomic")
+                    for row in (first, alias)]
         signals = (("splittable", .99), ("proper_part:" + first.id, .99))
         before = (len(run.calls), run.budget.remaining, run.granularity_checks)
         proof = run._verify_decomposition(run.snapshot.current_segments[0], parent, children, signals)
@@ -509,6 +510,140 @@ class InformationStabilityTests(unittest.TestCase):
         self.assertEqual("compound", alias.atomicity_state)
         self.assertEqual(original.id, alias.atomicity_review_origin)
         self.assertEqual((alias.id, atom.id), proof.component_candidate_ids)
+
+    def test_generated_choice_atoms_require_independent_audit_before_parent_replacement(self):
+        source = "Backup is daily, retention lasts 30 days and the network is private."
+        compound = "Backup is daily and retention lasts 30 days."
+        atom = "The network is private."
+        for outcome, cap in (("compound", 2), ("uncertain", 2), ("not_reviewed", 1)):
+            with self.subTest(outcome=outcome):
+                class ChildEvaluator(InventoryEvaluator):
+                    def evaluate(self, context, noul=None, choice=None):
+                        result = super().evaluate(context, noul, choice)
+                        if outcome == "uncertain" and context.startswith('{') and '"claim0_text"' in context:
+                            state = json.loads(context)
+                            result = replace(result, noul=tuple(replace(item, probability=.5)
+                                if state[item.id.rsplit('_', 1)[0] + '_text'] == compound else item
+                                for item in result.noul))
+                        return result
+                evaluator = ChildEvaluator(splits={source:(compound, atom),
+                    compound:("Backup is daily.", "Retention lasts 30 days.")})
+                generator = ScriptedGenerator(callback=lambda data, route:
+                    [candidate("v0:s0", source), candidate("v0:s0", source)] if route == "direct" else
+                    [candidate("v0:s0", source, text=text) for text in (compound, atom)]
+                    if route == "decompose_candidate" else [])
+                report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
+                    experimental_mode="direct", concurrency=1, max_source_sentences=0,
+                    max_literal_repairs=0, max_granularity_checks=cap, max_calls=128)).analyze(
+                        capture_snapshot(videos([source])))
+                parents = [row for row in report.candidates if row.candidate.text == source]
+                child = next(row for row in report.candidates if row.candidate.text == compound)
+                self.assertEqual("accepted", child.validation)
+                self.assertEqual("atomic", child.granularity)
+                self.assertEqual(outcome, child.atomicity_state)
+                self.assertEqual(2, len(parents))
+                self.assertTrue(all(row.inventory_role == "unit_candidate" for row in parents))
+                self.assertFalse(any(proof.state == "verified" for proof in report.decompositions))
+                self.assertFalse(any(call.operation == "verify_decomposition" for call in report.calls))
+                proof = next(row for row in report.decompositions if row.parent_candidate_id == parents[0].id)
+                self.assertEqual("insufficient_distinct_components", proof.reason)
+                self.assertIn(child.id, proof.component_candidate_ids)
+                self.assertEqual(3, report.counts.unique_units)
+                metadata = json.loads(report.metadata_json)
+                self.assertLessEqual(metadata["atomicity_review_requests"], cap)
+                self.assertLessEqual(metadata["granularity_checks"], cap)
+                self.assertLessEqual(metadata["logical_calls"], 128)
+                if outcome == "not_reviewed":
+                    self.assertIn("atomicity_review_budget", {item.kind for item in report.issues})
+
+    def test_later_child_atomicity_invalidates_active_proof_and_restores_all_parent_aliases(self):
+        source = "O backup é diário e a retenção dura 30 dias."
+        parts = ("O backup é diário.", "A retenção dura 30 dias.")
+        for changed_state in ("compound", "uncertain"):
+            with self.subTest(changed_state=changed_state):
+                class RevisingEvaluator(InventoryEvaluator):
+                    revised = False
+                    def evaluate(self, context, noul=None, choice=None):
+                        result = super().evaluate(context, noul, choice)
+                        if self.revised and context.startswith('{') and '"claim0_text"' in context:
+                            state = json.loads(context)
+                            result = replace(result, noul=tuple(replace(item,
+                                probability=(.5 if changed_state == "uncertain" else
+                                             .01 if item.id.endswith("_atomic") else .99))
+                                if state[item.id.rsplit('_', 1)[0] + '_text'] == parts[0] else item
+                                for item in result.noul))
+                        return result
+                evaluator = RevisingEvaluator(splits={source:parts})
+                run = self.run_for(source, evaluator=evaluator, max_granularity_checks=8)
+                parents = [self.validate(run, candidate("v0:s0", source)) for _ in range(2)]
+                children = [self.validate(run, candidate("v0:s0", source, text=text)) for text in parts]
+                target = run.snapshot.current_segments[0]
+                run._reconcile_granularity(target)
+                first = next(item for item in run.decompositions if item.state == "verified")
+                current = {item.id:item for item in run.candidates}
+                second = run._verify_decomposition(target, current[parents[0].id],
+                    [current[item.id] for item in children], (("second_concrete_review", .99),))
+                self.assertEqual("verified", second.state)
+                self.assertEqual(second.id, next(item for item in run.decompositions if item.id == first.id).superseded_by)
+                # Simulate a genuinely new independent audit, retaining the
+                # existing request counter and global budget instead of resetting.
+                evaluator.revised = True
+                del run.atomicity_reviews[exact_proposition_key(children[0])]
+                before_requests, before_calls = run.atomicity_review_requests, len(run.calls)
+                run._review_atomicity(target)
+                self.assertEqual(before_requests + 1, run.atomicity_review_requests)
+                self.assertEqual(before_calls + 1, len(run.calls))
+                active = next(item for item in run.decompositions if item.id == second.id)
+                self.assertEqual("conflicting" if changed_state == "compound" else "uncertain", active.state)
+                self.assertEqual(second.signals, active.signals)
+                self.assertTrue(all(row.inventory_role == "unit_candidate" for row in run.candidates
+                                    if row.candidate.text == source))
+                late = self.validate(run, candidate("v0:s0", source, unit_type="definition"))
+                calls = len(run.calls)
+                run._inherit_decomposition_state()
+                self.assertEqual(calls, len(run.calls))
+                for row in run.candidates:
+                    if row.candidate.text == source:
+                        self.assertEqual("unit_candidate", row.inventory_role)
+                        self.assertIn(active.id, row.decomposition_ids)
+                current = {item.id:item for item in run.candidates}
+                self.assertEqual(changed_state, current[children[0].id].atomicity_state)
+                self.assertTrue(all({item.id for item in parents} <= set(current[child.id].parent_candidate_ids)
+                                    for child in children))
+                self.assertIn(active.id, current[late.id].decomposition_ids)
+                self.assertEqual("verified", next(item for item in run.decompositions if item.id == first.id).state)
+                self.assertFalse(any(item.state == "verified" and item.superseded_by is None
+                                     for item in run.decompositions))
+
+    def test_capped_peer_set_is_invariant_to_route_order_and_exact_aliases(self):
+        source = "Backup is daily and retention lasts 30 days. The network is private and access is paid."
+        parent = "Backup is daily and retention lasts 30 days."
+        parts = ["Backup is daily.", "Retention lasts 30 days."]
+        others = ["The network is private.", "Access is paid."]
+        observations = []
+        for first, second, duplicate in ((parts, others, False), (others, parts, False),
+                (list(reversed(parts)), list(reversed(others)), True),
+                (list(reversed(others)), list(reversed(parts)), True)):
+            evaluator = InventoryEvaluator(splits={parent:tuple(parts)})
+            def generate(data, route):
+                texts = [parent, *first] if route == "direct" else [*second, *([parent] if duplicate else [])] if route == "qa" else []
+                return [candidate("v0:s0", source, text=text, qa=True) for text in texts]
+            report = InformationAnalyzer(ScriptedGenerator(callback=generate), evaluator,
+                InformationAnalysisConfig(concurrency=1, max_source_sentences=0, max_literal_repairs=0,
+                    max_candidates_per_route=3, max_granularity_checks=1, max_calls=128,
+                    max_direct_windows=1, max_qa_windows=1,
+                    direct_window_chars=4000, qa_window_chars=4000)).analyze(
+                        capture_snapshot(videos([source])))
+            review = next((state, questions) for state, questions in evaluator.inventory_calls if "splittable" in questions)
+            parents = [row for row in report.candidates if row.candidate.text == parent]
+            self.assertEqual(2 if duplicate else 1, len(parents))
+            self.assertTrue(all(row.inventory_role == "decomposed_parent" for row in parents))
+            self.assertEqual(4, report.counts.unique_units)
+            self.assertEqual(3, len(review[0]["component_claim_texts"]))
+            self.assertTrue(set(parts) <= set(review[0]["component_claim_texts"]))
+            self.assertEqual(1, json.loads(report.metadata_json)["granularity_checks"])
+            observations.append((review, [unit.text for unit in report.units]))
+        self.assertTrue(all(row == observations[0] for row in observations[1:]))
 
     def test_source_qualified_child_must_still_be_a_part_of_the_explicit_parent(self):
         source = "O sistema faz o telefone funcionar e permite usar aplicativos."

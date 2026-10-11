@@ -301,6 +301,16 @@ An exact alias inherits the current independent atomicity audit before component
 eligibility is checked; a previously identified compound cannot become an atomic
 child merely by arriving again through a different discovery route.
 
+Every component requires an independent atomicity audit before a parent can be
+replaced, including generated children whose first Choice label was `atomic`.
+Those audits share the original request cap. An exhausted audit budget leaves the
+partition provisional and the parent visible. If later independent evidence makes
+a component compound or uncertain, the active partition loses verification and
+all exact parent aliases are restored; previous signals, superseded proofs and
+parent-child links remain historical evidence. Joint-review peers are ordered by
+source coordinates and complete meaning, then deduplicated, before the peer cap
+and local question indices are applied.
+
 For a comparison, keep and report every run's signature, digest, status, settings,
 counts and diagnostics. A changed signature means a recorded manifest field
 differs. A matching signature with a changed digest shows that the canonical

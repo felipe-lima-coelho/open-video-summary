@@ -170,11 +170,9 @@ class SemanticInventory:
                        atomicity_review_origin=origin)
 
     def _component_eligible(self, record):
-        """A supported compound or unaudited gray child is not a verified atom."""
+        """Only independent atomicity evidence can certify a component."""
         record = self._with_known_atomicity(record)
-        return (self._content_eligible(record) and record.atomicity_state != "compound"
-                and (record.atomicity_state == "atomic" or
-                     record.validation == "accepted" and record.granularity == "atomic"))
+        return self._content_eligible(record) and record.atomicity_state == "atomic"
 
     def _inventory_request(self, target, task, instruction, extra=None, *, limit=None,
                            focus_fallback=False):
@@ -253,6 +251,8 @@ class SemanticInventory:
                                   for index, item in enumerate(records)}}
 
     def _record_decomposition(self, parent, children, state, signals=(), reason=""):
+        if state == "verified" and not all(self._component_eligible(item) for item in children):
+            state, reason = "uncertain", "component_atomicity_unresolved"
         identifiers = tuple(item.id for item in children)
         identifier = "d:" + fingerprint((parent.id, identifiers, state, tuple(signals), reason))[:20]
         existing = next((item for item in self.decompositions if item.id == identifier), None)
@@ -292,6 +292,19 @@ class SemanticInventory:
         the entire exact family, including aliases introduced by a later route.
         """
         records = {item.id: item for item in self.candidates if item.candidate is not None}
+        # A previously verified proof cannot outlive its component atomicity.
+        # Keep its native signals and historical links; only its active status
+        # changes, restoring every parent alias through the common lifecycle.
+        for index, decomposition in enumerate(self.decompositions):
+            if decomposition.state != "verified" or decomposition.superseded_by is not None:
+                continue
+            children = [records.get(identifier) for identifier in decomposition.component_candidate_ids]
+            if any(item is None or not self._component_eligible(item) for item in children):
+                compound = any(item is not None and self._with_known_atomicity(item).atomicity_state == "compound"
+                               for item in children)
+                self.decompositions[index] = replace(decomposition,
+                    state="conflicting" if compound else "uncertain",
+                    reason="component_atomicity_conflicts_with_partition" if compound else "component_atomicity_unresolved")
         families = {}
         for decomposition in self.decompositions:
             parent = records.get(decomposition.parent_candidate_id)
@@ -404,6 +417,7 @@ class SemanticInventory:
         if pending:
             self.issue("atomicity_review_budget", "Accepted candidates remain without independent atomicity review; their units remain provisional.",
                        (target.id,), tuple(item.id for item in pending))
+        self._inherit_decomposition_state()
 
     def _reconcile_granularity(self, target):
         if self.defer_granularity:
@@ -439,7 +453,11 @@ class SemanticInventory:
                 continue
             reviewed_meanings.add(meaning)
             peers, seen = [], set()
-            for peer in self._accepted(target.id):
+            # Select exact meanings in semantic source order before applying the
+            # cap or assigning local component indices. Discovery routes and IDs
+            # remain provenance, not admission priority.
+            for peer in sorted(self._accepted(target.id),
+                               key=lambda item: canonical_candidate_key(item, source_order)[:-2]):
                 if peer.id == parent.id or not assertion_overlap(parent.candidate, peer.candidate):
                     continue
                 key = exact_proposition_key(peer)
@@ -479,8 +497,8 @@ class SemanticInventory:
             # comparisons, including when generated components are added.
             joint_signals = (*signals.items(), *(("proper_part:" + peer.id, signals[f"component{index}"])
                                                  for index, peer in enumerate(peers)))
-            selected = [peer for index, peer in enumerate(peers)
-                        if yes(signals[f"component{index}"]) and self._component_eligible(peer)]
+            proposed = [peer for index, peer in enumerate(peers) if yes(signals[f"component{index}"])]
+            selected = [peer for peer in proposed if self._component_eligible(peer)]
             if no(signals["splittable"]) and not selected and not compound:
                 continue
             if no(signals["splittable"]):
@@ -508,17 +526,21 @@ class SemanticInventory:
                     record = self._validate(raw, target, "decomposition", 0, permitted,
                                             parent_candidate_ids=(parent.id,))
                     generated.append(record)
-                if any(item.validation == "supported_pending_granularity" for item in generated):
+                if generated:
                     self._review_atomicity(target)
                 for record in generated:
                     record = next(item for item in self.candidates if item.id == record.id)
+                    if self._content_eligible(record) and exact_proposition_key(record) not in {
+                            exact_proposition_key(item) for item in proposed}:
+                        proposed.append(record)
                     if self._component_eligible(record) and record.id not in {item.id for item in selected}:
                         if exact_proposition_key(record) not in {exact_proposition_key(item) for item in selected}:
                             selected.append(record)
+            witnesses = selected if len(selected) >= 2 else proposed
             if self.budget.remaining <= 1:
-                self._record_decomposition(parent, selected, "uncertain", joint_signals, reason="decomposition_verification_budget")
-            elif selected:
-                self._verify_decomposition(target, parent, selected, joint_signals)
+                self._record_decomposition(parent, witnesses, "uncertain", joint_signals, reason="decomposition_verification_budget")
+            elif witnesses:
+                self._verify_decomposition(target, parent, witnesses, joint_signals)
             else:
                 self._record_decomposition(parent, (), "partial", joint_signals, "no_verified_components")
         self._review_atomicity(target)

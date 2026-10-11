@@ -338,7 +338,9 @@ class InformationInventoryTests(unittest.TestCase):
 
     def test_joint_component_identity_survives_filtering_and_later_verification(self):
         evaluator = InventoryEvaluator(
-            joint={self.source: {"splittable": .99, "component0": .1, "component1": .99}},
+            # Canonical source/text ordering places frequency before retention,
+            # independently of the deliberately reversed discovery order below.
+            joint={self.source: {"splittable": .99, "component0": .99, "component1": .1}},
             verification={self.source: dict.fromkeys(DECOMPOSITION_QUESTIONS, .5)},
             relation={frozenset((self.source, self.retention["text"])): "equivalent",
                       frozenset((self.source, self.frequency["text"])): "equivalent"})
@@ -347,7 +349,7 @@ class InformationInventoryTests(unittest.TestCase):
         decomposition = next(item for item in report.decompositions if item.parent_candidate_id == "c0")
         self.assertEqual(("c2",), decomposition.component_candidate_ids)
         checks = dict(decomposition.signals)
-        self.assertEqual((.1, .99, .1, .99),
+        self.assertEqual((.99, .1, .1, .99),
                          tuple(checks[key] for key in ("component0", "component1", "proper_part:c1", "proper_part:c2")))
         relations = {frozenset((item.left_candidate_id, item.right_candidate_id)): item for item in report.relations}
         self.assertEqual("equivalent", relations[frozenset(("c0", "c1"))].equivalence_state)
@@ -399,6 +401,8 @@ class InformationInventoryTests(unittest.TestCase):
 
     def test_verified_partition_also_conflicts_with_parent_equivalence_and_restores_parent(self):
         run = self.seeded_inventory([self.parent, self.frequency, self.retention])
+        run.config = replace(run.config, max_granularity_checks=1)
+        run._review_atomicity(run.snapshot.current_segments[0])
         run._record_decomposition(run.candidates[0], run.candidates[1:], "verified",
                                   dict.fromkeys(DECOMPOSITION_QUESTIONS, .99).items())
         run.relations = [InformationRelation("c0", "c1", "equivalent", .99, .99)]
