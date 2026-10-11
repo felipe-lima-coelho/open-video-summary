@@ -431,10 +431,12 @@ def build_parser() -> argparse.ArgumentParser:
 def _information_arguments(parser):
     parser.add_argument("--information-csv", default=None, help="Optional occurrence table in a new CSV under outputs/.")
     parser.add_argument("--no-information-qa", dest="information_qa", action="store_false", default=None)
+    parser.add_argument("--information-reproducible", action="store_true", default=None,
+                        help="Use source-order serial requests and individual pair comparisons; fresh provider outputs can still vary.")
     parser.add_argument("--information-mode", choices=("direct", "qa", "hybrid", "hybrid_coverage"), default=None,
                         help="Symmetric extraction ablation; explicit mode overrides the legacy QA switch. Only hybrid_coverage runs source coverage and gap recovery.")
     parser.add_argument("--information-granularity-checks", type=int, default=None,
-                        help="Bounded joint parent/parts reviews per target (default 8; 0 disables).")
+                        help="Atomicity audit batches (up to 8 claims each) and joint parent/parts reviews per target (default 8 each; 0 disables).")
     parser.add_argument("--information-coverage-foci", type=int, default=None,
                         help="Maximum independently discovered source foci per target (default 16; 0 selects the legacy segment audit).")
     parser.add_argument("--information-gap-repairs", type=int, default=None,
@@ -446,15 +448,15 @@ def _information_arguments(parser):
     parser.add_argument("--information-pair-batch-size", type=int, default=None,
                         help="Independently keyed pair decisions per request (default 4; 1 is the individual baseline).")
     parser.add_argument("--information-relation-adjudications", type=int, default=None,
-                        help="Maximum individual follow-ups for uncertain pair relations (default 256).")
+                        help="Maximum individual follow-ups, prioritizing mandatory confirmation of prospective equivalence (default 256).")
     parser.add_argument("--information-direct-window-chars", type=int, default=None,
                         help="Direct discovery source-window size for longer targets (default 240).")
     parser.add_argument("--information-max-direct-windows", type=int, default=None,
-                        help="Bounded direct generations per long target, including failed-window recovery (default 16).")
+                        help="Bounded direct generations per long target, including failed and saturated window recovery (default 16).")
     parser.add_argument("--information-qa-window-chars", type=int, default=None,
                         help="Independent QA source-window size in original characters (default 240).")
     parser.add_argument("--information-max-qa-windows", type=int, default=None,
-                        help="Bounded QA generations per target, including failed-window recovery (default 16).")
+                        help="Bounded QA generations per target, including failed and saturated window recovery (default 16).")
     parser.add_argument("--information-rounds", type=int, default=None)
     parser.add_argument("--information-literal-repairs", type=int, default=None,
                         help="Maximum full-source-sentence repairs per target after discovery (default 4; 0 disables).")

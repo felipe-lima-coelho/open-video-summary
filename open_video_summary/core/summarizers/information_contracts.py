@@ -265,6 +265,9 @@ class CandidateRecord:
     parent_candidate_ids: tuple[str, ...] = ()
     decomposition_ids: tuple[str, ...] = ()
     recovery_focus_id: str | None = None
+    atomicity_state: str = "not_reviewed"
+    atomicity_signals: tuple[tuple[str, float], ...] = ()
+    atomicity_review_origin: str | None = None
 
 
 @dataclass(frozen=True)

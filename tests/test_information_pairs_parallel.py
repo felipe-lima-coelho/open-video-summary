@@ -12,6 +12,7 @@ from open_video_summary.adapters.typesafe import TypeSafeConfig, TypeSafeEvaluat
 
 from open_video_summary.contracts import (
     ChoiceResult,
+    NoulResult,
     EvaluationMetadata,
     EvaluationResult,
 )
@@ -154,7 +155,12 @@ class ForkingEvaluator:
         self.records.append(metadata)
         if error is not None:
             raise error
-        return EvaluationResult((), tuple(decisions), metadata)
+        relation = self.relations.get(frozenset((left, right)), "complementary")
+        true = {"left_entails_right": relation in {"equivalent", "more_specific_left"},
+                "right_entails_left": relation in {"equivalent", "more_specific_right"},
+                "same_complete_meaning": relation == "equivalent", "incompatible": relation == "contradiction",
+                "correction_left": relation == "correction_left", "correction_right": relation == "correction_right"}
+        return EvaluationResult(tuple(NoulResult(key, .99 if true[key] else .01) for key in (noul or {})), tuple(decisions), metadata)
 
 
 def make_run(texts, *, config=None, tracker=None, relations=None, duplicates=()):
@@ -203,6 +209,7 @@ def make_run(texts, *, config=None, tracker=None, relations=None, duplicates=())
                 "{}",
                 "accepted",
                 annotation_state="verified",
+                atomicity_state="atomic",
             )
         )
 

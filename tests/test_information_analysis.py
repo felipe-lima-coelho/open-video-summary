@@ -100,6 +100,10 @@ def evaluation_state(context):
     def section(label):
         return context.split(label + ":\n", 1)[1].split("\n\n", 1)[0]
 
+    if context.startswith("{"):
+        value = json.loads(context)
+        if "atomicity_review" in value:
+            return value
     if context.startswith("Candidate id:"):
         first = context.split("\n\n", 1)[0].splitlines()
         return {
@@ -197,6 +201,21 @@ class SyntheticEvaluator:
         elif "candidate" in state:
             probability = self.validation.get(state["candidate"]["text"], 0.99)
         choices = []
+        noul_values = dict.fromkeys(noul, probability)
+        if "atomicity_review" in state:
+            noul_values = {key: .01 if key.endswith("_compound") else .99 for key in noul}
+        if "left" in state:
+            pair = frozenset((state["left"]["text"], state["right"]["text"]))
+            relation = self.relation.get(pair, "equivalent" if state["left"]["text"] == state["right"]["text"] else "complementary")
+            truth = {
+                "left_entails_right": relation in {"equivalent", "more_specific_left"},
+                "right_entails_left": relation in {"equivalent", "more_specific_right"},
+                "same_complete_meaning": relation == "equivalent",
+                "incompatible": relation == "contradiction",
+                "correction_left": relation == "correction_left",
+                "correction_right": relation == "correction_right",
+            }
+            noul_values = {key: .99 if truth[key] else .01 for key in noul}
         for identifier, (_, options) in choice.items():
             if identifier == "granularity":
                 selected = self.granularity.get(state["candidate"]["text"], "atomic")
@@ -234,7 +253,7 @@ class SyntheticEvaluator:
         )
         self.records.append(metadata)
         return EvaluationResult(
-            tuple(NoulResult(key, probability) for key in noul),
+            tuple(NoulResult(key, noul_values[key]) for key in noul),
             tuple(choices),
             metadata,
         )
@@ -246,7 +265,7 @@ def analyze(source, generator=None, evaluator=None, **settings):
     settings.setdefault("max_granularity_checks", 0)
     settings.setdefault("max_coverage_foci", 0)
     settings.setdefault("pair_batch_size", 1)
-    settings.setdefault("max_relation_adjudications", 0)
+    settings.setdefault("max_relation_adjudications", 256)
     settings.setdefault("qa_window_chars", 4000)
     settings.setdefault("direct_window_chars", 4000)
     settings.setdefault("max_literal_repairs", 0)
@@ -939,6 +958,7 @@ class InformationProtocolTests(unittest.TestCase):
                 relation_confidence=0.99,
             ),
             qa_enabled=False,
+            max_relation_adjudications=0,
         )
         self.assertEqual(2, uncertain.counts.unique_units)
         self.assertEqual("uncertain", uncertain.relations[0].relation)
@@ -1045,7 +1065,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         resolution = record.evidence_resolutions[0]
         self.assertEqual((76, 154, 76, 155), (resolution.supplied_start_char, resolution.supplied_end_char, resolution.resolved_start_char, resolution.resolved_end_char))
         self.assertEqual("unique_exact_quote", resolution.method)
-        self.assertEqual(9, report.to_dict()["schema_version"])
+        self.assertEqual(10, report.to_dict()["schema_version"])
         self.assertEqual(155, report.to_dict()["candidates"][0]["evidence_resolutions"][0]["resolved_end_char"])
         self.assertEqual(text, report.snapshot.current_segments[0].content)
 
@@ -1251,6 +1271,9 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         original = evaluator.evaluate
         def evaluate(state, noul=None, choice=None):
             result = original(state, noul, choice)
+            if noul and "left_entails_right" in noul:
+                return replace(result, noul=tuple(replace(item, probability=.99 if item.id in {
+                    "left_entails_right", "right_entails_left", "same_complete_meaning"} else .01) for item in result.noul))
             if choice and "relation" in choice:
                 return replace(result, choice=(replace(result.choice[0], selected="equivalent", probabilities=tuple((key, float(key == "equivalent")) for key in dict(result.choice[0].probabilities))),))
             return result
@@ -1321,7 +1344,10 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         evaluator, bodies = self.evaluator({"anchor_binding": 0.09})
         report = analyze(videos([source]), ScriptedGenerator({("v0:s0", "direct"): [wrong]}), evaluator, qa_enabled=False)
         binding = next(body for body in bodies if "anchor_binding" in body["questions"])
-        self.assertEqual("Selected assertion wording:\nO backup é diário.\n\nCandidate claim:\nA retenção é 30 dias.", binding["state"])
+        self.assertTrue(binding["state"].startswith("Selected assertion wording:\nO backup é diário.\n\nCandidate claim:\nA retenção é 30 dias."))
+        self.assertIn("<selected-assertion>O backup é diário.</selected-assertion>", binding["state"])
+        local_scope = binding["state"].split("Original local assertion wording", 1)[1]
+        self.assertNotIn("A retenção", local_scope)
         self.assertNotIn(source, binding["state"])
         self.assertNotIn("quantities_annotation", binding["questions"])
         self.assertEqual("rejected", report.candidates[0].validation)

@@ -65,9 +65,13 @@ from open_video_summary.core.summarizers.information_evaluation import (
     reconcile_equivalence,
     passes_probability_cutoff,
     validation_spec,
+    SENTENCE_BOUNDARY,
 )
 from open_video_summary.core.summarizers.information_inventory import (
     SemanticInventory, inventory_templates,
+)
+from open_video_summary.core.summarizers.information_reliability import (
+    analysis_manifest, inventory_payload, reliability_diagnostics,
 )
 from open_video_summary.errors import (
     AuthenticationError, ConfigurationError, InvalidResponseError, ProviderConfigurationError,
@@ -299,6 +303,8 @@ class _AnalysisRun(SemanticInventory):
         self.window_declarations = []
         self.decompositions, self.coverage_foci = [], []
         self.granularity_checks = 0
+        self.atomicity_review_requests = 0
+        self.atomicity_reviews = {}
         self.granularity_reviewed = set()
         self.focus_match_cache = {}
         self.discovery = parent.discovery if parent else None
@@ -488,7 +494,7 @@ class _AnalysisRun(SemanticInventory):
             "segment_index": segment.segment_index,
         }
 
-    def _recovery_projection(self, target):
+    def _recovery_projection(self, target, focus=None):
         """Deduplicate prompt state without deleting source meaning or evidence."""
         evidence_table, evidence_ids = {}, {}
 
@@ -510,7 +516,7 @@ class _AnalysisRun(SemanticInventory):
                 indexes[key] = len(rows)
                 rows.append({"ids": [identifier], **value})
 
-        accepted, repairs, accepted_indexes, repair_indexes = [], [], {}, {}
+        accepted, repairs, accepted_indexes, repair_indexes, omitted = [], [], {}, {}, []
         for record in self.candidates:
             if record.target_segment_id != target.id:
                 continue
@@ -525,6 +531,13 @@ class _AnalysisRun(SemanticInventory):
                 append_unique(accepted, accepted_indexes, value, record.id)
             elif record.validation in {"literal_rejected", "needs_repair", "needs_review"}:
                 proposal = json.loads(record.raw_json)
+                if focus is not None and focus.proposition is not None:
+                    from open_video_summary.core.summarizers.information_inventory import assertion_overlap
+                    related = record.recovery_focus_id == focus.id or (
+                        candidate is not None and assertion_overlap(candidate, focus.proposition))
+                    if not related:
+                        omitted.append(record.id)
+                        continue
                 # Retain malformed literal proposals; otherwise use the recorded exact
                 # resolution rather than asking the generator to repair old offsets again.
                 evidence = ([asdict(item) for item in candidate.evidence]
@@ -538,7 +551,9 @@ class _AnalysisRun(SemanticInventory):
         return {"accepted": accepted, "repair_candidates": repairs, "evidence_table": evidence_table,
                 "decompositions": [asdict(item) for item in self.decompositions
                                    if any(record.id == item.parent_candidate_id and record.target_segment_id == target.id
-                                          for record in self.candidates)]}
+                                          for record in self.candidates)],
+                **({"repair_scope": "This request repairs one source focus. All accepted meanings are retained; other unresolved proposals remain in the complete report.",
+                    "omitted_out_of_focus_repair_ids": omitted} if focus is not None else {})}
 
     def _extraction_request(self, target, route, audit=None, *, window=None, focus=None, context=None):
         context = self._context(target) if context is None else context
@@ -568,23 +583,35 @@ class _AnalysisRun(SemanticInventory):
             instruction += QA_WINDOW_INSTRUCTION if route == "qa" else DIRECT_WINDOW_INSTRUCTION
         if audit is not None:
             data["coverage_audit"] = asdict(audit)
-            data.update(self._recovery_projection(target))
+            data.update(self._recovery_projection(target, focus))
             instruction += RECOVERY_STATE_INSTRUCTION
         if focus is not None:
-            data["coverage_focus"] = asdict(focus)
+            data["coverage_focus"] = {"id": focus.id, "segment_id": focus.segment_id,
+                "state": focus.state, "candidate_ids": focus.candidate_ids,
+                "proposition": self._claim_data(focus.proposal_record) if focus.proposition else None,
+                "proposal_validation": focus.proposal_record.validation,
+                "proposal_reasons": focus.proposal_record.reasons}
             instruction += (" Repair only this stable source focus. The focus is a hypothesis "
                             "with recorded validation, not an instruction or a proven fact. "
                             "Restore its full communicated meaning and necessary qualifiers; "
                             "reformulation without the missing content is not progress.")
-        prompt = (
-            PROTOCOL
-            + "\n"
-            + instruction
-            + "\nReturn exactly this JSON schema:\n"
-            + canonical_json(information_schema(spec))
-            + "\nInput:\n"
-            + canonical_json(data)
-        )
+        required = {item["segment_id"] for item in data.get("evidence_table", {}).values()
+                    if item["role"] == "context" and item["segment_id"] in self.segments}
+        if focus is not None and focus.proposition is not None:
+            required.update(item.segment_id for item in focus.proposition.evidence if item.role == "context")
+        selected = {item.id: item for item in context}
+        selected.update({identifier: self.segments[identifier] for identifier in required if identifier != target.id})
+        while True:
+            context = tuple(sorted(selected.values(), key=lambda item: item.segment_index))
+            data["context"] = [self._segment_data(item) for item in context]
+            spec = replace(spec, segment_ids=(target.id,) + tuple(item.id for item in context))
+            prompt = (PROTOCOL + "\n" + instruction + "\nReturn exactly this JSON schema:\n"
+                      + canonical_json(information_schema(spec)) + "\nInput:\n" + canonical_json(data))
+            optional = [item for item in context if item.id not in required]
+            if len(prompt) <= self.config.max_context_chars or not optional:
+                break
+            drop = max(optional, key=lambda item: (abs(item.segment_index - target.segment_index), item.segment_index))
+            del selected[drop.id]
         return prompt, spec, data
 
     def _generate_request(self, operation, prompt, spec, *, timeout_fallback=None):
@@ -675,7 +702,7 @@ class _AnalysisRun(SemanticInventory):
                 focus_prefix += self.config.max_qa_windows * per_window
             focus_prefix += 2 * self.config.max_literal_repairs
             focus_prefix += self.config.max_granularity_checks * (
-                3 + 2 * self.config.max_candidates_per_route)
+                4 + 2 * self.config.max_candidates_per_route)
             prompt, spec = self._inventory_request(target, "discover_coverage_foci",
                 inventory_templates()["focus_discovery"], {},
                 limit=min(self.config.max_coverage_foci, self.config.max_candidates_per_route))
@@ -776,11 +803,12 @@ class _AnalysisRun(SemanticInventory):
                         continue
             self._validate(raw, target, route, round_number, spec.segment_ids,
                            recovery_focus_id=focus.id if focus is not None else None)
+        return len(value["candidates"]), spec.max_items
 
     @staticmethod
     def _source_windows(text, limit):
         """Cover every character with disjoint source windows, preferring sentences."""
-        boundaries = [match.end() for match in re.finditer(r"[.!?](?:\s+|$)", text)]
+        boundaries = [match.end() for match in re.finditer(SENTENCE_BOUNDARY, text)]
         windows, start = [], 0
         while start < len(text):
             stop = min(len(text), start + limit)
@@ -815,7 +843,7 @@ class _AnalysisRun(SemanticInventory):
             row = {"segment_id": target.id, "start_char": window[0],
                    "end_char": window[1], "attempt": attempts}
             try:
-                self._extract(target, route, 0, window=window)
+                proposed_count, candidate_limit = self._extract(target, route, 0, window=window)
             except (ServiceTimeoutError, RequestDeadlineError, InvalidResponseError) as exc:
                 row.update(status="failed", error_type=type(exc).__name__)
                 rows.append(row)
@@ -829,7 +857,16 @@ class _AnalysisRun(SemanticInventory):
                     self.issue(route + "_window_unresolved", f"{route} discovery failed at the minimum source-window size.", (target.id,))
             else:
                 row["status"] = "completed"
+                row["proposed_candidates"] = proposed_count
                 rows.append(row)
+                if proposed_count == candidate_limit:
+                    row["status"] = "saturated"
+                    if window[1] - window[0] > 80:
+                        relative = self._source_windows(target.content[window[0]:window[1]],
+                                                        max(40, (window[1] - window[0]) // 2))
+                        pending[0:0] = [(window[0] + start, window[0] + end) for start, end in relative]
+                    else:
+                        self.issue(route + "_window_saturated", "Discovery reached its candidate cap in a minimum-size window; source coverage remains unproven.", (target.id,))
         if pending:
             self.issue(route + "_window_budget_exhausted", f"{route} source windows remain pending at the bounded recovery limit.", (target.id,))
 
@@ -960,7 +997,7 @@ class _AnalysisRun(SemanticInventory):
             elif self._literal_sentence_retained(candidate.text, target.content, assertion):
                 binding, binding_origin = 1.0, "literal_assertion_sentence"
             else:
-                anchor_state, anchor_questions = anchor_binding_spec(candidate)
+                anchor_state, anchor_questions = anchor_binding_spec(candidate, target)
                 binding_signals, _ = self._evaluate(
                     "bind_candidate_anchor", anchor_state, anchor_questions
                 )
@@ -1288,6 +1325,7 @@ class _AnalysisRun(SemanticInventory):
             self.decompositions.extend(worker.decompositions)
             self.coverage_foci.extend(worker.coverage_foci)
             self.granularity_checks += worker.granularity_checks
+            self.atomicity_review_requests += worker.atomicity_review_requests
             self.evaluated_targets.update(worker.evaluated_targets)
             for item in worker.issues:
                 self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
@@ -1404,6 +1442,20 @@ class _AnalysisRun(SemanticInventory):
     def _pair_request(self, pairs):
         return relation_batch_spec(pairs, self.segments, RELATION_INSTRUCTION)
 
+    def _corroborated_relation(self, original, updated):
+        state, strength, origin = reconcile_equivalence(dict(updated.adjudication_signals),
+            self.config.equivalence_threshold, original.primary_equivalent_probability,
+            original.primary_distinct_probability)
+        label = ("equivalent" if state == "equivalent" else
+                 "uncertain" if state == "uncertain" else updated.relation)
+        return replace(updated, initial_relation=original.initial_relation or original.relation,
+            initial_probability=original.initial_probability, relation=label,
+            equivalence_state=state, equivalence_strength=strength, equivalence_origin=origin,
+            primary_equivalent_probability=original.primary_equivalent_probability,
+            primary_distinct_probability=original.primary_distinct_probability,
+            primary_uncertain_probability=original.primary_uncertain_probability,
+            primary_probability_total=original.primary_probability_total)
+
     def _pair_batches(self, pairs):
         """Bound both independent decisions and serialized source/question size."""
         batches, current = [], []
@@ -1412,7 +1464,7 @@ class _AnalysisRun(SemanticInventory):
             context, choices = self._pair_request(proposed)
             size = len(context) + sum(len(question) + len(canonical_json(options))
                                       for question, options in choices.values())
-            if current and (len(proposed) > self.config.pair_batch_size
+            if current and (len(proposed) > self.config.pair_batch_items
                             or size > self.config.max_context_chars):
                 batches.append(current)
                 current = [pair]
@@ -1530,7 +1582,7 @@ class _AnalysisRun(SemanticInventory):
         remaining = self.budget.remaining
         # The pair cap counts paid semantic decisions, including follow-ups;
         # the global cap counts actual requests, regardless of batch size.
-        request_capacity = remaining * self.config.pair_batch_size
+        request_capacity = remaining * self.config.pair_batch_items
         self.effective_pair_limit = (request_capacity if configured_limit is None
                                      else min(configured_limit, request_capacity))
         exact_groups = {}
@@ -1549,7 +1601,7 @@ class _AnalysisRun(SemanticInventory):
         self.planned_initial_pair_requests = len(batches)
         evaluator_can_fork = (callable(getattr(self.evaluator, "fork", None))
                               and getattr(self.evaluator, "can_fork", True))
-        self.pair_concurrency = (min(self.config.pair_concurrency, len(batches))
+        self.pair_concurrency = (min(self.config.pair_workers, len(batches))
                                  if evaluator_can_fork and batches else 1)
         by_id = {record.id: record for record in representatives}
         finalized = []
@@ -1567,7 +1619,10 @@ class _AnalysisRun(SemanticInventory):
             attempted = sum(len(batch) for batch in wave)
             primary = self._dispatch_pair_batches(wave, evaluator_can_fork)
             pending_pairs = pending_pairs[attempted:]
-            pending = [relation for relation in primary if relation.relation == "uncertain"]
+            # Confirm prospective merges before spending the bounded follow-up
+            # allowance on less decisive relationships. Choice confidence alone
+            # never authorizes a nonliteral semantic merge.
+            pending = [relation for relation in primary if relation.equivalence_state == "equivalent"]
             available = min(remaining_checks, self.budget.remaining,
                             max(0, self.effective_pair_limit - self.paid_pair_comparisons))
             adjudication_batches = [[(by_id[item.left_candidate_id], by_id[item.right_candidate_id])]
@@ -1578,19 +1633,28 @@ class _AnalysisRun(SemanticInventory):
             for relation in primary:
                 updated = replacements.get((relation.left_candidate_id, relation.right_candidate_id))
                 if updated is not None:
-                    state, strength, origin = reconcile_equivalence(dict(updated.adjudication_signals),
-                        self.config.equivalence_threshold, relation.primary_equivalent_probability,
-                        relation.primary_distinct_probability)
-                    label = ("equivalent" if state == "equivalent" else
-                             "uncertain" if state == "uncertain" else updated.relation)
-                    relation = replace(updated, initial_relation=relation.initial_relation or relation.relation,
-                        initial_probability=relation.initial_probability, relation=label,
-                        equivalence_state=state, equivalence_strength=strength, equivalence_origin=origin,
-                        primary_equivalent_probability=relation.primary_equivalent_probability,
-                        primary_distinct_probability=relation.primary_distinct_probability,
-                        primary_uncertain_probability=relation.primary_uncertain_probability,
-                        primary_probability_total=relation.primary_probability_total)
+                    relation = self._corroborated_relation(relation, updated)
+                elif relation.equivalence_state == "equivalent":
+                    self.issue("equivalence_confirmation_pending",
+                        "A prospective equivalence lacks a completed directional confirmation; the candidates remain separate and provisional.",
+                        candidates=(relation.left_candidate_id, relation.right_candidate_id))
+                    relation = replace(relation, relation="uncertain", equivalence_state="uncertain",
+                        equivalence_strength=None, equivalence_origin="confirmation_pending")
                 finalized.append(relation)
+
+        # Uncertain primary comparisons wait until all prospective merges have
+        # had first access to the confirmation allowance, across every wave.
+        uncertain = [item for item in finalized if item.relation == "uncertain"
+                     and item.equivalence_origin != "confirmation_pending"
+                     and not item.adjudication_signals]
+        available = min(max(0, self.config.max_relation_adjudications - self.relation_adjudications),
+                        self.budget.remaining, max(0, self.effective_pair_limit - self.paid_pair_comparisons))
+        deferred = [[(by_id[item.left_candidate_id], by_id[item.right_candidate_id])]
+                    for item in uncertain[:available]]
+        adjudicated = self._dispatch_pair_batches(deferred, evaluator_can_fork, adjudicate=True) if deferred else []
+        replacements = {(item.left_candidate_id, item.right_candidate_id): item for item in adjudicated}
+        finalized = [self._corroborated_relation(item, replacements[(item.left_candidate_id, item.right_candidate_id)])
+                     if (item.left_candidate_id, item.right_candidate_id) in replacements else item for item in finalized]
 
         positions = {record.id: index for index, record in enumerate(accepted)}
         for relation in finalized:
@@ -1658,8 +1722,10 @@ class _AnalysisRun(SemanticInventory):
             first = representative.candidate
             decomposition_ids = tuple(dict.fromkeys(identifier for record in group
                                                     for identifier in record.decomposition_ids))
-            provisional = any(item.id in decomposition_ids and self._decomposition_is_provisional(item, memberships)
-                              for item in self.decompositions)
+            provisional = (any(item.id in decomposition_ids and self._decomposition_is_provisional(item, memberships)
+                               for item in self.decompositions)
+                           or bool(self.config.max_granularity_checks)
+                           and any(record.atomicity_state != "atomic" for record in group))
             units.append(
                 InformationUnit(
                     unit_id,
@@ -1791,7 +1857,7 @@ class _AnalysisRun(SemanticInventory):
         can_isolate = all(callable(getattr(adapter, "fork", None))
                           and getattr(adapter, "can_fork", True)
                           for adapter in (self.generator, self.evaluator))
-        self.actual_concurrency = (min(self.config.concurrency,
+        self.actual_concurrency = (min(self.config.target_workers,
             max(1, len(self.snapshot.current_order))) if can_isolate else 1)
         if self.actual_concurrency > 1 and (len(self.config.discovery_routes) > 1
                 or self.config.coverage_enabled and self.config.max_coverage_foci):
@@ -1831,6 +1897,11 @@ class _AnalysisRun(SemanticInventory):
                         (identifier,),
                     )
             for record in self.candidates:
+                if (self.config.max_granularity_checks and record.validation == "accepted"
+                        and record.inventory_role != "decomposed_parent" and record.atomicity_state != "atomic"):
+                    self.issue("atomicity_unresolved", "Independent source-scoped atomicity is "
+                        + record.atomicity_state + "; the accepted claim remains visible with provisional granularity.",
+                        (record.target_segment_id,), (record.id,))
                 if record.validation == "accepted" and record.annotation_state != "verified":
                     self.issue(
                         "annotation_unresolved",
@@ -1868,6 +1939,7 @@ class _AnalysisRun(SemanticInventory):
             "experimental_mode": self.config.effective_mode,
             "coverage_enabled": self.config.coverage_enabled,
             "granularity_checks": self.granularity_checks,
+            "atomicity_review_requests": self.atomicity_review_requests,
             "source_focus_count": len(self.coverage_foci),
             "source_focus_states": {state: sum(item.state == state for item in self.coverage_foci)
                                     for state in ("missing", "partial", "covered", "uncertain")},
@@ -1891,7 +1963,10 @@ class _AnalysisRun(SemanticInventory):
             "discovery_window_declarations": self.window_declarations,
             **attempt_audit,
             "permanent_provider_failure": self.budget.permanent_failure,
-            "budget_allocation": "A shared logical-call cap includes all targets and consolidation. With concurrent targets, work completed before cap exhaustion can depend on scheduling; report records are assembled in source order. Provider retries are additional bounded physical attempts.",
+            "effective_execution": {"target_workers": self.actual_concurrency,
+                "pair_workers": self.pair_concurrency, "pair_batch_size": self.config.pair_batch_items,
+                "reproducible_profile": self.config.reproducible},
+            "budget_allocation": "A shared logical-call cap includes all targets and consolidation. With concurrent targets, work completed before cap exhaustion can depend on scheduling; report records are assembled in source order. The reproducible profile serializes source targets and individual pair requests. Provider retries are additional bounded physical attempts. Fresh provider results are never replayed across runs and may still differ.",
             "generator": self._provider_settings(self.generator),
             "evaluator": self._provider_settings(self.evaluator),
             "evaluator_provider": getattr(
@@ -1914,9 +1989,9 @@ class _AnalysisRun(SemanticInventory):
             "validation_reuse": "Within each immutable target worker, identical resolved candidates, QA fields, proposed annotations and source scopes reuse completed decisions with validation_reused_from. Errors are never cached; changed content or evidence requires new validation.",
             "validation_reused_candidates": sum(record.validation_reused_from is not None for record in self.candidates),
             "pair_scheduling": "Only exact validated text/type/evidence duplicates reuse representative pair decisions, with explicit reused_from provenance. All other pairs are evaluated: similarity sets order only. Configured bounded batches use independently keyed pair decisions and isolated labelled source scopes; character limits reduce batch size. The pair cap includes every paid pair-decision attempt and individual follow-up; the global cap counts actual requests. No transitive equivalence shortcut is used; complete-link grouping remains required. Unexamined pairs stay provisional.",
-            "relation_resolution": "A low-probability eight-class Choice triggers at most one individual source-scoped follow-up with six binary checks: directional entailment, incompatible scope, explicit corrections and same complete meaning. Equivalence certainty is separate from the descriptive subtype. Decisive non-entailment in either direction establishes distinctness; subtype ambiguity alone does not make inventory counts provisional. Conflicting complete-meaning/directional signals or unresolved equivalence remain uncertain and provisional. Cutoffs are inclusive within two machine representation steps, with unchanged thresholds. Initial probabilities and all follow-up signals are preserved; derived strengths are not calibrated relation probabilities.",
+            "relation_resolution": "Every prospective nonliteral equivalence requires an individual source-scoped confirmation with six binary checks. Both entailment directions must pass; a confident primary Choice or a same-complete-meaning check alone cannot authorize merging. Prospective merges have first access to the bounded follow-up allowance across all primary waves; uncertain primary subtype follow-ups use remaining capacity afterward. Missing, failed, conflicting or gray confirmations remain separate and provisional. Exact validated text/type/full-evidence identity remains a literal proof. Equivalence certainty is separate from descriptive subtype; decisive non-entailment establishes distinctness unless another decisive signal conflicts. Inclusive cutoffs and initial probabilities are preserved; strengths are not calibrated accuracy estimates.",
             "relation_families": "Primary equivalent, known-distinct and uncertain probabilities partition the validated Choice distribution after division by its complete raw total, recorded as primary_probability_total. All primary subtype decisions use this normalization too; initial_probability and call decisions retain the raw provider scores. Known-distinct probability sums complementary, both specificity directions, contradiction and both correction directions; uncertain probability contributes to the denominator but is excluded from known distinctness. The unchanged equivalence threshold can establish distinctness from this family even when no subtype reaches it. Follow-ups still run when budget permits; decisive cross-stage disagreement and internal follow-up conflicts retain uncertainty. Family mass is a model distribution aggregate, not an empirically calibrated accuracy estimate.",
-            "recovery_state_projection": "Recovery retains complete original source/context, all accepted meanings and verified qualifiers, and all essential literal evidence in a deduplicated evidence table. Exact projected duplicate records share ids; repair reasons remain while repeated provenance, timestamps and numerical evaluator diagnostics stay in the full report. Source text and report records are not truncated or overwritten. Requests still obey the context-character cap, separately from the logical-call cap.",
+            "recovery_state_projection": "Recovery retains the complete original target, every cited reference scope, all accepted meanings and verified qualifiers, and deduplicated literal evidence. Focus-local repair requests include related unresolved proposals and explicitly list other unresolved proposal IDs retained in the full report. Final rendered prompt size, including schema and ledger, controls packing: only optional uncited neighbor context can be dropped, farthest first. Required source or meaning never truncates; an oversized essential prompt stays unresolved before sending. Raw records, provenance, timestamps and numerical diagnostics remain in the full report.",
             "coverage_recovery_progress": "With the source ledger enabled, repair advances only when an individual focus obtains a fuller verified correspondence; complete same-occurrence meaning is required for covered. Defective focus hypotheses can be revised under the same ID only after a separate complete-source-repair decision, preserving original proposals. Duplicate rows and reformulations do not close gaps. With max_coverage_foci=0 the legacy segment loop instead tracks new exact accepted identities or a newly unambiguous verified annotation. Both no-progress stops preserve pending coverage and provisional counts.",
             "literal_source_repairs": "After independent direct and QA discovery, up to max_literal_repairs candidates per target copy one complete own-target assertion sentence verbatim, retaining its cited context and original candidate via literal_repair_of. Each exact source assertion is attempted at most once, independent of route context or annotation variations, and already accepted exact assertions are skipped. Fragments, unchanged proposals and outside-window candidates are ineligible. All six source-fidelity gates, unresolved-reference checks and atomicity run again; copied source text does not imply acceptance. Repairs share the global call cap and stop while one remaining call can still audit coverage.",
             "discovery_window_provenance": "Source windows use trusted Python Unicode offsets and exact source slices. Generator declarations are retained separately; claims that the trusted request bounds mismatch its own source slice do not replace those bounds or reject in-window candidates. Resolved assertion evidence still determines ownership, and actual outside-window proposals remain unresolved with their supplied and resolved offsets retained.",
@@ -1925,8 +2000,8 @@ class _AnalysisRun(SemanticInventory):
             "descriptive_relations_complete": all(item.relation != "uncertain" for item in self.relations),
             "equivalence_decisions_complete": not self.unexamined_pair_count and all(item.equivalence_state != "uncertain" for item in self.relations),
             "relation_budget_reserve": "Primary comparisons run in bounded waves, retaining up to one-third of remaining logical calls, capped by remaining configured follow-ups, for focused relation adjudication. Unused reserve is reclaimed by subsequent primary waves. Every paid decision and request still obeys the explicit pair and global call caps; a reserve does not prove the total remaining work fits.",
-            "qa_discovery": "Independent QA traverses disjoint original-source windows, with at most four candidates per generation and original target/context retained for reference and governing qualifiers. Bounded timeout recovery splits only the failed window. Calls and windows, including failed attempts, remain recorded. Route failures do not bypass the original-source coverage audit. No coverage or semantic completeness is proven by a successful window.",
-            "direct_discovery": "Targets longer than direct_window_chars are traversed through disjoint original-source discovery windows. Each window emits at most four candidates and keeps the full original target/context, original offsets and governing qualifiers. Only failed windows are decomposed, under the same provider and global call limits and the independent max_direct_windows bound. Shorter targets keep their ordinary direct request. Successful discovery does not establish semantic coverage; the original-source audit remains mandatory when calls are available.",
+            "qa_discovery": "Independent QA traverses disjoint original-source windows with at most four candidates per generation and the original target retained. Failed and candidate-cap-saturated windows subdivide under bounded attempts; original proposals remain recorded. Minimum-size saturation and exhausted window budgets remain explicit. Successful windows do not prove source coverage or semantic completeness.",
+            "direct_discovery": "Long targets traverse disjoint original-source windows with at most four candidates per generation, full original target, original offsets and governing qualifiers. Failed and candidate-cap-saturated windows subdivide within provider/global/max_direct_windows limits. Original proposals remain provenance. Shorter targets keep ordinary direct requests. Successful discovery does not establish coverage; the original-source audit remains mandatory when calls are available.",
             "literal_alignment": "Matching supplied offsets are retained. Source-focus proposals alone may omit both offsets; their unique exact literal quotes are resolved in code. Missing or mismatched offsets never select a repeated quote. Raw supplied values, including null pairs, and evidence_resolutions remain recorded; canonical evidence always has exact integer offsets. Ambiguous and nonliteral evidence is rejected without normalization.",
             "scope": "verbal_transcript",
             "timestamp_resolution": "source_segment",
@@ -1934,6 +2009,7 @@ class _AnalysisRun(SemanticInventory):
             "joint_granularity": "Single-candidate atomicity is followed by bounded joint review of overlapping original-source assertions, including already accepted parents. A verified decomposition requires distinct independent components, mutual collective content preservation, unchanged qualifiers and source occurrence. Only then is the parent retained as provenance outside unit counts. Independent equivalence conflicts only with a verified partition or a positively verified proper part, including a source-grounded residual with every other decomposition gate passed. Joint component checks retain both their original index and candidate identity; legacy indices never imply an unknown filtered association. Unresolved alternatives stay visible and provisional unless every member is an accepted atom in one complete-link equivalence group with no positive compound, part or residual evidence. Specificity alone never suppresses content.",
             "source_content_ledger": "Independent source traversal proposes source foci without access to the accepted inventory. Each focus keeps literal evidence, a full proposal validation, stable ID, verified per-candidate correspondence and bounded individual repair history. Only complete qualified meaning at the same source occurrence closes a gap. Final covered states require a verified correspondence to an active inventory unit; inactive matches remain provenance and decomposition alone never transfers coverage to children. Citations, reformulations, extra candidates and no-progress stops do not prove coverage. The separate open source audit can still signal undiscovered content. Foci do not count as inventory units.",
             "thresholds_calibrated": False,
+            "independent_atomicity": "Every unique active accepted claim receives separate atomic/compound source-scoped binary checks, including lone claims and newly generated children. Original Choice labels remain provenance. Up to eight claims share an independently keyed audit, with max_granularity_checks audit requests per target, in addition to that many joint reviews. The shared call cap and exact context size can leave unreviewed claims visible with provisional granularity. Setting max_granularity_checks=0 is an explicit audit ablation; it does not validate original atomic labels.",
             "count_semantics": (
                 "Accepted candidates count all accepted validation records, including retained "
                 "decomposed parents. Unique units count active accepted semantic groups; verified "
@@ -1950,8 +2026,13 @@ class _AnalysisRun(SemanticInventory):
                 "semantic units."
             ),
         }
+        metadata["reproducibility"] = analysis_manifest(self.snapshot, self.config,
+            metadata["prompt_template_hashes"], self.generator, self.evaluator, self._provider_settings)
+        metadata["content_digest"] = fingerprint(inventory_payload(units, occurrences, self.candidates))
+        metadata["reliability_diagnostics"] = reliability_diagnostics(self.issues, self.candidates,
+            self.relations, self.coverage_foci, self.unexamined_pair_count)
         report = InformationReport(
-            9,
+            10,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -2115,7 +2196,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         counts_provisional=True,
     )
     return InformationReport(
-        9,
+        10,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",

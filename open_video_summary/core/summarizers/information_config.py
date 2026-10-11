@@ -9,6 +9,7 @@ from open_video_summary.errors import ConfigurationError
 @dataclass(frozen=True)
 class InformationAnalysisConfig:
     qa_enabled: bool = True
+    reproducible: bool = False
     experimental_mode: str | None = None
     max_granularity_checks: int = 8
     max_coverage_foci: int = 16
@@ -35,6 +36,8 @@ class InformationAnalysisConfig:
     def __post_init__(self):
         if not isinstance(self.qa_enabled, bool):
             raise ConfigurationError("Information QA must be a boolean.")
+        if not isinstance(self.reproducible, bool):
+            raise ConfigurationError("Information reproducible must be a boolean.")
         if self.experimental_mode not in {None, "direct", "qa", "hybrid", "hybrid_coverage"}:
             raise ConfigurationError("Information mode must be direct, qa, hybrid or hybrid_coverage.")
         limits = {
@@ -76,6 +79,18 @@ class InformationAnalysisConfig:
                 raise ConfigurationError(
                     f"Information {name} must be finite and between 0.5 and 1."
                 )
+
+    @property
+    def target_workers(self):
+        return 1 if self.reproducible else self.concurrency
+
+    @property
+    def pair_workers(self):
+        return 1 if self.reproducible else self.pair_concurrency
+
+    @property
+    def pair_batch_items(self):
+        return 1 if self.reproducible else self.pair_batch_size
 
     @property
     def discovery_routes(self):
@@ -137,6 +152,7 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
 
     settings = InformationAnalysisConfig(
         qa_enabled=get("information_qa", "OVS_INFORMATION_QA", True, boolean),
+        reproducible=get("information_reproducible", "OVS_INFORMATION_REPRODUCIBLE", False, boolean),
         experimental_mode=get("information_mode", "OVS_INFORMATION_MODE", None),
         max_granularity_checks=get("information_granularity_checks", "OVS_INFORMATION_GRANULARITY_CHECKS", 8, int),
         max_coverage_foci=get("information_coverage_foci", "OVS_INFORMATION_COVERAGE_FOCI", 16, int),

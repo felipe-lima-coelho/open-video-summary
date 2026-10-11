@@ -35,7 +35,13 @@ class InventoryEvaluator(SyntheticEvaluator):
             return super().evaluate(context, noul, choice)
         state = json.loads(context)
         self.inventory_states.append(state)
-        if "focus_revision" in state:
+        if "atomicity_review" in state:
+            values = {}
+            for index, item in enumerate(state["atomicity_review"]):
+                compound = bool(self.splits.get(item["candidate"]["text"]))
+                values.update({f"claim{index}_atomic": .01 if compound else .99,
+                               f"claim{index}_compound": .99 if compound else .01})
+        elif "focus_revision" in state:
             values = dict.fromkeys(noul, self.revision)
         elif "parent" in state:
             text = state["parent"]["candidate"]["text"]
@@ -74,7 +80,7 @@ class InformationInventoryTests(unittest.TestCase):
                     "recovery": recovery, "decompose_candidate": components}.get(route, ())
         generator = ScriptedGenerator(callback=lambda data, route: list(generate(data, route)))
         settings = dict(concurrency=1, qa_enabled=False, max_calls=256, max_literal_repairs=0,
-                        pair_batch_size=1, max_relation_adjudications=0,
+                        pair_batch_size=1, max_relation_adjudications=256,
                         direct_window_chars=4000, qa_window_chars=4000)
         settings.update(config)
         source = videos(texts or [self.source])
@@ -101,7 +107,7 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertTrue(all(record.parent_candidate_ids == ("c0",) for record in report.candidates[1:]))
         self.assertFalse(report.counts.counts_provisional)
         self.assertEqual("contextual-propositions-v2", report.protocol_version)
-        self.assertEqual(9, report.schema_version)
+        self.assertEqual(10, report.schema_version)
         self.assertEqual(3, report.counts.accepted_candidates)
 
     def test_joint_structure_retains_each_component_source_span(self):
@@ -155,7 +161,7 @@ class InformationInventoryTests(unittest.TestCase):
         analyzer = InformationAnalyzer(ScriptedGenerator(), InventoryEvaluator(relation=relations),
             InformationAnalysisConfig(experimental_mode="direct", concurrency=1,
                 max_granularity_checks=0, max_coverage_foci=0, pair_batch_size=1,
-                max_relation_adjudications=0, max_literal_repairs=0))
+                max_relation_adjudications=256, max_literal_repairs=0))
         run = _AnalysisRun(analyzer, capture_snapshot(videos([self.source])))
         target = run.snapshot.current_segments[0]
         for proposal in proposals:
@@ -336,7 +342,7 @@ class InformationInventoryTests(unittest.TestCase):
     def test_failed_refresh_cannot_leave_covered_focus_bound_only_to_inactive_parent(self):
         report = self.run_decomposed_focus_refresh()
         first, repaired = report.coverage_foci
-        self.assertEqual("verified", report.decompositions[0].state)
+        self.assertEqual("verified", next(item for item in report.decompositions if item.superseded_by is None).state)
         self.assertEqual("decomposed_parent", report.candidates[0].inventory_role)
         self.assertEqual(("uncertain", (), ()), (first.state, first.candidate_ids, first.unit_ids))
         self.assertEqual((), first.matches)
@@ -401,7 +407,7 @@ class InformationInventoryTests(unittest.TestCase):
             with self.subTest(fail_refresh=fail_refresh):
                 report = self.run_decomposed_focus_refresh(fail_refresh=fail_refresh, conflicting_pair=True)
                 focus = report.coverage_foci[0]
-                self.assertEqual("conflicting", report.decompositions[0].state)
+                self.assertEqual("conflicting", next(item for item in report.decompositions if item.superseded_by is None).state)
                 self.assertEqual("unit_candidate", report.candidates[0].inventory_role)
                 self.assertEqual("covered", focus.state)
                 self.assertIn("c0", focus.candidate_ids)

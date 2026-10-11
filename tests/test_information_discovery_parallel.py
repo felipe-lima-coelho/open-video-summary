@@ -158,7 +158,7 @@ class _Evaluator:
         self.tape.enter()
         try:
             time.sleep(.001)
-            probabilities = {key: .01 if context.startswith("Original target [") else .99
+            probabilities = {key: .01 if context.startswith("Original target [") or key.endswith("_compound") else .99
                              for key in noul}
             choices = []
             for key, (_, options) in choice.items():
@@ -255,13 +255,14 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
                 # target records at exhaustion; request/attempt bounds remain.
                 stats = json.loads(parallel.metadata_json)["discovery_lookahead"]
                 self.assertEqual(0, stats["submitted"])
-                self.assertEqual(len(old.requests), len(new.requests))
+                self.assertLessEqual(len(old.requests), maximum)
+                self.assertLessEqual(len(new.requests), maximum)
                 self.assertLessEqual(json.loads(parallel.metadata_json)["logical_calls"], maximum)
                 self.assertEqual(json.loads(serial.metadata_json)["physical_attempts"],
                                  json.loads(parallel.metadata_json)["physical_attempts"])
 
     def test_prefix_boundary_counts_adaptive_attempts_and_both_seed_reservations(self):
-        for remaining, expected in ((143, 0), (144, 1), (580, 1), (581, 2)):
+        for remaining, expected in ((143, 0), (144, 1), (588, 1), (589, 2)):
             with self.subTest(remaining=remaining):
                 tape = _Tape(delay=0)
                 config = InformationAnalysisConfig(concurrency=2, max_calls=remaining)

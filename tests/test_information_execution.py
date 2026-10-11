@@ -22,6 +22,7 @@ from open_video_summary.core.summarizers.information_config import InformationAn
 from open_video_summary.core.summarizers.information_contracts import AnalysisProgress, capture_snapshot
 from open_video_summary.errors import AuthenticationError, ConfigurationError, ProviderConfigurationError, ServiceTimeoutError
 from open_video_summary.utils.providers import LLMConfig
+from open_video_summary.utils.request_control import RequestController
 from open_video_summary.utils.retry import retry_after, retry_delay
 from tests.test_information_analysis import ScriptedGenerator, SyntheticEvaluator, candidate, evaluation_state, videos
 from tests.test_llm_adapters import ExternalStatusError, response
@@ -88,7 +89,10 @@ class _Requests:
         answers = {}
         for identifier, question in payload["questions"].items():
             if question["type"] == "noul":
-                answers[identifier] = {"type": "noul", "noul": 0.01 if "original_target" in state else 0.99}
+                probability = .01 if "original_target" in state or identifier.endswith("_compound") else .99
+                if "left" in state and identifier in {"incompatible", "correction_left", "correction_right"}:
+                    probability = .01
+                answers[identifier] = {"type": "noul", "noul": probability}
             else:
                 options = tuple(question["criteria"])
                 selected = "atomic" if identifier == "granularity" else "equivalent"
@@ -100,12 +104,12 @@ class _Requests:
 
 
 class InformationExecutionTests(unittest.TestCase):
-    def run_native(self, tracker, *, concurrency=2, max_calls=100, attempts=1, progress=None):
+    def run_native(self, tracker, *, concurrency=2, max_calls=100, attempts=1, progress=None, reproducible=False):
         generator = OpenAIAdapter(config=LLMConfig(provider="openai", model="gpt-6-luna",
             api_key="offline-private-key", max_attempts=attempts, retry_backoff_seconds=0), sleep=Mock())
         evaluator = TypeSafeEvaluator(TypeSafeConfig(api_key="offline-private-evaluator"))
         analyzer = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
-            concurrency=concurrency, qa_enabled=False, max_coverage_rounds=0, max_calls=max_calls,
+            concurrency=concurrency, reproducible=reproducible, qa_enabled=False, max_coverage_rounds=0, max_calls=max_calls,
             max_granularity_checks=0, max_coverage_foci=0,
             pair_batch_size=1),
             progress=progress, progress_interval_seconds=0.01)
@@ -135,7 +139,7 @@ class InformationExecutionTests(unittest.TestCase):
         self.assertTrue(all(client.closed for client in tracker.clients[1:]))
         self.assertTrue(all(client.settings["max_retries"] == 0 for client in tracker.clients))
         self.assertTrue(all(client.settings["timeout"] == generator.config.timeout_seconds for client in tracker.clients))
-        self.assertEqual(12, len(report.calls))
+        self.assertEqual(15, len(report.calls))
         for call in report.calls:
             metadata = json.loads(call.metadata_json)
             self.assertEqual(1, len(metadata["attempt_records"]))
@@ -161,6 +165,24 @@ class InformationExecutionTests(unittest.TestCase):
         self.assertIn("call_budget_exhausted", [item.kind for item in report.issues])
         self.assertTrue(all(len(json.loads(call.metadata_json)["attempt_records"]) == 2 for call in report.calls))
         self.assertTrue(all(client.closed for client in tracker.clients[1:]))
+
+    def test_reproducible_profile_allocates_tight_budget_identically_with_fixed_provider_outputs(self):
+        first_tracker = _Requests(delays={"v0:s0": .03})
+        second_tracker = _Requests(delays={"v0:s2": .03})
+        first, _, _ = self.run_native(first_tracker, concurrency=8, max_calls=12, reproducible=True)
+        second, _, _ = self.run_native(second_tracker, concurrency=8, max_calls=12, reproducible=True)
+        self.assertEqual((1, 1), (first_tracker.maximum, second_tracker.maximum))
+        self.assertEqual(first_tracker.targets, second_tracker.targets)
+        for field in ("candidates", "units", "occurrences", "relations", "coverage", "counts", "issues"):
+            self.assertEqual(getattr(first, field), getattr(second, field), field)
+        self.assertEqual([item.input_hash for item in first.calls], [item.input_hash for item in second.calls])
+        first_metadata, second_metadata = json.loads(first.metadata_json), json.loads(second.metadata_json)
+        self.assertEqual(first_metadata["reproducibility"], second_metadata["reproducibility"])
+        self.assertEqual(first_metadata["content_digest"], second_metadata["content_digest"])
+        self.assertEqual(12, first_metadata["logical_calls"])
+        self.assertEqual(12, first_metadata["physical_attempts"])
+        self.assertEqual(1, first_metadata["actual_concurrency"])
+        self.assertEqual(1, first_metadata["effective_execution"]["pair_batch_size"])
 
     def test_permanent_provider_failure_stops_dispatch_but_target_input_failure_does_not(self):
         tracker = _Requests(failures={"v0:s0": ExternalStatusError(401)})
@@ -337,9 +359,16 @@ class RetryExecutionTests(unittest.TestCase):
         error.response = SimpleNamespace(headers={"Retry-After": "3"})
         create = Mock(side_effect=[error, TimeoutError("private"), response("ok")])
         waits, events = [], []
+        clock = [100.0]
+
+        def advance(seconds):
+            waits.append(seconds)
+            clock[0] += seconds
+
         adapter = OpenAIAdapter(config=LLMConfig(provider="openai", retry_backoff_seconds=1),
-            client=SimpleNamespace(responses=SimpleNamespace(create=create)), sleep=waits.append,
+            client=SimpleNamespace(responses=SimpleNamespace(create=create)), sleep=advance,
             progress=events.append, jitter=lambda low, high: high)
+        adapter.controller = RequestController(adapter.controller.limits, clock=lambda: clock[0])
         result = adapter.generate(GenerationRequest("private transcript"))
         self.assertEqual([3.0, 2.5], waits)
         self.assertEqual(3, result.metadata.attempts)

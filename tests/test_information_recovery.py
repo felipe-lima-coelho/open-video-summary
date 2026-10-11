@@ -45,6 +45,15 @@ class InformationRecoveryTests(unittest.TestCase):
             for identifier, question in request["questions"].items():
                 if question["type"] == "noul":
                     probability = (signals or {}).get(identifier, 0.01)
+                    if signals is None and labels is not None:
+                        left = request["state"].split("Left candidate id: ", 1)[1].split("\n", 1)[0]
+                        right = request["state"].split("Right candidate id: ", 1)[1].split("\n", 1)[0]
+                        label = labels.get((left, right), "complementary")
+                        truth = {"left_entails_right": label in {"equivalent", "more_specific_left"},
+                            "right_entails_left": label in {"equivalent", "more_specific_right"},
+                            "same_complete_meaning": label == "equivalent", "incompatible": label == "contradiction",
+                            "correction_left": label == "correction_left", "correction_right": label == "correction_right"}
+                        probability = .99 if truth[identifier] else .01
                     answers[identifier] = {"type": "noul", "noul": probability}
                     continue
                 if identifier == "relation":
@@ -88,13 +97,14 @@ class InformationRecoveryTests(unittest.TestCase):
                          [(r.left_candidate_id, r.right_candidate_id, r.relation) for r in four.relations])
         self.assertEqual([u.candidate_ids for u in one.units], [u.candidate_ids for u in four.units])
         self.assertEqual(3, four.counts.unique_units)
-        self.assertEqual(6, len(requests_by_size[0]))
-        self.assertEqual(2, len(requests_by_size[1]))
+        self.assertEqual(8, len(requests_by_size[0]))
+        self.assertEqual(4, len(requests_by_size[1]))
         self.assertEqual(10, len(four.relations))
         self.assertEqual(3, json.loads(four.metadata_json)["reused_pair_relations"])
         for call in four.calls:
             metadata = json.loads(call.metadata_json)
-            self.assertEqual(len(json.loads(call.decisions_json)["choice"]), metadata["question_count"])
+            decisions = json.loads(call.decisions_json)
+            self.assertEqual(len(decisions["choice"]) + len(decisions["noul"]), metadata["question_count"])
             self.assertGreaterEqual(metadata["base_estimated_input_tokens"], metadata["question_count"] * 128)
         self.assertIn("equivalence_inconsistent", [issue.kind for issue in four.issues])
 
@@ -167,16 +177,16 @@ class InformationRecoveryTests(unittest.TestCase):
         self.assertEqual(0, json.loads(report.metadata_json)["relation_adjudications"])
         self.assertTrue(all(r.relation == "uncertain" for r in report.relations))
 
-    def test_primary_wave_retains_followup_capacity_and_reclaims_unused_reserve(self):
+    def test_primary_waves_prioritize_future_merge_candidates_and_reclaim_reserve(self):
         run = make_run(["A regra é azul", "O backup é diário", "A retenção é curta", "O prazo é fixo"])
         run.config = replace(run.config, max_calls=5, max_relation_adjudications=3)
         run.budget.limit = 5
         run.evaluator, requests = self.evaluator(low=True)
         report = run.run()
         self.assertEqual(5, len(requests))
-        self.assertEqual(1, json.loads(report.metadata_json)["relation_adjudications"])
-        self.assertEqual(6, len(requests[-1]["questions"]))
-        self.assertEqual(2, json.loads(report.metadata_json)["unexamined_pair_count"])
+        self.assertEqual(0, json.loads(report.metadata_json)["relation_adjudications"])
+        self.assertEqual(1, len(requests[-1]["questions"]))
+        self.assertEqual(1, json.loads(report.metadata_json)["unexamined_pair_count"])
 
         run = make_run(["A regra é azul", "O backup é diário", "A retenção é curta", "O prazo é fixo", "O suporte é local"])
         run.config = replace(run.config, pair_batch_size=2, max_calls=5, max_relation_adjudications=2)
@@ -238,7 +248,7 @@ class InformationRecoveryTests(unittest.TestCase):
         self.assertTrue(report.counts.counts_provisional)
         self.assertEqual(native, dict(report.relations[0].adjudication_signals))
 
-    def test_complete_meaning_resolves_gray_directional_checks_without_repeating_requests(self):
+    def test_complete_meaning_does_not_bypass_gray_directional_checks(self):
         signals = dict.fromkeys(RELATION_ADJUDICATION_QUESTIONS, .01) | {
             "left_entails_right": .50, "right_entails_left": .60, "same_complete_meaning": .94}
         run = make_run(["O presidente relata a regra", "Donald Trump relata a regra"])
@@ -247,9 +257,9 @@ class InformationRecoveryTests(unittest.TestCase):
         report = run.run()
         self.assertEqual(2, len(requests))
         self.assertEqual(6, len(requests[1]["questions"]))
-        self.assertEqual("equivalent", report.relations[0].equivalence_state)
-        self.assertEqual("complete_meaning_check", report.relations[0].equivalence_origin)
-        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual("uncertain", report.relations[0].equivalence_state)
+        self.assertEqual("directional_confirmation_incomplete", report.relations[0].equivalence_origin)
+        self.assertEqual(2, report.counts.unique_units)
 
     def test_qa_timeout_decomposes_original_source_and_coverage_still_runs(self):
         sentences = ["A primeira regra estabelece backup automático diário com uma cópia no servidor.",
@@ -445,7 +455,7 @@ class InformationRecoveryTests(unittest.TestCase):
             (empty | {"complementary":.90, "uncertain":.11}, "uncertain"),
             (empty | {"equivalent":.90, "uncertain":.11}, "uncertain"),
             (empty | {"equivalent":.04, "complementary":.891, "uncertain":.059}, "distinct"),
-            (empty | {"equivalent":.891, "complementary":.04, "uncertain":.059}, "equivalent"),
+            (empty | {"equivalent":.891, "complementary":.04, "uncertain":.059}, "uncertain"),
         ]
         for distribution, expected in cases:
             for batch_size in (1, 4):

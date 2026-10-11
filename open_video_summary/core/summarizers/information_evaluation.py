@@ -8,9 +8,11 @@ annotation never disables a source-based check.
 
 import json
 import math
+import re
 
 
-EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v8"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v9"
+SENTENCE_BOUNDARY = r"[.!?][\"'“”‘’«»)\]}]*(?:\s+|$)"
 SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
 ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
 VALIDATION_QUESTIONS = {
@@ -114,13 +116,13 @@ def reconcile_equivalence(signals, threshold, primary_equivalent=None, primary_d
         return state, strength, origin
     equivalent = primary_equivalent is not None and passes_probability_cutoff(primary_equivalent, threshold)
     distinct = primary_distinct is not None and passes_probability_cutoff(primary_distinct, threshold)
-    if (equivalent and (distinct or state == "distinct")) or (distinct and state == "equivalent"):
+    positive_meaning = ("same_complete_meaning" in signals
+                        and passes_probability_cutoff(signals["same_complete_meaning"], threshold))
+    if (equivalent and (distinct or state == "distinct")) or (distinct and (state == "equivalent" or positive_meaning)):
         return "uncertain", None, "conflicting_primary_adjudication_signals"
     if state == "uncertain":
         if distinct:
             return "distinct", primary_distinct, "primary_relation_family"
-        if equivalent:
-            return "equivalent", primary_equivalent, "primary_relation_family"
     return state, strength, origin
 
 
@@ -142,7 +144,7 @@ def resolve_equivalence(signals, threshold):
     if mutual:
         return "equivalent", min(signals["left_entails_right"], signals["right_entails_left"]), "mutual_entailment"
     if yes("same_complete_meaning"):
-        return "equivalent", signals["same_complete_meaning"], "complete_meaning_check"
+        return "uncertain", None, "directional_confirmation_incomplete"
     return "uncertain", None, "unresolved_adjudication_signals"
 
 
@@ -204,7 +206,24 @@ def _marked_source(segment, evidence):
     return "".join(parts)
 
 
-def anchor_binding_spec(candidate):
+def local_assertion_scopes(candidate, target):
+    """Keep marked exact occurrences with their sentence-owned governing wording."""
+    scopes = []
+    boundaries = [0, *(match.end() for match in re.finditer(SENTENCE_BOUNDARY, target.content)), len(target.content)]
+    for item in candidate.evidence:
+        if item.role != "assertion":
+            continue
+        start = max(position for position in boundaries if position <= item.start_char)
+        end = min(position for position in boundaries if position >= item.end_char)
+        sentence = (target.content[start:item.start_char] + "<selected-assertion>" + item.quote
+                    + "</selected-assertion>" + target.content[item.end_char:end])
+        scope = {"segment_id": target.id, "start_char": start, "end_char": end, "marked_text": sentence}
+        if scope not in scopes:
+            scopes.append(scope)
+    return scopes
+
+
+def anchor_binding_spec(candidate, target=None):
     """Do not expose unrelated source assertions to the anchor-binding decision."""
     blocks = [
         "Selected assertion wording:\n" + "\n".join(
@@ -212,6 +231,9 @@ def anchor_binding_spec(candidate):
         ),
         "Candidate claim:\n" + candidate.text,
     ]
+    if target is not None:
+        blocks.append("Original local assertion wording (surrounding wording resolves the selected subject and governing qualifiers; independent neighboring assertions cannot supply this candidate):\n"
+                      + "\n".join(item["marked_text"] for item in local_assertion_scopes(candidate, target)))
     if any(item.role == "context" for item in candidate.evidence):
         blocks.append("Cited literal reference context (resolves references only; cannot supply a new assertion):\n"
                       + _evidence_text(candidate, "context"))
