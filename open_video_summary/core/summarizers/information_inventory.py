@@ -258,7 +258,7 @@ class SemanticInventory:
         existing = next((item for item in self.decompositions if item.id == identifier), None)
         if existing is not None:
             self._inherit_decomposition_state()
-            return existing
+            return next(item for item in self.decompositions if item.id == identifier)
         record = InformationDecomposition(identifier, parent.id, identifiers, state,
                                           tuple(signals), reason=reason)
         self.decompositions.append(record)
@@ -281,7 +281,7 @@ class SemanticInventory:
                     + ((parent.id,) if candidate.id != parent.id else ()))),
                 decomposition_ids=tuple(dict.fromkeys(candidate.decomposition_ids + (identifier,))))
         self._inherit_decomposition_state()
-        return record
+        return next(item for item in self.decompositions if item.id == identifier)
 
     def _inherit_decomposition_state(self):
         """Apply one active structural decision to every exact validated alias.
@@ -292,19 +292,56 @@ class SemanticInventory:
         the entire exact family, including aliases introduced by a later route.
         """
         records = {item.id: item for item in self.candidates if item.candidate is not None}
-        # A previously verified proof cannot outlive its component atomicity.
-        # Keep its native signals and historical links; only its active status
-        # changes, restoring every parent alias through the common lifecycle.
-        for index, decomposition in enumerate(self.decompositions):
-            if decomposition.state != "verified" or decomposition.superseded_by is not None:
-                continue
-            children = [records.get(identifier) for identifier in decomposition.component_candidate_ids]
-            if any(item is None or not self._component_eligible(item) for item in children):
-                compound = any(item is not None and self._with_known_atomicity(item).atomicity_state == "compound"
-                               for item in children)
-                self.decompositions[index] = replace(decomposition,
-                    state="conflicting" if compound else "uncertain",
-                    reason="component_atomicity_conflicts_with_partition" if compound else "component_atomicity_unresolved")
+        # Keep valid nested refinements, but do not let an earlier atomic label
+        # conceal a refinement whose complete preservation proof later failed.
+        # Only positive complete proof signals establish that contradiction;
+        # rejected speculative children are not evidence of compoundness.
+        # Each iteration only invalidates active certificates, so dependencies
+        # and aliases reach the same fixed point in every traversal order.
+        while True:
+            active = {}
+            for decomposition in self.decompositions:
+                parent = records.get(decomposition.parent_candidate_id)
+                if parent is not None and decomposition.superseded_by is None:
+                    active.setdefault(exact_proposition_key(parent), []).append(decomposition)
+            refinements = {key for key, proofs in active.items()
+                           if any(item.state == "verified" for item in proofs)}
+            unresolved = {}
+            for key, proofs in active.items():
+                if key in refinements:
+                    continue
+                preserved = []
+                for proof in proofs:
+                    signals = dict(proof.signals)
+                    if all(name in signals and passes_probability_cutoff(signals[name], self.config.acceptance_threshold)
+                           for name in DECOMPOSITION_QUESTIONS):
+                        preserved.append(proof)
+                if preserved:
+                    unresolved[key] = ("conflicting" if any(item.state == "conflicting" for item in preserved)
+                                       else "uncertain")
+            invalidated = False
+            for index, decomposition in enumerate(self.decompositions):
+                if decomposition.state != "verified" or decomposition.superseded_by is not None:
+                    continue
+                children = [records.get(identifier) for identifier in decomposition.component_candidate_ids]
+                conflicts = [unresolved[exact_proposition_key(item)] for item in children
+                             if item is not None and exact_proposition_key(item) in unresolved]
+                invalid_children = [item for item in children if item is None or not self._content_eligible(item)
+                    or not self._component_eligible(item) and exact_proposition_key(item) not in refinements]
+                if conflicts:
+                    state = "conflicting" if "conflicting" in conflicts else "uncertain"
+                    reason = "component_refinement_unresolved"
+                elif invalid_children:
+                    compound = any(item is not None and self._with_known_atomicity(item).atomicity_state == "compound"
+                                   for item in invalid_children)
+                    state = "conflicting" if compound else "uncertain"
+                    reason = "component_atomicity_conflicts_with_partition" if compound else "component_atomicity_unresolved"
+                else:
+                    continue
+                self.decompositions[index] = replace(decomposition, state=state, reason=reason)
+                invalidated = True
+            if not invalidated:
+                break
         families = {}
         for decomposition in self.decompositions:
             parent = records.get(decomposition.parent_candidate_id)

@@ -3,13 +3,15 @@
 import json
 import unittest
 from dataclasses import replace
+from itertools import permutations, product
 
 from test_information_analysis import ScriptedGenerator, candidate, videos
 from test_information_inventory import InventoryEvaluator
 from open_video_summary.core.summarizers.information_analysis import InformationAnalyzer, _AnalysisRun
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
-from open_video_summary.core.summarizers.information_contracts import CoverageFocus, capture_snapshot
+from open_video_summary.core.summarizers.information_contracts import CoverageFocus, InformationRelation, capture_snapshot
 from open_video_summary.core.summarizers.information_evaluation import exact_proposition_key
+from open_video_summary.core.summarizers.information_inventory import DECOMPOSITION_QUESTIONS
 from open_video_summary.core.summarizers.information_sources import source_sentence_spans
 
 
@@ -36,6 +38,24 @@ class GranularityEvaluator(InventoryEvaluator):
             result = replace(result, noul=tuple(replace(item,
                 probability=self.atomicity if item.id.endswith("_atomic") else 1 - self.atomicity)
                 if not self.splits.get(state[item.id.rsplit("_", 1)[0] + "_text"]) else item
+                for item in result.noul))
+        return result
+
+
+class RefinementEvaluator(InventoryEvaluator):
+    """Expose a disagreement between an early atomic label and later parts."""
+
+    def __init__(self, *, atomic_intermediates, **kwargs):
+        super().__init__(**kwargs)
+        self.atomic_intermediates = set(atomic_intermediates)
+
+    def evaluate(self, context, noul=None, choice=None):
+        result = super().evaluate(context, noul, choice)
+        if context.startswith('{') and '"claim0_text"' in context:
+            state = json.loads(context)
+            result = replace(result, noul=tuple(replace(item,
+                probability=.99 if item.id.endswith("_atomic") else .01)
+                if state[item.id.rsplit('_', 1)[0] + '_text'] in self.atomic_intermediates else item
                 for item in result.noul))
         return result
 
@@ -644,6 +664,154 @@ class InformationStabilityTests(unittest.TestCase):
             self.assertEqual(1, json.loads(report.metadata_json)["granularity_checks"])
             observations.append((review, [unit.text for unit in report.units]))
         self.assertTrue(all(row == observations[0] for row in observations[1:]))
+
+    def test_public_nested_refinement_keeps_valid_terminals_and_restores_conflicted_ancestors(self):
+        smallest = "O backup e diario e a retencao dura 30 dias."
+        middle = "O backup e diario e a retencao dura 30 dias e a rede e privada."
+        largest = "O backup e diario e a retencao dura 30 dias e a rede e privada e o acesso e pago."
+        backup, retention = "O backup e diario.", "A retencao dura 30 dias."
+        network, access = "A rede e privada.", "O acesso e pago."
+        for deep in (False, True):
+            source = largest if deep else middle
+            splits = {source:(middle, access), middle:(smallest, network), smallest:(backup, retention)} if deep else {
+                middle:(smallest, network), smallest:(backup, retention)}
+            texts = list(dict.fromkeys([source, *(text for pair in splits.values() for text in pair)]))
+            leaves = set(texts) - set(splits)
+            for conflict in (False, True):
+                observations = []
+                for reverse in (False, True):
+                    with self.subTest(deep=deep, conflict=conflict, reverse=reverse):
+                        # QA windows intentionally allow at most four rows;
+                        # keep all hypotheses within the native route schemas.
+                        direct, qa = texts[:-2], [*texts[-2:], source]
+                        if reverse:
+                            direct, qa = list(reversed(direct)), list(reversed(qa))
+                        evaluator = RefinementEvaluator(atomic_intermediates=set(splits) - {source}, splits=splits,
+                            relation={frozenset((backup, retention)):"equivalent"} if conflict else {})
+                        generator = ScriptedGenerator(callback=lambda data, route: [
+                            candidate("v0:s0", source, text=text, qa=True)
+                            for text in direct if route == "direct"] if route == "direct" else [
+                            candidate("v0:s0", source, text=text, qa=True)
+                            for text in qa if route == "qa"] if route == "qa" else [])
+                        report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
+                            experimental_mode="hybrid", concurrency=1, max_calls=256,
+                            max_source_sentences=0, max_literal_repairs=0,
+                            max_direct_windows=1, max_qa_windows=1, direct_window_chars=4000,
+                            qa_window_chars=4000, pair_batch_size=1, max_candidates_per_route=12,
+                            max_granularity_checks=8)).analyze(capture_snapshot(videos([source])))
+                        records = {item.id:item for item in report.candidates}
+                        proofs = {records[item.parent_candidate_id].candidate.text:item for item in report.decompositions
+                                  if item.superseded_by is None and records[item.parent_candidate_id].candidate.text in splits}
+                        self.assertEqual(set(splits), set(proofs))
+                        self.assertTrue(all(item.state == ("conflicting" if conflict else "verified")
+                                            for item in proofs.values()))
+                        for text, proof in proofs.items():
+                            self.assertTrue(all(dict(proof.signals)[key] == .99 for key in DECOMPOSITION_QUESTIONS))
+                            if conflict and text != smallest:
+                                self.assertEqual("component_refinement_unresolved", proof.reason)
+                        self.assertEqual(2, sum(item.candidate.text == source for item in report.candidates))
+                        self.assertTrue(all(item.inventory_role == ("unit_candidate" if conflict else "decomposed_parent")
+                            for item in report.candidates if item.candidate.text in splits))
+                        self.assertEqual(leaves | (set(splits) if conflict else set()), {item.text for item in report.units})
+                        self.assertEqual(len(leaves) + (len(splits) if conflict else 0), report.counts.unique_units)
+                        self.assertEqual(conflict, report.counts.counts_provisional)
+                        self.assertTrue(all(item.inventory_state == "provisional_granularity"
+                            for item in report.units if conflict and item.text in splits))
+                        self.assertFalse(any("failed" in item.kind for item in report.issues))
+                        metadata = json.loads(report.metadata_json)
+                        self.assertLessEqual(metadata["atomicity_review_requests"], 8)
+                        self.assertLessEqual(metadata["granularity_checks"], 8)
+                        self.assertLessEqual(metadata["logical_calls"], 256)
+                        observations.append(([(item.text, item.inventory_state) for item in report.units],
+                            sorted((text, item.state, item.reason) for text, item in proofs.items())))
+                self.assertEqual(2, len(observations))
+                self.assertEqual(observations[0], observations[1])
+
+    def test_deep_conflict_reconciliation_reaches_same_fixed_point_and_restores_late_aliases(self):
+        source = "Backup is daily, retention is long, the network is private and access is paid."
+        middle = "Backup is daily, retention is long and the network is private."
+        smallest = "Backup is daily and retention is long."
+        backup, retention, network, access = "Backup is daily.", "Retention is long.", "The network is private.", "Access is paid."
+        splits = {source:(middle, access), middle:(smallest, network), smallest:(backup, retention)}
+        observations = {"conflicting": [], "uncertain": []}
+        for outcome, order in product(observations, permutations(splits)):
+            with self.subTest(order=order, outcome=outcome):
+                run = self.run_for(source, evaluator=RefinementEvaluator(
+                    atomic_intermediates=(middle, smallest), splits=splits))
+                texts = list(dict.fromkeys([source, *(text for pair in splits.values() for text in pair)]))
+                rows = {text:self.validate(run, candidate("v0:s0", source, text=text)) for text in texts}
+                target = run.snapshot.current_segments[0]
+                run._review_atomicity(target)
+                for text in order:
+                    run._record_decomposition(rows[text], [rows[child] for child in splits[text]], "verified",
+                        dict.fromkeys(DECOMPOSITION_QUESTIONS, .99).items())
+                original = {item.id:item.signals for item in run.decompositions}
+                before = (len(run.calls), run.budget.remaining, run.atomicity_review_requests, run.granularity_checks)
+                if outcome == "conflicting":
+                    run.relations.append(InformationRelation(rows[backup].id, rows[retention].id, "equivalent", .99, .99))
+                    self.assertTrue(run._reconcile_decomposition_relations())
+                else:
+                    run.atomicity_reviews[exact_proposition_key(rows[backup])] = (
+                        "uncertain", (("atomic", .5), ("compound", .5)), "later-uncertain-audit")
+                    self.assertTrue(run._inherit_decomposition_state())
+                self.assertEqual(before, (len(run.calls), run.budget.remaining, run.atomicity_review_requests, run.granularity_checks))
+                self.assertTrue(all(item.state == outcome for item in run.decompositions))
+                self.assertEqual(original, {item.id:item.signals for item in run.decompositions})
+                for text in splits:
+                    late = self.validate(run, candidate("v0:s0", source, text=text))
+                    run._inherit_decomposition_state()
+                    current = {item.id:item for item in run.candidates}
+                    self.assertEqual("unit_candidate", current[late.id].inventory_role)
+                    own_proofs = {item.id for item in run.decompositions if item.parent_candidate_id == rows[text].id}
+                    self.assertTrue(own_proofs <= set(current[late.id].decomposition_ids))
+                    self.assertTrue(own_proofs <= set(current[rows[text].id].decomposition_ids))
+                settled = list(run.decompositions)
+                self.assertFalse(run._inherit_decomposition_state())
+                self.assertEqual(settled, run.decompositions)
+                self.assertEqual(before, (len(run.calls), run.budget.remaining, run.atomicity_review_requests, run.granularity_checks))
+                observations[outcome].append(sorted((next(text for text, row in rows.items() if row.id == item.parent_candidate_id),
+                    item.state, item.reason) for item in run.decompositions))
+        for results in observations.values():
+            self.assertTrue(all(item == results[0] for item in results))
+
+    def test_rejected_and_superseded_refinements_do_not_poison_current_partition(self):
+        source = "Backup is daily, retention is long and the network is private."
+        intermediate = "Backup is daily and retention is long."
+        backup, retention, network = "Backup is daily.", "Retention is long.", "The network is private."
+        splits = {source:(intermediate, network), intermediate:(backup, retention)}
+        run = self.run_for(source, evaluator=RefinementEvaluator(atomic_intermediates=(intermediate,), splits=splits))
+        rows = {text:self.validate(run, candidate("v0:s0", source, text=text))
+                for text in (source, intermediate, backup, retention, network)}
+        run._review_atomicity(run.snapshot.current_segments[0])
+        signals = tuple(dict.fromkeys(DECOMPOSITION_QUESTIONS, .99).items())
+        outer = run._record_decomposition(rows[source], [rows[intermediate], rows[network]], "verified", signals)
+        rejected = run._record_decomposition(rows[intermediate], [rows[backup], rows[retention]], "conflicting",
+            tuple((key, .01 if key == "parent_covers_components" else value) for key, value in signals))
+        self.assertEqual("verified", next(item for item in run.decompositions if item.id == outer.id).state)
+        child = run._record_decomposition(rows[intermediate], [rows[backup], rows[retention]], "verified", signals)
+        self.assertEqual(child.id, next(item for item in run.decompositions if item.id == rejected.id).superseded_by)
+        run.relations.append(InformationRelation(rows[backup].id, rows[retention].id, "equivalent", .99, .99))
+        run._reconcile_decomposition_relations()
+        self.assertTrue(all(item.state == "conflicting" for item in run.decompositions if item.superseded_by is None))
+        before = (len(run.calls), run.budget.remaining, run.atomicity_review_requests, run.granularity_checks)
+        newer = (*signals, ("new_concrete_review", .99))
+        replacement_child = run._record_decomposition(rows[intermediate], [rows[backup], rows[retention]], "verified", newer)
+        replacement_outer = run._record_decomposition(rows[source], [rows[intermediate], rows[network]], "verified", newer)
+        self.assertEqual(("verified", "verified"), (replacement_child.state, replacement_outer.state))
+        self.assertEqual({replacement_child.id, replacement_outer.id},
+            {item.id for item in run.decompositions if item.superseded_by is None})
+        self.assertTrue(all(item.state == "conflicting" for item in run.decompositions if item.superseded_by is not None))
+        self.assertTrue(all(item.inventory_role == "decomposed_parent" for item in run.candidates
+                            if item.candidate.text in splits))
+        self.assertFalse(run._reconcile_decomposition_relations())
+        self.assertFalse(run._inherit_decomposition_state())
+        # A sound refinement supplies independently audited terminal atoms even
+        # when a newer audit correctly classifies the intermediate as compound.
+        run.atomicity_reviews[exact_proposition_key(rows[intermediate])] = (
+            "compound", (("atomic", .01), ("compound", .99)), "later-compound-audit")
+        self.assertFalse(run._inherit_decomposition_state())
+        self.assertTrue(all(item.state == "verified" for item in run.decompositions if item.superseded_by is None))
+        self.assertEqual(before, (len(run.calls), run.budget.remaining, run.atomicity_review_requests, run.granularity_checks))
 
     def test_source_qualified_child_must_still_be_a_part_of_the_explicit_parent(self):
         source = "O sistema faz o telefone funcionar e permite usar aplicativos."

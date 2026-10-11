@@ -311,6 +311,16 @@ parent-child links remain historical evidence. Joint-review peers are ordered by
 source coordinates and complete meaning, then deduplicated, before the peer cap
 and local question indices are applied.
 
+Valid nested refinements retain their independently audited terminal components.
+If a child refinement loses its complete preservation certificate, reconciliation
+propagates that active contradiction through dependent exact parent families until
+no further certificate is invalidated. Every affected parent becomes visible and
+provisional, even when an earlier independent audit called the intermediate claim
+atomic. Rejected speculative witnesses with failed preservation gates and
+superseded historical conflicts do not establish this contradiction. Reconciliation
+preserves the original proof signals and links, and consumes no model calls or
+additional budget.
+
 For a comparison, keep and report every run's signature, digest, status, settings,
 counts and diagnostics. A changed signature means a recorded manifest field
 differs. A matching signature with a changed digest shows that the canonical
