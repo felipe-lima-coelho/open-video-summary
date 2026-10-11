@@ -1,7 +1,7 @@
 """Opt-in information-analysis settings, loaded only for an analysis request."""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from open_video_summary.errors import ConfigurationError
 
@@ -193,9 +193,13 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
     evaluator_config = load_evaluator_config(
         supplied, environ=values, env_file=env_file
     )
-    generator = create_llm(
-        load_provider_config(supplied, environ=values, env_file=env_file).llm
-    )
+    llm_config = load_provider_config(supplied, environ=values, env_file=env_file).llm
+    from open_video_summary.adapters.information_llm import InformationOpenAIAdapter
+    if (llm_config.provider == "openai"
+            and InformationOpenAIAdapter._known_alias(llm_config.model, "gpt-6-luna")):
+        generator = InformationOpenAIAdapter(config=replace(llm_config, reasoning_effort="none"))
+    else:
+        generator = create_llm(llm_config)
     evaluator = create_evaluator(evaluator_config)
     from open_video_summary.utils.request_control import RequestScope
     scope = RequestScope()

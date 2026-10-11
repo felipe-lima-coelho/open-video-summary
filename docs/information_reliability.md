@@ -37,6 +37,27 @@ per pair request. It preserves configured call limits and thresholds. The report
 profile's effective configured execution. It does not set a provider seed or
 replay/cache answers across runs.
 
+When information analysis selects OpenAI `gpt-6-luna` (including an exact dated
+snapshot), its dedicated generator always sends `seed=42`, `temperature=0`, and
+`reasoning_effort="none"`. This module overrides a different general LLM effort
+for that model. It uses Chat Completions with the same strict output schemas:
+the Responses API has no supported seed field. Other OpenAI models and other
+pipeline modules retain their existing adapter and configuration; Ollama is
+unchanged. Unsupported sampling settings stop the run without dropping a
+parameter or falling back to a different API. The fixed profile is independent
+of the serial execution option above.
+
+For this profile, each provider attempt records the requested and sent seed,
+sent temperature and effort, API endpoint, returned model and
+`system_fingerprint` when supplied. The manifest records the effective sampling
+policy and endpoint. Chat Completions does not report the effective reasoning
+effort, so that reported field remains null. OpenAI describes its deprecated
+seed parameter as best effort and does not guarantee deterministic outputs,
+even with a fixed seed; the returned fingerprint can also be absent. See the
+[model parameter guide](https://developers.openai.com/api/docs/guides/latest-model),
+[Chat Completions request reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
+and [Responses request reference](https://developers.openai.com/api/reference/resources/responses/methods/create).
+
 The report stores `metadata.reproducibility.analysis_signature` and its
 `manifest`. The manifest describes source and current-input fingerprints,
 settings, effective execution, template and code hashes, selected runtime

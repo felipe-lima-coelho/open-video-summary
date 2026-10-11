@@ -386,6 +386,13 @@ class LLMAdapter(ABC):
             request_limit=limits["request_limit"], token_limit=limits["token_limit"],
             rate_window_seconds=limits["window_seconds"])
 
+    def _reset_generation_state(self):
+        """Reset additional transport state before each physical attempt."""
+
+    def _generation_fields(self, request):
+        return {"temperature_sent": request.temperature
+                if self._request_sent and self.config.provider == "ollama" else None}
+
     @abstractmethod
     def preflight(self) -> None: ...
 
@@ -429,6 +436,7 @@ class LLMAdapter(ABC):
             self._reported_model = None
             self._reported_effort = None
             self._usage = (None, None)
+            self._reset_generation_state()
             generation_returned = False
             metadata = ServiceMetadata(
                 provider=self.config.provider,
@@ -464,11 +472,7 @@ class LLMAdapter(ABC):
                     sent_reasoning_effort=(
                         self.config.reasoning_effort if self._request_sent else None
                     ),
-                    temperature_sent=(
-                        request.temperature
-                        if self._request_sent and self.config.provider == "ollama"
-                        else None
-                    ),
+                    **self._generation_fields(request),
                     input_tokens=self._usage[0], output_tokens=self._usage[1],
                     **self._attempt_fields(retry_reason),
                 )
@@ -499,11 +503,7 @@ class LLMAdapter(ABC):
                         sent_reasoning_effort=(
                             self.config.reasoning_effort if self._request_sent else None
                         ),
-                        temperature_sent=(
-                            request.temperature
-                            if self._request_sent and self.config.provider == "ollama"
-                            else None
-                        ),
+                        **self._generation_fields(request),
                         input_tokens=self._usage[0], output_tokens=self._usage[1],
                         **self._attempt_fields(type(error).__name__),
                     )

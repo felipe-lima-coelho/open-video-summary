@@ -27,7 +27,7 @@ def analysis_manifest(snapshot, config, templates, generator, evaluator, provide
     """Hash source/code/settings without paths, secrets, clocks or run IDs."""
     package = Path(__file__).resolve().parents[2]
     paths = [*sorted((package / "core" / "summarizers").glob("information_*.py")),
-             *(package / "adapters" / name for name in ("llm.py", "typesafe.py", "information_schema.py")),
+             *(package / "adapters" / name for name in ("llm.py", "information_llm.py", "typesafe.py", "information_schema.py")),
              package / "contracts.py", package / "utils" / "providers.py"]
     source_files = {path.relative_to(package).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                     for path in paths}
@@ -38,7 +38,7 @@ def analysis_manifest(snapshot, config, templates, generator, evaluator, provide
         except importlib.metadata.PackageNotFoundError:
             dependencies[name] = None
     manifest = {
-        "version": 1,
+        "version": 2,
         "source_fingerprint": snapshot.source_fingerprint,
         "current_input_fingerprint": snapshot.current_input_fingerprint,
         "settings": asdict(config),
@@ -51,8 +51,10 @@ def analysis_manifest(snapshot, config, templates, generator, evaluator, provide
                     "machine": platform.machine(), "dependencies": dependencies},
         "generator": {**provider_settings(generator), "endpoint": _endpoint(generator)},
         "evaluator": {**provider_settings(evaluator), "endpoint": _endpoint(evaluator)},
-        "sampling": {"requested_temperature": 0.0, "seed": None,
-            "note": "Ollama sends temperature. OpenAI reasoning models omit it; neither selected adapter exposes a seed. Serial execution controls order, not provider determinism."},
+        "sampling": (generator.sampling_settings() if callable(getattr(generator, "sampling_settings", None))
+            else {"requested_temperature": 0.0, "seed": None,
+                "note": "Ollama sends temperature. The general OpenAI Responses adapter omits it "
+                        "and does not expose a seed. Serial execution controls order, not provider determinism."}),
     }
     return {"analysis_signature": fingerprint(manifest), "manifest": manifest,
             "guarantee": "Matching manifests identify comparable settings, not identical fresh provider outputs."}

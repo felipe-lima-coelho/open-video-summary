@@ -26,6 +26,10 @@ class ServiceMetadata:
     attempts: int = 1
     status: str = "completed"
     temperature_sent: float | None = None
+    requested_seed: int | None = None
+    seed_sent: int | None = None
+    system_fingerprint: str | None = None
+    api_endpoint: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     request_sent: bool = False
