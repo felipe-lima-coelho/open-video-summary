@@ -135,25 +135,6 @@ atomicity-based reliability evidence.
 The exact duplicate shortcut applies only when validated candidate text, type and
 complete evidence match. Every other proposed semantic merge needs an individual
 source-scoped follow-up with directional entailment checks in both directions.
-Relation template v11 presents `left_claim_text` and `right_claim_text` before
-separate `source_scopes` containing each claim's complete original marked target
-and its own cited reference segments. Primary comparisons and directional
-follow-ups share that representation. In a batch, every independently keyed
-question names its own pair and claim IDs. Source material resolves references
-and governing scope; its other assertions never enlarge the compared claims.
-Six shorter field-specific questions retain both directional checks, correction
-and incompatibility checks, and the separate complete-meaning check. Thresholds,
-Choice order, conflict handling and merging rules are unchanged.
-
-This follows the [Jev 1.13 guidance](https://docs.typesafe.ai/model-jaggedness/jev-1.13.md)
-to use explicit inputs and focused semantic questions instead of asking one
-judge to recover the comparison target from a broader task. It reduces an
-avoidable ambiguity in the payload; offline payload tests establish its
-construction, not better model accuracy. Fixed-input fresh provider comparisons
-and full fresh runs are separate evidence. Identical wording with different
-anchors still requires source-aware confirmation; neither the prompt change
-nor a high primary probability is an automatic equivalence proof.
-
 The analyzer prioritizes prospective equivalents and uncertain pair decisions
 under `--information-relation-adjudications` (default 256, at most one follow-up
 per pair); prospective equivalence confirmations are prioritized before other
@@ -164,6 +145,31 @@ shared evidence and a primary relation label do not authorize it. Final groups
 still require complete-link compatibility, so each pair of group members must
 have a confirmed equivalence decision. Unexamined or unresolved relations can
 leave one utterance represented by multiple units.
+
+## Jev relation prompt trial
+
+On 2026-10-11, a candidate inspired by the
+[Jev 1.13 guidance](https://docs.typesafe.ai/model-jaggedness/jev-1.13.md)
+used explicit claim fields and shorter directional questions (trial commit
+`3f3dd29`). A predeclared diagnostic compared v10 and that v11 candidate on eight
+fixed relation cases, with three fresh repetitions per variant: 48 evaluator
+calls, all completed, with no generator calls and an unchanged 0.90 threshold.
+These selected cases and expected labels are diagnostic controls, not an
+independent reference inventory or a population accuracy estimate.
+
+V10 identified all 9 expected-equivalent and 15 expected-distinct repetitions.
+V11 identified 3 expected-equivalent repetitions; the other 6 were uncertain
+(the Bebe exact-wording case and a synonym case, three repetitions each).
+Both variants identified all 15 expected-distinct repetitions without a false
+merge. The trial therefore supplied no measured benefit and lost resolved
+equivalences on these controls. The analyzer retains v10; the OpenAI fixed
+sampling profile remains unchanged. This result does not rule out other
+applications of Jev's guidance or establish broader model performance.
+
+The original trial remains in Git history. Local requests, responses and analysis
+are preserved under
+`outputs/evaluation/repeatability_tuning_20261011T150112Z/jev_ab/`; the predeclared
+fixtures are under `outputs/evaluation/jev_ab_predeclared_20261011T150237Z/`.
 
 ## Comparing results
 

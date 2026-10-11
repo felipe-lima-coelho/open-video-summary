@@ -104,9 +104,6 @@ def evaluation_state(context):
         value = json.loads(context)
         if "claim0_text" in value:
             return value
-        if "left_claim_text" in value:
-            return {"left": {"text": value["left_claim_text"]},
-                    "right": {"text": value["right_claim_text"]}}
     if context.startswith("Candidate id:"):
         first = context.split("\n\n", 1)[0].splitlines()
         return {
@@ -121,6 +118,8 @@ def evaluation_state(context):
         return {
             "original_target": {"id": identifier, "text": section(f"Original target [{identifier}]")}
         }
+    if context.startswith("Left candidate id:"):
+        return {"left": {"text": section("Left claim")}, "right": {"text": section("Right claim")}}
     raise AssertionError("Unexpected evaluator test state.")
 
 

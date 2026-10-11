@@ -46,8 +46,8 @@ class InformationRecoveryTests(unittest.TestCase):
                 if question["type"] == "noul":
                     probability = (signals or {}).get(identifier, 0.01)
                     if signals is None and labels is not None:
-                        state = json.loads(request["state"])
-                        left, right = state["left_candidate_id"], state["right_candidate_id"]
+                        left = request["state"].split("Left candidate id: ", 1)[1].split("\n", 1)[0]
+                        right = request["state"].split("Right candidate id: ", 1)[1].split("\n", 1)[0]
                         label = labels.get((left, right), "complementary")
                         truth = {"left_entails_right": label in {"equivalent", "more_specific_left"},
                             "right_entails_left": label in {"equivalent", "more_specific_right"},
@@ -61,8 +61,8 @@ class InformationRecoveryTests(unittest.TestCase):
                 else:
                     scope = request["state"].split(f"BEGIN {identifier}\n", 1)[1].split(f"\nEND {identifier}", 1)[0]
                     self.assertIn(f"Evaluate only {identifier}", question["instructions"])
-                state = json.loads(scope)
-                left, right = state["left_candidate_id"], state["right_candidate_id"]
+                left = scope.split("Left candidate id: ", 1)[1].split("\n", 1)[0]
+                right = scope.split("Right candidate id: ", 1)[1].split("\n", 1)[0]
                 # A borderline equivalence class leaves the family genuinely open.
                 label = (labels or {}).get((left, right), "equivalent" if low else "complementary")
                 mass = 0.89 if low else 0.99

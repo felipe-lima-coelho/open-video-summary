@@ -10,10 +10,7 @@ from test_information_inventory import InventoryEvaluator
 from open_video_summary.core.summarizers.information_analysis import InformationAnalyzer, _AnalysisRun
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
 from open_video_summary.core.summarizers.information_contracts import capture_snapshot
-from open_video_summary.core.summarizers.information_evaluation import (
-    EVALUATION_TEMPLATE_VERSION, RELATION_ADJUDICATION_QUESTIONS,
-    RELATION_SCOPE_INSTRUCTION, evaluation_templates, relation_state,
-)
+from open_video_summary.core.summarizers.information_evaluation import EVALUATION_TEMPLATE_VERSION
 from open_video_summary.core.summarizers.information_inventory import (
     ATOMICITY_QUESTIONS, DECOMPOSITION_INSTRUCTION, DECOMPOSITION_QUESTIONS,
     JOINT_COMPONENT_QUESTION, inventory_templates, joint_granularity_questions,
@@ -165,103 +162,12 @@ class InformationJudgeScopeTests(unittest.TestCase):
         self.assertIn("separate repetition", DECOMPOSITION_QUESTIONS["source_occurrence"])
 
     def test_prompt_manifest_includes_indexed_part_question_and_construction_version(self):
-        self.assertEqual("source-scope-fidelity-v11", EVALUATION_TEMPLATE_VERSION)
+        self.assertEqual("source-scope-fidelity-v10", EVALUATION_TEMPLATE_VERSION)
         self.assertEqual(JOINT_COMPONENT_QUESTION, inventory_templates()["joint_component_question"])
         self.assertEqual({"splittable"}, set(joint_granularity_questions(0)))
         questions = joint_granularity_questions(2)
         self.assertEqual({"splittable", "component0", "component1"}, set(questions))
         self.assertIn("component_claim_texts[1]", questions["component1"])
-
-    def test_relation_claim_fields_do_not_absorb_distractor_assertions_from_broad_evidence(self):
-        source = "O sistema permite usar aplicativos. A fabricante mantém a loja."
-        claim = "O sistema permite usar aplicativos."
-        proposals = [candidate("v0:s0", source, text=claim),
-                     candidate("v0:s0", source, quote=claim, text=claim)]
-        run, _, _, _ = self.seeded_run([source], proposals)
-        before = tuple(record.candidate for record in run.candidates)
-        state = json.loads(relation_state(*run.candidates, run.segments))
-        self.assertEqual(claim, state["left_claim_text"])
-        self.assertEqual(claim, state["right_claim_text"])
-        self.assertNotIn("A fabricante", state["left_claim_text"])
-        self.assertNotIn("A fabricante", state["right_claim_text"])
-        for scope in state["source_scopes"].values():
-            self.assertIn("A fabricante mantém a loja.", scope["original_target"]["marked_text"])
-        self.assertNotEqual(state["source_scopes"]["left_claim_text"],
-                            state["source_scopes"]["right_claim_text"])
-        self.assertIn("Independent assertions found only in source_scopes never become claim content",
-                      state["instruction"])
-        self.assert_claim_only_state(state)
-        self.assertEqual(before, tuple(record.candidate for record in run.candidates))
-
-    def test_relation_primary_and_directional_payload_keep_own_qualifiers_and_references(self):
-        from test_information_recovery import InformationRecoveryTests
-        context = "O backup foi configurado. A outra máquina falhou."
-        source = "Segundo Ana, se a rede cair, ele talvez não seja realizado. A retenção mudou."
-        quote = "ele talvez não seja realizado"
-        claim = "Segundo Ana, se a rede cair, o backup talvez não seja realizado."
-        reference = {"segment_id": "v0:s0", "quote": "O backup", "start_char": 0,
-                     "end_char": len("O backup"), "role": "context"}
-        proposals = [candidate("v0:s1", source, quote=quote, text=claim, attribution="Ana",
-                     conditions=("se a rede cair",), negated=True, modality="talvez", contexts=(reference,)),
-                     candidate("v0:s1", source, quote="A retenção mudou.")]
-        run, _, _, _ = self.seeded_run([context, source], proposals, target_index=1)
-        run.evaluator, requests = InformationRecoveryTests().evaluator()
-        pair = tuple(run.candidates)
-        for adjudicate in (False, True):
-            relations, worker, consumed = run._pair_batch_worker([pair], run.budget.reserve(), False,
-                                                               adjudicate=adjudicate)
-            self.assertTrue(consumed)
-            self.assertEqual([], worker.issues)
-            self.assertEqual(1, len(relations))
-        self.assertEqual(requests[0]["state"], requests[1]["state"])
-        state = json.loads(requests[1]["state"])
-        self.assertEqual(claim, state["left_claim_text"])
-        self.assertEqual("A retenção mudou.", state["right_claim_text"])
-        scopes = state["source_scopes"]
-        self.assertIn("Segundo Ana, se a rede cair, <source-assertion-0>" + quote,
-                      scopes["left_claim_text"]["original_target"]["marked_text"])
-        self.assertIn("<source-context-1>O backup</source-context-1>",
-                      scopes["left_claim_text"]["reference_scopes"][0]["marked_text"])
-        self.assertEqual([], scopes["right_claim_text"]["reference_scopes"])
-        self.assertEqual(set(RELATION_ADJUDICATION_QUESTIONS), set(requests[1]["questions"]))
-        for key in ("left_entails_right", "right_entails_left", "same_complete_meaning"):
-            self.assertIn("left_claim_text", requests[1]["questions"][key]["instructions"])
-            self.assertIn("right_claim_text", requests[1]["questions"][key]["instructions"])
-        self.assertEqual(context, run.snapshot.current_segments[0].content)
-        self.assertEqual(source, run.snapshot.current_segments[1].content)
-
-    def test_four_pair_batch_binds_each_question_to_its_own_explicit_claims(self):
-        from test_information_recovery import InformationRecoveryTests
-        phrases = [f"A regra {index} foi publicada." for index in range(8)]
-        source = " ".join(phrases)
-        run, _, _, _ = self.seeded_run([source], [candidate("v0:s0", source, quote=text) for text in phrases])
-        pairs = list(zip(run.candidates[::2], run.candidates[1::2]))
-        run.evaluator, requests = InformationRecoveryTests().evaluator()
-        relations, worker, consumed = run._pair_batch_worker(pairs, run.budget.reserve(), False)
-        self.assertTrue(consumed)
-        self.assertEqual([], worker.issues)
-        self.assertEqual(4, len(relations))
-        request = requests[0]
-        self.assertEqual({f"pair{index}" for index in range(4)}, set(request["questions"]))
-        for index, (left, right) in enumerate(pairs):
-            identifier = f"pair{index}"
-            state = json.loads(request["state"].split(f"BEGIN {identifier}\n", 1)[1]
-                               .split(f"\nEND {identifier}", 1)[0])
-            self.assertEqual((left.id, right.id), (state["left_candidate_id"], state["right_candidate_id"]))
-            self.assertEqual((left.candidate.text, right.candidate.text),
-                             (state["left_claim_text"], state["right_claim_text"]))
-            for field, record in (("left_claim_text", left), ("right_claim_text", right)):
-                self.assertIn("<source-assertion-0>" + record.candidate.text + "</source-assertion-0>",
-                              state["source_scopes"][field]["original_target"]["marked_text"])
-            instructions = request["questions"][identifier]["instructions"]
-            self.assertIn(f"Evaluate only {identifier}", instructions)
-            self.assertIn(f"left_claim_text belongs to candidate {left.id}", instructions)
-            self.assertIn(f"right_claim_text belongs to candidate {right.id}", instructions)
-            self.assertIn("assertions in other pairs supply no evidence", instructions)
-
-    def test_relation_scope_and_question_templates_are_in_manifest(self):
-        self.assertEqual(RELATION_SCOPE_INSTRUCTION, evaluation_templates()["relation_scope_instruction"])
-        self.assertEqual(RELATION_ADJUDICATION_QUESTIONS, evaluation_templates()["relation_adjudication_questions"])
 
 
 if __name__ == "__main__":
