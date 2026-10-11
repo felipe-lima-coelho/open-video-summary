@@ -308,6 +308,17 @@ distinct independent contents. It remains in `candidates` as provenance but
 does not add a third unit to its two parts. Specificity or overlapping quotations
 alone cannot establish this decomposition.
 
+Each accepted meaning also receives an independent source-scoped atomicity audit.
+By default, up to 8 audit requests per target each review up to 8 distinct claims;
+the same setting separately allows up to 8 joint parent/parts reviews per target.
+`--information-granularity-checks 0` disables both audit layers as an explicit
+ablation. Accepted candidates without a confirmed atomicity result remain visible;
+their active units are marked `provisional_granularity`, so the run stays partial
+or becomes failed if analysis stops with a provider failure.
+Budget and context limits can leave audits unresolved. Atomicity, decomposition
+and unit-count changes are report-only: information analysis still runs before
+Introduction and does not add or change HSM selection decisions.
+
 Incomplete, conflicting or uncertain alternatives remain visible in
 `decompositions`; affected units carry `inventory_state:
 "provisional_granularity"` and `decomposition_ids`. Their summed count is
@@ -329,13 +340,14 @@ claim does not. Source foci do not count as candidate units or occurrences.
 The separate open audit still traverses the original source for content that
 never became a focus. No-progress and budget stops leave unresolved records
 visible; even a completed run does not prove exhaustive coverage. Reports use
-schema 9, retain model and prompt versions, and treat probability/confidence as
+schema 10, retain model and prompt versions, and treat probability/confidence as
 routing signals rather than measured application accuracy.
 
 For matched experiments, `--information-mode direct`, `qa`, `hybrid`, and
 `hybrid_coverage` select direct discovery, QA discovery, both, or both plus the
 source ledger/audit and gap recovery. All four share source snapshots, candidate
-validation, joint granularity, literal repairs and complete-link consolidation.
+validation, independent atomicity and joint granularity audits, literal repairs
+and complete-link consolidation.
 Only `hybrid_coverage` performs coverage recovery. An explicit mode owns route
 selection; without one, the existing QA switch remains effective and coverage
 stays enabled. Reports record `metadata.experimental_mode` and every configured
@@ -357,15 +369,18 @@ Every resolved candidate still requires semantic validation. Timestamps are
 copied from source segments, with segment-level resolution, never estimated by a
 model. Context citations can resolve a reference but create no occurrence.
 
-Jev receives readable assertion quotations, the whole original target, whole
-source segments for cited reference context, and the proposed claim. The
-source-owned scope exposes governing conditions, attribution, modality and
-negation outside a generator-selected quote. It does not authorize new assertions
-from reference context. Timing metadata and extraction instructions are excluded.
-Focused anchor binding first checks that the selected wording identifies the
-candidate's property or event. That request contains only assertion wording and
-claim plus literal cited reference context, which can resolve references but
-cannot supply a new assertion. Exact quote/claim
+Jev's source-fidelity checks receive readable assertion quotations, the whole
+original target, whole source segments for cited reference context, and the
+proposed claim. The source-owned scope exposes governing conditions, attribution,
+modality and negation outside a generator-selected quote. It does not authorize
+new assertions from reference context. Timing metadata and extraction instructions
+are excluded. Focused anchor binding first checks that the selected wording
+identifies the candidate's property or event. That request also receives the
+original local sentence around each selected assertion, marked at the exact
+source span, so surrounding wording can resolve its subject and qualifiers.
+Neighboring independent assertions cannot supply the candidate; literal cited
+reference context can resolve references but cannot supply a new assertion.
+Exact quote/claim
 identity, or one contiguous exact candidate passage covering every selected
 assertion interval, can establish binding in code. Matching only a different
 occurrence or combining disjoint passages cannot. This proves binding only;
@@ -431,10 +446,14 @@ Pair comparisons preserve complement, specificity, contradiction and correction
 relations. Only sufficiently strong equivalence decisions merge meanings, and
 every member of a merged group must be pairwise compatible. Equal text in different
 contexts still needs evaluation. Exact validated duplicates with identical
-evidence can be deduplicated in code, independently of auxiliary annotations.
-These free duplicate checks run before paid comparisons even if the logical-call
-budget is exhausted. Shared assertion anchors and textual similarity prioritize
-the remaining comparisons; priority alone never establishes equivalence.
+text, type and complete evidence can be merged in code, independently of auxiliary
+annotations. Every other prospective equivalence needs a separate source-scoped
+follow-up that checks entailment in both directions. Follow-ups are prioritized
+under the `--information-relation-adjudications` cap (256 by default, at most one
+per pair) and share the pair and global call budgets. Similarity and shared
+assertion anchors order comparisons but never establish equivalence. An
+unconfirmed or unresolved pair remains separate and provisional; complete-link
+grouping still requires every pair within a group to be confirmed equivalent.
 Unexamined pairs remain explicit and can leave one utterance in multiple units.
 The report-level `counts.counts_provisional` flag marks both whole-input totals
 and the by-segment/by-video aggregates provisional whenever analysis is partial
@@ -463,7 +482,7 @@ units, assertion evidence groups and their alignment state, context evidence,
 pair relations, joint decompositions, individual source foci, coverage records,
 counts by segment/video/whole input and unresolved issues. Calls record requested
 and returned models, input/output hashes, usage when available, latency and retry
-attempts. Report schema 9 records the complete source-focus retry plan and each
+attempts. Report schema 10 records the complete source-focus retry plan and each
 physical attempt's effective request, prompt and schema fingerprints and format.
 Request and schema fingerprints use sorted, compact UTF-8 JSON; prompt
 fingerprints use the exact UTF-8 text.
@@ -487,6 +506,17 @@ completed empty inventory has `counts.valid_zero=true`. Jev's Noul value is a
 probability of a yes answer; Choice's selected-option probability and its separate
 confidence metric are recorded distinctly. Neither is a measured accuracy rate in
 this application. The defaults below need validation on Portuguese annotations.
+For repeated runs, `--information-reproducible` serializes source-target execution
+and uses individual pair requests. It controls scheduling only: providers return
+fresh results, no responses are replayed between runs, and identical settings do
+not guarantee identical outputs. The report records observed workers in
+`metadata.effective_execution`, the versioned manifest at
+`metadata.reproducibility.manifest`, and its signature at
+`metadata.reproducibility.analysis_signature`, a canonical `metadata.content_digest`
+and `metadata.reliability_diagnostics` for comparing inventories and unresolved
+work. See
+[Information inventory reliability](docs/information_reliability.md) for a
+controlled comparison protocol and interpretation limits.
 
 ### Analysis bounds and library contract
 
@@ -512,8 +542,9 @@ are described in [models](https://docs.typesafe.ai/models) and
 | CLI option | Environment setting | Default |
 | --- | --- | --- |
 | `--no-information-qa` | `OVS_INFORMATION_QA` (`true`/`false`) | QA enabled |
+| `--information-reproducible` | `OVS_INFORMATION_REPRODUCIBLE` (`true`/`false`) | `false`; serial source targets and individual pair requests; provider outputs may still vary |
 | `--information-mode` | `OVS_INFORMATION_MODE` | Unset: existing QA switch plus coverage; explicit `direct`, `qa`, `hybrid`, `hybrid_coverage` modes override that switch |
-| `--information-granularity-checks` | `OVS_INFORMATION_GRANULARITY_CHECKS` | 8 joint parent/parts reviews per target (0–64); 0 disables joint review |
+| `--information-granularity-checks` | `OVS_INFORMATION_GRANULARITY_CHECKS` | 8 independent atomicity audit requests (up to 8 claims each) and 8 joint parent/parts reviews per target (0–64); 0 disables both |
 | `--information-coverage-foci` | `OVS_INFORMATION_COVERAGE_FOCI` | 16 independent source foci per target (0–256); 0 selects the legacy segment audit |
 | `--information-gap-repairs` | `OVS_INFORMATION_GAP_REPAIRS` | 2 attempts per source focus (0–10), also bounded by target rounds and global calls |
 | `--information-concurrency` | `OVS_INFORMATION_CONCURRENCY` | 2 independent source targets (range 1–8) |
@@ -521,13 +552,13 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--information-rounds` | `OVS_INFORMATION_ROUNDS` | 2 recovery rounds per target |
 | `--information-pair-concurrency` | `OVS_INFORMATION_PAIR_CONCURRENCY` | 8 comparison requests in flight (range 1–8) |
 | `--information-pair-batch-size` | `OVS_INFORMATION_PAIR_BATCH_SIZE` | 4 independently keyed pair decisions per request (range 1–8); 1 enables the individual baseline |
-| `--information-relation-adjudications` | `OVS_INFORMATION_RELATION_ADJUDICATIONS` | Up to 256 individual source-scoped follow-ups for uncertain relations, at most one per pair |
+| `--information-relation-adjudications` | `OVS_INFORMATION_RELATION_ADJUDICATIONS` | Up to 256 individual source-scoped follow-ups for prospective equivalents or uncertain relations, at most one per pair |
 | `--information-direct-window-chars` | `OVS_INFORMATION_DIRECT_WINDOW_CHARS` | 240 original-source characters per direct discovery window for longer targets (range 80–4000) |
-| `--information-max-direct-windows` | `OVS_INFORMATION_MAX_DIRECT_WINDOWS` | At most 16 direct generation invocations per long target, including failed-window decomposition (range 1–64) |
+| `--information-max-direct-windows` | `OVS_INFORMATION_MAX_DIRECT_WINDOWS` | At most 16 direct generation invocations per long target, including failed or saturated window decomposition (range 1–64) |
 | `--information-literal-repairs` | `OVS_INFORMATION_LITERAL_REPAIRS` | At most 4 complete source-sentence repairs per target after discovery (range 0–64; 0 disables) |
 | `--information-max-pairs` | `OVS_INFORMATION_MAX_PAIRS` | `auto`: remaining global calls times bounded batch capacity; an integer caps paid pair decisions, including follow-ups and 0 |
 | `--information-qa-window-chars` | `OVS_INFORMATION_QA_WINDOW_CHARS` | 240 original-source characters per independent QA discovery window (range 80–4000) |
-| `--information-max-qa-windows` | `OVS_INFORMATION_MAX_QA_WINDOWS` | At most 16 QA generation invocations per target, including failed-window decomposition (range 1–64) |
+| `--information-max-qa-windows` | `OVS_INFORMATION_MAX_QA_WINDOWS` | At most 16 QA generation invocations per target, including failed or saturated window decomposition (range 1–64) |
 | `--information-max-candidates` | `OVS_INFORMATION_MAX_CANDIDATES` | 16 per generation; bounded direct and QA windows emit at most 4 |
 | `--information-context-chars` | `OVS_INFORMATION_CONTEXT_CHARS` | 24000 characters per prompt, or evaluation context plus questions |
 | `--information-context-segments` | `OVS_INFORMATION_CONTEXT_SEGMENTS` | Up to 4 additional current segments from the same video |
@@ -627,18 +658,18 @@ guarantees that newly discovered content fits the configured budget.
 Direct discovery splits targets longer than its configured window size before
 generation, avoiding a repeated monolithic request for the entire long target.
 Shorter targets keep the ordinary direct request. Its independent invocation
-bound includes failed-window decomposition, and `direct_source_windows` records
-the original offsets, status and attempt number. Pending direct windows remain
-visible and make the inventory provisional.
+bound includes failed-window recovery and splitting saturated windows, and
+`direct_source_windows` records the original offsets, status and attempt number.
+Pending direct windows remain visible and make the inventory provisional.
 
 Independent QA discovery traverses disjoint source windows with at most four
 candidates per generation, retaining the full original target and cited context
 for references and governing qualifiers. Assertion evidence must start in its
-assigned window, and quotes/offsets always belong to the original source. A timed
-out window is decomposed under the same provider deadlines and global call cap;
-the configured QA invocation limit includes those retries. Pending windows are
-reported. QA receives no direct-route candidates. A recoverable route failure
-still permits the original-source coverage audit and preserves valid evidence
+assigned window, and quotes/offsets always belong to the original source. A
+failed or saturated window is split under the same provider deadlines and global
+call cap; the configured QA invocation limit includes those additional windows.
+Pending windows are reported. QA receives no direct-route candidates. A
+recoverable route failure still permits the original-source coverage audit and preserves valid evidence
 from the other route. Window completion does not prove semantic coverage.
 Both discovery routes retain the complete original target and use source-owned
 offsets, including when a sentence or its governing condition crosses a window
@@ -686,11 +717,13 @@ must still be measured for each experiment.
 Recovery requests share repeated literal citations through one `evidence_table`.
 Exact duplicate projected candidates share an `ids` list. Every accepted claim,
 verified qualifier and essential citation is retained, together with the full
-original source and repair reasons. Repeated provenance, timestamps and numeric
-diagnostics remain in the report. This bounds repeated state without truncating
-research content. A request still exceeding the configured context cap records
-its operation, size, limit and remaining call budget separately from call
-exhaustion.
+original target and repair reasons. A repair for one source focus omits unrelated
+unresolved proposals and lists their IDs in `omitted_out_of_focus_repair_ids`;
+the complete report keeps every raw proposal, timestamp and diagnostic. Optional
+uncited neighboring context is removed first if the assembled request exceeds
+the context cap. Required source text is never truncated; if the prompt still
+exceeds the cap, the request remains
+unresolved and its limit is reported separately from call exhaustion.
 
 Coverage requests group exact repeats of accepted text, type and full source
 evidence, retaining every contributing candidate ID. Original report records and
