@@ -234,13 +234,18 @@ class SemanticInventory:
         identifier = "d:" + fingerprint((parent.id, identifiers, state, tuple(signals), reason))[:20]
         existing = next((item for item in self.decompositions if item.id == identifier), None)
         if existing is not None:
+            self._inherit_decomposition_state()
             return existing
         record = InformationDecomposition(identifier, parent.id, identifiers, state,
                                           tuple(signals), reason=reason)
         self.decompositions.append(record)
         if state == "verified":
+            records = {item.id: item for item in self.candidates if item.candidate is not None}
+            parent_meaning = exact_proposition_key(parent)
             self.decompositions = [replace(item, superseded_by=identifier)
-                if item.parent_candidate_id == parent.id and item.id != identifier
+                if item.parent_candidate_id in records
+                and exact_proposition_key(records[item.parent_candidate_id]) == parent_meaning
+                and item.id != identifier
                 and item.superseded_by is None else item for item in self.decompositions]
         members = {parent.id, *identifiers}
         for index, candidate in enumerate(self.candidates):
@@ -252,7 +257,45 @@ class SemanticInventory:
                 parent_candidate_ids=tuple(dict.fromkeys(candidate.parent_candidate_ids
                     + ((parent.id,) if candidate.id != parent.id else ()))),
                 decomposition_ids=tuple(dict.fromkeys(candidate.decomposition_ids + (identifier,))))
+        self._inherit_decomposition_state()
         return record
+
+    def _inherit_decomposition_state(self):
+        """Apply one active structural decision to every exact validated alias.
+
+        The canonical decomposition remains the evidence record. Alias parents
+        link to that record, and its children retain every validated parent ID.
+        Recompute roles from active decisions so invalidating a proof restores
+        the entire exact family, including aliases introduced by a later route.
+        """
+        records = {item.id: item for item in self.candidates if item.candidate is not None}
+        families = {}
+        for decomposition in self.decompositions:
+            parent = records.get(decomposition.parent_candidate_id)
+            if parent is not None and decomposition.superseded_by is None:
+                families.setdefault(exact_proposition_key(parent), []).append(decomposition)
+        inherited, child_parents = {}, {}
+        for record in records.values():
+            decisions = families.get(exact_proposition_key(record), ())
+            if not decisions or not (record.validation == "accepted" or any(
+                    item.parent_candidate_id == record.id for item in decisions)):
+                continue
+            verified = [item for item in decisions if item.state == "verified"]
+            inherited[record.id] = ("decomposed_parent" if verified else "unit_candidate",
+                                    tuple(item.id for item in decisions))
+            for decision in verified:
+                for identifier in decision.component_candidate_ids:
+                    child_parents.setdefault(identifier, []).append(record.id)
+        changed = False
+        for index, record in enumerate(self.candidates):
+            role, decisions = inherited.get(record.id, (record.inventory_role, ()))
+            parents = tuple(dict.fromkeys(record.parent_candidate_ids + tuple(child_parents.get(record.id, ()))))
+            identifiers = tuple(dict.fromkeys(record.decomposition_ids + decisions))
+            updated = replace(record, inventory_role=role, decomposition_ids=identifiers,
+                              parent_candidate_ids=parents)
+            changed = changed or updated.inventory_role != record.inventory_role
+            self.candidates[index] = updated
+        return changed
 
     def _verify_decomposition(self, target, parent, children, joint_signals=()):
         try:
@@ -332,6 +375,7 @@ class SemanticInventory:
                        (target.id,), tuple(item.id for item in pending))
 
     def _reconcile_granularity(self, target):
+        self._inherit_decomposition_state()
         if not self.config.max_granularity_checks:
             return
         self._review_atomicity(target)
@@ -789,14 +833,20 @@ class SemanticInventory:
     def _reconcile_decomposition_relations(self):
         """Do not conceal conflicts between joint structure and later pair checks."""
         restored = set()
+        records = {item.id: item for item in self.candidates if item.candidate is not None}
         for index, decomposition in enumerate(self.decompositions):
             if decomposition.superseded_by is not None:
                 continue
             components = set(decomposition.component_candidate_ids)
+            parent = records.get(decomposition.parent_candidate_id)
+            parents = {decomposition.parent_candidate_id}
+            if parent is not None:
+                parents.update(item.id for item in records.values() if item.validation == "accepted"
+                               and exact_proposition_key(item) == exact_proposition_key(parent))
             for position, relation in enumerate(self.relations):
                 pair = {relation.left_candidate_id, relation.right_candidate_id}
                 component_pair = len(pair) == 2 and pair <= components
-                parent_pair = decomposition.parent_candidate_id in pair and bool(pair & components)
+                parent_pair = bool(pair & parents) and bool(pair & components)
                 proper_part = parent_pair and any(self._verified_proper_part(decomposition, identifier)
                                                  for identifier in pair & components)
                 if relation.equivalence_state != "equivalent" or not (
@@ -808,10 +858,9 @@ class SemanticInventory:
                 if decomposition.state == "verified":
                     self.decompositions[index] = replace(decomposition, state="conflicting",
                         reason="component_equivalence_conflicts_with_joint_distinctness")
-                    restored.add(decomposition.parent_candidate_id)
+                    restored.update(parents)
         if restored:
-            self.candidates = [replace(item, inventory_role="unit_candidate") if item.id in restored else item
-                               for item in self.candidates]
+            self._inherit_decomposition_state()
         return bool(restored)
 
     @staticmethod

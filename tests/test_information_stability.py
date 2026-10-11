@@ -273,6 +273,110 @@ class InformationStabilityTests(unittest.TestCase):
             with self.assertRaises(ConfigurationError):
                 InformationAnalysisConfig(max_source_sentences=value)
 
+    def decomposed_alias_report(self, *, parent_count=1, source_sentences=64, conflict=False):
+        source = "O backup é diário e a retenção dura 30 dias."
+        parent = candidate("v0:s0", source, quantities=("30 dias",))
+        parts = [candidate("v0:s0", source, text="O backup é diário."),
+                 candidate("v0:s0", source, text="A retenção dura 30 dias.", quantities=("30 dias",))]
+        proposals = [*[parent for _ in range(parent_count)], *parts]
+        generator = ScriptedGenerator(callback=lambda data, route: proposals if route == "direct" else [])
+        evaluator = InventoryEvaluator(splits={source: tuple(item["text"] for item in parts)},
+            relation={frozenset(item["text"] for item in parts): "equivalent"} if conflict else None)
+        report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
+            qa_enabled=False, max_source_sentences=source_sentences)).analyze(capture_snapshot(videos([source])))
+        return report, generator, source, parts
+
+    def test_verified_partition_suppresses_existing_and_late_exact_parent_aliases(self):
+        for parent_count in (1, 2):
+            for source_sentences in (0, 64):
+                with self.subTest(parents=parent_count, supplement=source_sentences):
+                    report, generator, source, parts = self.decomposed_alias_report(
+                        parent_count=parent_count, source_sentences=source_sentences)
+                    parents = [record for record in report.candidates if record.candidate.text == source]
+                    self.assertEqual(parent_count + bool(source_sentences), len(parents))
+                    self.assertTrue(all(record.inventory_role == "decomposed_parent" for record in parents))
+                    self.assertEqual({item["text"] for item in parts}, {unit.text for unit in report.units})
+                    self.assertEqual(2, report.counts.unique_units)
+                    self.assertEqual(len(parents), report.counts.decomposed_parent_candidates)
+                    verified = [item for item in report.decompositions
+                                if item.state == "verified" and item.superseded_by is None]
+                    self.assertEqual(1, len(verified))
+                    self.assertTrue(all(verified[0].id in record.decomposition_ids for record in parents))
+                    children = [record for record in report.candidates
+                                if record.id in verified[0].component_candidate_ids]
+                    self.assertTrue(all({record.id for record in parents} <= set(child.parent_candidate_ids)
+                                        for child in children))
+                    self.assertEqual(1, sum(call.operation == "verify_decomposition" for call in report.calls))
+                    self.assertEqual(1, sum(call.operation == "review_candidate_atomicity" for call in report.calls))
+                    self.assertFalse(any('"analysis_task":"decompose_candidate"' in request.prompt
+                                         for request in generator.requests))
+                    self.assertTrue(all(json.loads(record.raw_json)["text"] == source for record in parents))
+
+    def test_partition_conflict_restores_all_exact_aliases_as_one_parent_unit(self):
+        for source_sentences in (0, 64):
+            with self.subTest(supplement=source_sentences):
+                report, _, source, _ = self.decomposed_alias_report(
+                    parent_count=2, source_sentences=source_sentences, conflict=True)
+                parents = [record for record in report.candidates if record.candidate.text == source]
+                self.assertTrue(all(record.inventory_role == "unit_candidate" for record in parents))
+                self.assertEqual(0, report.counts.decomposed_parent_candidates)
+                active = [item for item in report.decompositions if item.superseded_by is None]
+                self.assertEqual(["conflicting"], [item.state for item in active])
+                self.assertTrue(all(active[0].id in record.decomposition_ids for record in parents))
+                parent_units = [unit for unit in report.units if unit.text == source]
+                self.assertEqual(1, len(parent_units))
+                self.assertEqual({record.id for record in parents}, set(parent_units[0].candidate_ids))
+                self.assertEqual("provisional_granularity", parent_units[0].inventory_state)
+                self.assertEqual(3, report.counts.unique_units)
+                self.assertTrue(report.counts.counts_provisional)
+                self.assertEqual(1, sum(call.operation == "verify_decomposition" for call in report.calls))
+
+    def test_partition_inheritance_never_crosses_qualified_text_or_reference_scope(self):
+        source = "Segundo Ana, o backup é diário e a retenção dura 30 dias."
+        parent = candidate("v0:s0", source, attribution="Ana", quantities=("30 dias",))
+        children = [candidate("v0:s0", source, text=text, attribution="Ana") for text in
+                    ("Segundo Ana, o backup é diário.", "Segundo Ana, a retenção dura 30 dias.")]
+        attributed = candidate("v0:s0", source,
+            text="O backup é diário e a retenção dura 30 dias.", quantities=("30 dias",))
+        other_scope_raw = candidate("v0:s0", source, attribution="Ana", quantities=("30 dias",))
+        other_scope_raw["evidence"].append({"segment_id": "v0:s0", "quote": "Ana",
+                                          "start_char": 8, "end_char": 11, "role": "context"})
+        for alternative in (attributed, other_scope_raw):
+            with self.subTest(alternative=alternative):
+                proposals = [parent, *children, alternative]
+                generator = ScriptedGenerator(callback=lambda data, route:
+                    proposals if route == "direct" else [])
+                # The scripted judge deliberately accepts the alternatives;
+                # this tests proof scope, not their actual semantic correctness.
+                evaluator = InventoryEvaluator(splits={source: tuple(item["text"] for item in children)})
+                report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
+                    qa_enabled=False, max_granularity_checks=1)).analyze(capture_snapshot(videos([source])))
+                records = {record.id: record for record in report.candidates}
+                proof = next(item for item in report.decompositions if item.state == "verified")
+                self.assertEqual("decomposed_parent", records["c0"].inventory_role)
+                self.assertEqual("unit_candidate", records["c3"].inventory_role)
+                self.assertNotIn(proof.id, records["c3"].decomposition_ids)
+                self.assertEqual(3, report.counts.unique_units)
+                self.assertEqual(1, sum(call.operation == "verify_decomposition" for call in report.calls))
+
+    def test_late_alias_of_invalidated_partition_retains_conflict_provenance(self):
+        source = "O backup é diário e a retenção dura 30 dias."
+        run = self.run_for(source)
+        parent = self.validate(run, candidate("v0:s0", source))
+        children = [self.validate(run, candidate("v0:s0", source, text=text))
+                    for text in ("O backup é diário.", "A retenção dura 30 dias.")]
+        proof = run._record_decomposition(parent, children, "verified")
+        run.decompositions[0] = replace(proof, state="conflicting",
+                                        reason="component_equivalence_conflicts_with_joint_distinctness")
+        late = self.validate(run, candidate("v0:s0", source, unit_type="definition"))
+        calls = len(run.calls)
+        run._inherit_decomposition_state()
+        records = {record.id: record for record in run.candidates}
+        self.assertEqual(calls, len(run.calls))
+        for identifier in (parent.id, late.id):
+            self.assertEqual("unit_candidate", records[identifier].inventory_role)
+            self.assertIn(proof.id, records[identifier].decomposition_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

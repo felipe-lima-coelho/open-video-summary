@@ -1654,6 +1654,7 @@ class _AnalysisRun(SemanticInventory):
         return collected
 
     def _consolidate(self):
+        self._inherit_decomposition_state()
         source_order = {identifier: index for index, identifier in enumerate(self.snapshot.current_order)}
         accepted = sorted(self._accepted(), key=lambda record: canonical_candidate_key(record, source_order))
         compatible = {}
@@ -1767,6 +1768,17 @@ class _AnalysisRun(SemanticInventory):
         if self._reconcile_decomposition_relations():
             accepted = sorted(self._accepted(), key=lambda record: canonical_candidate_key(record, source_order))
             total_pairs = len(accepted) * (len(accepted) - 1) // 2
+            # Restored parent aliases were inactive during pair scheduling.
+            # Their exact identity is still a literal proof, without another
+            # provider request or an implicit parent/child equivalence.
+            existing = {frozenset((item.left_candidate_id, item.right_candidate_id))
+                        for item in self.relations}
+            restored_exact, _ = self._candidate_pairs(accepted, 0)
+            for left, right in restored_exact:
+                if frozenset((left.id, right.id)) not in existing:
+                    self.relations.append(InformationRelation(left.id, right.id, "equivalent", 1.0,
+                        None, origin="exact_validated_proposition"))
+                    self.exact_pair_relations += 1
         for relation in self.relations:
             compatible[frozenset((relation.left_candidate_id, relation.right_candidate_id))] = relation.equivalence_state == "equivalent"
             if relation.equivalence_state == "uncertain":

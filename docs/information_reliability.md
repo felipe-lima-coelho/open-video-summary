@@ -182,6 +182,15 @@ including its unchanged parent-compound, collective preservation, independence,
 distinctness, source-occurrence and qualifier gates. Gray or failed concrete
 checks retain the parent and proposed parts as unresolved alternatives.
 
+A verified partition applies to every validated alias with the exact same
+complete claim and complete source/reference evidence, including aliases added
+later by another route. They retain their raw proposals and link to the same
+decomposition record; children retain all corresponding parent candidate IDs.
+No extra provider decision or counted parent is created for that identity.
+If later relation evidence invalidates the partition, all parent aliases are
+restored together and exact aliases still form one provisional parent unit.
+Changed qualified text or reference scope cannot inherit this structural proof.
+
 The exact duplicate shortcut applies only when validated complete candidate text
 and complete evidence match, ignoring evidence list order and repeated identical
 evidence entries. Unverified type labels do not add meaning: all raw labels and
