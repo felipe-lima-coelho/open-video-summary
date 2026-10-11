@@ -269,6 +269,7 @@ def analyze(source, generator=None, evaluator=None, **settings):
     settings.setdefault("qa_window_chars", 4000)
     settings.setdefault("direct_window_chars", 4000)
     settings.setdefault("max_literal_repairs", 0)
+    settings.setdefault("max_source_sentences", 0)
     return InformationAnalyzer(
         generator or ScriptedGenerator(),
         evaluator or SyntheticEvaluator(),

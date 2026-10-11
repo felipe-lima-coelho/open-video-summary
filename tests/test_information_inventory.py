@@ -82,6 +82,7 @@ class InformationInventoryTests(unittest.TestCase):
                     "recovery": recovery, "decompose_candidate": components}.get(route, ())
         generator = ScriptedGenerator(callback=lambda data, route: list(generate(data, route)))
         settings = dict(concurrency=1, qa_enabled=False, max_calls=256, max_literal_repairs=0,
+                        max_source_sentences=0,
                         pair_batch_size=1, max_relation_adjudications=256,
                         direct_window_chars=4000, qa_window_chars=4000)
         settings.update(config)

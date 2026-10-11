@@ -1,6 +1,7 @@
 """Offline coverage for bounded semantic pair consolidation."""
 
 import json
+from dataclasses import replace
 import threading
 import time
 import unittest
@@ -217,7 +218,8 @@ def make_run(texts, *, config=None, tracker=None, relations=None, duplicates=())
     analyzer = InformationAnalyzer(
         OfflineGenerator(),
         evaluator,
-        config or InformationAnalysisConfig(pair_batch_size=1, qa_enabled=False),
+        replace(config, max_source_sentences=0) if config else
+        InformationAnalysisConfig(pair_batch_size=1, qa_enabled=False, max_source_sentences=0),
     )
     run = _AnalysisRun(analyzer, snapshot)
     run.candidates.extend(records)

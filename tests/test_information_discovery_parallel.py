@@ -181,6 +181,7 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
         tape = _Tape(failure=failure, barrier=barrier, delay=delay, other_delay=other_delay)
         generator, evaluator = _Generator(tape), _Evaluator(tape)
         config = InformationAnalysisConfig(concurrency=2, direct_window_chars=160,
+            max_source_sentences=0,
             qa_window_chars=160, max_pair_comparisons=0, **(settings or {}), max_calls=max_calls)
         analyzer = InformationAnalyzer(generator, evaluator, config)
         started = time.monotonic()
@@ -366,7 +367,8 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
             generator, evaluator = StatelessGenerator(tape), _Evaluator(tape)
             self.assertFalse(hasattr(generator, "close"))
             config = InformationAnalysisConfig(concurrency=2, max_calls=1000,
-                direct_window_chars=160, qa_window_chars=160, max_pair_comparisons=0)
+                direct_window_chars=160, qa_window_chars=160, max_pair_comparisons=0,
+                max_source_sentences=0)
             analyzer = InformationAnalyzer(generator, evaluator, config)
             snapshot = capture_snapshot(videos([SENTENCES[0], "Bom dia."]))
             if lookahead:

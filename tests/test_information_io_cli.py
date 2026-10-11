@@ -61,7 +61,7 @@ class InformationIOTests(unittest.TestCase):
                 }
             ),
             SyntheticEvaluator(),
-            InformationAnalysisConfig(qa_enabled=False),
+            InformationAnalysisConfig(max_source_sentences=0, qa_enabled=False),
         ).analyze(capture_snapshot(source))
 
     def test_atomic_utf8_json_csv_portable_paths_and_no_overwrites(self):
@@ -93,7 +93,7 @@ class InformationIOTests(unittest.TestCase):
         evaluator, _ = analysis_fixtures.InformationEvaluationRegressionTests().evaluator({"attribution_annotation": 0.57})
         report = InformationAnalyzer(
             ScriptedGenerator({("v0:s0", "direct"): [raw]}), evaluator,
-            InformationAnalysisConfig(qa_enabled=False),
+            InformationAnalysisConfig(max_source_sentences=0, qa_enabled=False),
         ).analyze(capture_snapshot(videos([text])))
         path, csv_path = self.root / "unknown.json", self.root / "unknown.csv"
         save_information_report(report, path, csv_path=csv_path)
@@ -136,7 +136,7 @@ class InformationIOTests(unittest.TestCase):
         report = InformationAnalyzer(
             ScriptedGenerator({("v0:s0", "direct"): raw}),
             SyntheticEvaluator(),
-            InformationAnalysisConfig(qa_enabled=False),
+            InformationAnalysisConfig(max_source_sentences=0, qa_enabled=False),
         ).analyze(capture_snapshot(videos([text])))
         path, csv_path = self.root / "pending.json", self.root / "pending.csv"
         save_information_report(report, path, csv_path=csv_path)
@@ -173,7 +173,7 @@ class InformationIOTests(unittest.TestCase):
         report = InformationAnalyzer(
             ScriptedGenerator({("v0:s0", "direct"): raw}),
             SyntheticEvaluator(),
-            InformationAnalysisConfig(qa_enabled=False, max_pair_comparisons=0),
+            InformationAnalysisConfig(max_source_sentences=0, qa_enabled=False, max_pair_comparisons=0),
         ).analyze(capture_snapshot(videos([text])))
         path, csv_path = self.root / "unexamined.json", self.root / "unexamined.csv"
         save_information_report(report, path, csv_path=csv_path)
@@ -214,7 +214,7 @@ class InformationIOTests(unittest.TestCase):
         text = " ".join(claims)
         report = InformationAnalyzer(
             ScriptedGenerator({("v0:s0", "direct"): [candidate("v0:s0", text, quote=claim) for claim in claims]}),
-            SubtypeEvaluator(relation_probability=.89), InformationAnalysisConfig(qa_enabled=False),
+            SubtypeEvaluator(relation_probability=.89), InformationAnalysisConfig(max_source_sentences=0, qa_enabled=False),
         ).analyze(capture_snapshot(videos([text])))
         path, csv_path = self.root / "subtype.json", self.root / "subtype.csv"
         save_information_report(report, path, csv_path=csv_path)
@@ -261,7 +261,8 @@ class InformationIOTests(unittest.TestCase):
         VideoDumper.dump_videos_to_json(source, str(dataset))
         before = dataset.read_bytes()
         summarizer = Summarizer([])
-        analyzer = InformationAnalyzer(ScriptedGenerator(), SyntheticEvaluator())
+        analyzer = InformationAnalyzer(ScriptedGenerator(), SyntheticEvaluator(),
+                                       InformationAnalysisConfig(max_source_sentences=0))
         with self.assertWarns(RuntimeWarning):
             summarizer.summarize(
                 source,
@@ -285,7 +286,8 @@ class InformationIOTests(unittest.TestCase):
 
     def test_library_default_report_destination_is_unique_per_call(self):
         summarizer = Summarizer([])
-        analyzer = InformationAnalyzer(ScriptedGenerator(), SyntheticEvaluator())
+        analyzer = InformationAnalyzer(ScriptedGenerator(), SyntheticEvaluator(),
+                                       InformationAnalysisConfig(max_source_sentences=0))
         paths = []
         for _ in range(2):
             summarizer.summarize(
@@ -529,7 +531,8 @@ class InformationConfigurationAndCLITests(unittest.TestCase):
             self.root / "table.csv",
         )
         VideoDumper.dump_videos_to_json(videos(["Bom dia."]), str(dataset))
-        analyzer = InformationAnalyzer(ScriptedGenerator(), SyntheticEvaluator())
+        analyzer = InformationAnalyzer(ScriptedGenerator(), SyntheticEvaluator(),
+                                       InformationAnalysisConfig(max_source_sentences=0))
         with (
             patch(
                 "open_video_summary.core.summarizers.information_config.configured_information_analyzer",

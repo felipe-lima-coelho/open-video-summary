@@ -74,6 +74,9 @@ from open_video_summary.core.summarizers.information_inventory import (
 from open_video_summary.core.summarizers.information_reliability import (
     analysis_manifest, inventory_payload, reliability_diagnostics,
 )
+from open_video_summary.core.summarizers.information_sources import (
+    source_sentence_spans, source_sentence_proposal,
+)
 from open_video_summary.errors import (
     AuthenticationError, ConfigurationError, InvalidResponseError, ProviderConfigurationError,
     RequestCancelledError, RunStoppedError,
@@ -301,6 +304,7 @@ class _AnalysisRun(SemanticInventory):
         self.relation_adjudications = 0
         self.qa_windows = []
         self.direct_windows = []
+        self.source_sentence_hypotheses = []
         self.window_declarations = []
         self.decompositions, self.coverage_foci = [], []
         self.granularity_checks = 0
@@ -1202,6 +1206,43 @@ class _AnalysisRun(SemanticInventory):
         # Conflicting verified proposals are not an annotation improvement.
         return set(verified), {key for key, values in verified.items() if len(values) == 1}
 
+    def _source_sentence_hypotheses(self, target):
+        """Visit original source after the original routes have had their budgets."""
+        if not self.config.max_source_sentences:
+            return
+        start_calls = self.call_count
+        # Protect remaining consolidation capacity. This bounded allocation
+        # does not promise that all remaining work fits the shared global cap.
+        allowance = self.budget.remaining // 4
+        permitted = (target.id,) + tuple(item.id for item in self._context(target))
+        for index, (start, end) in enumerate(source_sentence_spans(target.content)):
+            row = {"id": "s:" + fingerprint((target.source_identity, start, end))[:24],
+                   "segment_id": target.id, "source_identity": target.source_identity,
+                   "start_char": start, "end_char": end, "quote": target.content[start:end],
+                   "status": "pending", "candidate_id": None}
+            self.source_sentence_hypotheses.append(row)
+            if index >= self.config.max_source_sentences:
+                row["reason"] = "source_sentence_limit"
+                continue
+            if (self.call_count - start_calls >= allowance or self.budget.remaining <= 2
+                    or self.budget.permanent_failure or self.budget.cancel_event.is_set()):
+                row["reason"] = "source_sentence_budget"
+                continue
+            raw = source_sentence_proposal(target.id, target.content, start, end)
+            try:
+                record = self._validate(raw, target, "source_sentence", 0, permitted)
+                row.update(status=record.validation, candidate_id=record.id)
+            except Exception as exc:
+                row["reason"] = type(exc).__name__
+                if self.candidates and self.candidates[-1].route == "source_sentence":
+                    row["candidate_id"] = self.candidates[-1].id
+        pending = [row for row in self.source_sentence_hypotheses
+                   if row["segment_id"] == target.id and row["status"] == "pending"]
+        if pending:
+            self.issue("source_sentence_budget_unresolved",
+                f"{len(pending)} original-source spans remain unvalidated after the bounded sentence hypothesis route.",
+                (target.id,))
+
     def _target(self, target):
         routes = [(route, (lambda: self._qa_extract(target)) if route == "qa"
                    else (lambda: self._direct_extract(target)))
@@ -1319,11 +1360,24 @@ class _AnalysisRun(SemanticInventory):
                     future.cancel()
                 executor.shutdown(wait=True, cancel_futures=True)
         for worker in workers:
+            if self.config.max_source_sentences:
+                # All original target workflows finish before this serial
+                # source supplement. Closed target forks are never reused.
+                worker.generator, worker.evaluator = self.generator, self.evaluator
+                target = targets[worker.target_index]
+                try:
+                    worker._source_sentence_hypotheses(target)
+                    worker._reconcile_granularity(target)
+                    if self.config.coverage_enabled:
+                        worker._refresh_foci(target)
+                except Exception as exc:
+                    worker.issue("source_sentence_analysis_failed", type(exc).__name__, (target.id,))
             self.candidates.extend(worker.candidates)
             self.coverage.extend(worker.coverage)
             self.calls.extend(worker.calls)
             self.qa_windows.extend(worker.qa_windows)
             self.direct_windows.extend(worker.direct_windows)
+            self.source_sentence_hypotheses.extend(worker.source_sentence_hypotheses)
             self.window_declarations.extend(worker.window_declarations)
             self.decompositions.extend(worker.decompositions)
             self.coverage_foci.extend(worker.coverage_foci)
@@ -1332,6 +1386,28 @@ class _AnalysisRun(SemanticInventory):
             self.evaluated_targets.update(worker.evaluated_targets)
             for item in worker.issues:
                 self.issue(item.kind, item.detail, item.segment_ids, item.candidate_ids)
+
+    def _finalize_source_visitation(self):
+        """Make even an entirely unstarted target visible in the source ledger."""
+        if not self.config.max_source_sentences:
+            return
+        visited = {(row["segment_id"], row["start_char"], row["end_char"])
+                   for row in self.source_sentence_hypotheses}
+        for target in self.snapshot.current_segments:
+            missing = []
+            for start, end in source_sentence_spans(target.content):
+                if (target.id, start, end) not in visited:
+                    missing.append({"id": "s:" + fingerprint((target.source_identity, start, end))[:24],
+                        "segment_id": target.id, "source_identity": target.source_identity,
+                        "start_char": start, "end_char": end, "quote": target.content[start:end],
+                        "status": "pending", "candidate_id": None, "reason": "source_target_unvisited"})
+            if missing:
+                self.source_sentence_hypotheses.extend(missing)
+                self.issue("source_sentence_budget_unresolved",
+                    f"{len(missing)} original-source spans were not visited before target processing stopped.",
+                    (target.id,))
+        order = {identifier: index for index, identifier in enumerate(self.snapshot.current_order)}
+        self.source_sentence_hypotheses.sort(key=lambda row: (order[row["segment_id"]], row["start_char"]))
 
     @staticmethod
     def _exact_proposition_key(record):
@@ -1891,6 +1967,7 @@ class _AnalysisRun(SemanticInventory):
         finally:
             if self.discovery is not None:
                 self.discovery.close()
+        self._finalize_source_visitation()
         self._finalize_semantic_inventory(units)
         if not failed:
             for identifier in self.snapshot.current_order:
@@ -1964,6 +2041,8 @@ class _AnalysisRun(SemanticInventory):
             "pair_concurrency": self.pair_concurrency,
             "qa_source_windows": self.qa_windows,
             "direct_source_windows": self.direct_windows,
+            "source_sentence_hypotheses": self.source_sentence_hypotheses,
+            "source_sentence_policy": "Original source spans are visited deterministically after ordinary discovery and recovery. They are unverified sentence hypotheses, not counted slots or guaranteed atoms. Normal source, reference, granularity and equivalence gates apply. Empty proposed annotations never override source-qualified meaning. The per-target cap and at most one-quarter of remaining shared calls bound new validations; unvisited spans remain pending. Existing local granularity caps are shared, never reset. This route does not prove source completeness.",
             "discovery_window_declarations": self.window_declarations,
             **attempt_audit,
             "permanent_provider_failure": self.budget.permanent_failure,

@@ -10,6 +10,7 @@ from open_video_summary.core.summarizers.information_analysis import Information
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
 from open_video_summary.core.summarizers.information_contracts import CoverageFocus, capture_snapshot
 from open_video_summary.core.summarizers.information_evaluation import exact_proposition_key
+from open_video_summary.core.summarizers.information_sources import source_sentence_spans
 
 
 class InformationStabilityTests(unittest.TestCase):
@@ -123,6 +124,154 @@ class InformationStabilityTests(unittest.TestCase):
             units, _ = run._consolidate()
             observed.append([(unit.id, unit.text, unit.unit_type) for unit in units])
         self.assertEqual(observed[0], observed[1])
+
+    def test_default_pipeline_visits_omitted_source_without_counting_slots(self):
+        source = "O serviço parou. A equipe chegou."
+        generator = ScriptedGenerator()
+        report = InformationAnalyzer(generator, InventoryEvaluator()).analyze(capture_snapshot(videos([source])))
+        rows = json.loads(report.metadata_json)["source_sentence_hypotheses"]
+        self.assertEqual(64, InformationAnalysisConfig().max_source_sentences)
+        self.assertEqual(["O serviço parou.", "A equipe chegou."], [row["quote"] for row in rows])
+        self.assertEqual(["accepted", "accepted"], [row["status"] for row in rows])
+        self.assertEqual({"source_sentence"}, {record.route for record in report.candidates})
+        self.assertEqual(2, report.counts.unique_units)
+        self.assertTrue(all(record.atomicity_state == "atomic" for record in report.candidates))
+        self.assertEqual(source, report.snapshot.current_segments[0].content)
+        operations = [call.operation for call in report.calls]
+        self.assertLess(operations.index("coverage_audit"), operations.index("validate_candidate"))
+
+    def test_source_hypotheses_still_fail_fidelity_references_and_compound_gates(self):
+        source = "Segundo Ana, o serviço talvez não retorne."
+        for evaluator in (InventoryEvaluator(validation={source: .01}),
+                          InventoryEvaluator(granularity={source: "needs_context"}),
+                          InventoryEvaluator(granularity={source: "compound"})):
+            with self.subTest(evaluator=evaluator.granularity):
+                report = InformationAnalyzer(ScriptedGenerator(), evaluator).analyze(capture_snapshot(videos([source])))
+                self.assertEqual(0, report.counts.unique_units)
+                self.assertNotEqual("accepted", report.candidates[0].validation)
+                self.assertEqual(source, report.candidates[0].candidate.text)
+                self.assertEqual("literal_identity", report.candidates[0].anchor_binding_origin)
+                self.assertTrue(any(call.operation == "validate_candidate" for call in report.calls))
+
+    def test_sentence_visitation_handles_abbreviations_unicode_numbers_and_final_fragment(self):
+        source = '  Dr. João mede 3.14 m. "A ação mudou!" Sr. A. Silva chegou. sem pontuação  '
+        spans = source_sentence_spans(source)
+        self.assertEqual(['Dr. João mede 3.14 m.', '"A ação mudou!"',
+                          'Sr. A. Silva chegou.', 'sem pontuação'], [source[a:b] for a, b in spans])
+        visited = {i for start, end in spans for i in range(start, end)}
+        self.assertTrue(all(i in visited for i, char in enumerate(source) if not char.isspace()))
+        self.assertTrue(all(a < b <= c < d for (a, b), (c, d) in zip(spans, spans[1:])))
+
+    def test_source_cap_and_never_started_targets_leave_visible_pending_spans(self):
+        source = "O serviço parou. A equipe chegou."
+        limited = InformationAnalyzer(ScriptedGenerator(), InventoryEvaluator(),
+            InformationAnalysisConfig(max_source_sentences=1)).analyze(capture_snapshot(videos([source])))
+        rows = json.loads(limited.metadata_json)["source_sentence_hypotheses"]
+        self.assertEqual(("pending", "source_sentence_limit"), (rows[1]["status"], rows[1]["reason"]))
+        self.assertTrue(limited.counts.counts_provisional)
+        exhausted = InformationAnalyzer(ScriptedGenerator(), InventoryEvaluator(),
+            InformationAnalysisConfig(max_calls=1)).analyze(capture_snapshot(videos([source, source])))
+        rows = json.loads(exhausted.metadata_json)["source_sentence_hypotheses"]
+        self.assertEqual(4, len(rows))
+        self.assertTrue(all(row["status"] == "pending" for row in rows))
+        self.assertTrue(any(row["reason"] == "source_target_unvisited" for row in rows))
+        self.assertEqual(1, json.loads(exhausted.metadata_json)["logical_calls"])
+        self.assertTrue(exhausted.counts.counts_provisional)
+
+    def test_source_supplement_reuses_open_parent_adapters_after_target_forks_close(self):
+        evaluators, generators = [], []
+
+        class ForkEvaluator(InventoryEvaluator):
+            def __init__(self):
+                super().__init__()
+                self.closed = False
+                evaluators.append(self)
+            def fork(self):
+                return ForkEvaluator()
+            def close(self):
+                self.closed = True
+            def evaluate(self, *args, **kwargs):
+                if self.closed:
+                    raise AssertionError("Closed evaluator reused")
+                return super().evaluate(*args, **kwargs)
+
+        class ForkGenerator(ScriptedGenerator):
+            def __init__(self):
+                super().__init__()
+                self.closed = False
+                generators.append(self)
+            def fork(self):
+                return ForkGenerator()
+            def close(self):
+                self.closed = True
+            def generate(self, *args, **kwargs):
+                if self.closed:
+                    raise AssertionError("Closed generator reused")
+                return super().generate(*args, **kwargs)
+
+        generator, evaluator = ForkGenerator(), ForkEvaluator()
+        report = InformationAnalyzer(generator, evaluator).analyze(
+            capture_snapshot(videos(["O serviço parou.", "A equipe chegou."])))
+        self.assertFalse(generator.closed)
+        self.assertFalse(evaluator.closed)
+        self.assertTrue(all(item.closed for item in generators[1:]))
+        self.assertTrue(all(item.closed for item in evaluators[1:]))
+        self.assertTrue(all(row["status"] == "accepted"
+                           for row in json.loads(report.metadata_json)["source_sentence_hypotheses"]))
+        self.assertFalse(any(item.kind == "source_sentence_analysis_failed" for item in report.issues))
+
+    def test_source_supplement_does_not_reset_spent_atomicity_cap(self):
+        source = "O serviço parou. A equipe chegou."
+        proposals = [candidate("v0:s0", source, quote="O serviço parou.")]
+        generator = ScriptedGenerator(callback=lambda data, route: proposals if route == "direct" else [])
+        report = InformationAnalyzer(generator, InventoryEvaluator(),
+            InformationAnalysisConfig(max_granularity_checks=1)).analyze(capture_snapshot(videos([source])))
+        new = next(record for record in report.candidates if record.candidate.text == "A equipe chegou.")
+        self.assertEqual("not_reviewed", new.atomicity_state)
+        unit = next(unit for unit in report.units if new.id in unit.candidate_ids)
+        self.assertEqual("provisional_granularity", unit.inventory_state)
+        self.assertEqual(1, json.loads(report.metadata_json)["atomicity_review_requests"])
+        self.assertIn("atomicity_review_budget", {issue.kind for issue in report.issues})
+
+    def test_source_qualified_child_must_still_be_a_part_of_the_explicit_parent(self):
+        source = "O sistema faz o telefone funcionar e permite usar aplicativos."
+        parent = candidate("v0:s0", source, text="O sistema faz o telefone funcionar.")
+        child = candidate("v0:s0", source, text="O sistema permite usar aplicativos.")
+        evaluator = InventoryEvaluator(splits={parent["text"]: (child["text"],)},
+            joint={parent["text"]: {"splittable": .6}},
+            verification={parent["text"]: {"parent_covers_components": .01}})
+        generator = ScriptedGenerator(callback=lambda data, route:
+            [child] if route == "decompose_candidate" else [])
+        run = self.run_for(source, evaluator=evaluator, generator=generator)
+        self.validate(run, parent)
+        run._reconcile_granularity(run.snapshot.current_segments[0])
+        self.assertEqual("accepted", run.candidates[1].validation)
+        self.assertEqual("conflicting", run.decompositions[-1].state)
+        self.assertEqual("unit_candidate", run.candidates[0].inventory_role)
+        self.assertEqual(.01, dict(run.decompositions[-1].signals)["parent_covers_components"])
+
+    def test_source_span_identity_does_not_depend_on_generator_order(self):
+        source = "O serviço parou. A equipe chegou."
+        proposals = [candidate("v0:s0", source, quote="O serviço parou."),
+                     candidate("v0:s0", source, quote="A equipe chegou.")]
+        ledgers = []
+        for ordered in (proposals, list(reversed(proposals))):
+            generator = ScriptedGenerator(callback=lambda data, route:
+                ordered if route == "direct" else [])
+            report = InformationAnalyzer(generator, InventoryEvaluator()).analyze(capture_snapshot(videos([source])))
+            ledgers.append([(row["id"], row["start_char"], row["end_char"], row["quote"])
+                            for row in json.loads(report.metadata_json)["source_sentence_hypotheses"]])
+        self.assertEqual(ledgers[0], ledgers[1])
+
+    def test_source_sentence_configuration_and_cli_ablation_are_explicit(self):
+        from open_video_summary.__main__ import build_parser
+        from open_video_summary.errors import ConfigurationError
+        for command in ("analyze-information", "summarize"):
+            args = build_parser().parse_args([command, "--information-source-sentences", "0"])
+            self.assertEqual(0, args.information_source_sentences)
+        for value in (-1, 257, True):
+            with self.assertRaises(ConfigurationError):
+                InformationAnalysisConfig(max_source_sentences=value)
 
 
 if __name__ == "__main__":

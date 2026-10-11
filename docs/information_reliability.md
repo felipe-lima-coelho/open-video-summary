@@ -81,6 +81,32 @@ status, issues, provisional count flags, and the manifest.
 
 ## Source and prompt limits
 
+After all ordinary target discovery and recovery workflows finish, a serial
+source supplement visits deterministic sentence spans in original source order.
+`--information-source-sentences` / `OVS_INFORMATION_SOURCE_SENTENCES` bounds
+these hypotheses per target (default 64, range 0–256; 0 is an explicit ablation).
+Abbreviations, initials and numeric punctuation receive conservative boundary
+handling; final unpunctuated text is included. Segmentation chooses work items,
+never a semantic unit count, and does not edit the transcript.
+
+Each copied sentence is an unverified `source_sentence` candidate. It receives
+the same support, reference, granularity and consolidation checks as generated
+candidates. Proposed type and empty qualifier fields carry no semantic proof;
+the copied text preserves original qualifiers, and unverified annotations remain
+unknown. Compound or context-dependent sentences cannot enter the inventory
+merely because their text occurs in the source. This route uses no generation
+request for the initial hypothesis and may recover content omitted by every
+generative discovery route.
+
+`metadata.source_sentence_hypotheses` records stable source IDs, original spans,
+literal text, candidate IDs and validation status. Unvisited spans remain
+`pending`, including spans in entirely unstarted targets. New validations may
+consume at most one-quarter of the shared calls remaining when each target's
+supplement begins; the ordinary granularity limits remain shared and never reset.
+Consequently, accepted supplemental claims can still have unreviewed atomicity
+and provisional granularity. The route protects prior discovery and recovery
+work, but neither its call reserve nor visiting every span proves completeness.
+
 Long-target direct and QA discovery uses disjoint original-source windows. A
 failed or candidate-cap-saturated window is split while the per-target window
 limit and shared call budget permit; splitting stops at the minimum window size

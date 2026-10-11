@@ -111,6 +111,7 @@ class InformationExecutionTests(unittest.TestCase):
         analyzer = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
             concurrency=concurrency, reproducible=reproducible, qa_enabled=False, max_coverage_rounds=0, max_calls=max_calls,
             max_granularity_checks=0, max_coverage_foci=0,
+            max_source_sentences=0,
             pair_batch_size=1),
             progress=progress, progress_interval_seconds=0.01)
         self.addCleanup(generator.close)

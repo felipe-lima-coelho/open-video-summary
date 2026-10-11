@@ -26,6 +26,7 @@ class InformationReliabilityTests(unittest.TestCase):
         generator = ScriptedGenerator(callback=lambda data, route:
             list(components if route == "decompose_candidate" else proposals if route == "direct" else ()))
         options = dict(qa_enabled=False, experimental_mode="direct", concurrency=1, max_calls=200,
+                       max_source_sentences=0,
                        direct_window_chars=4000, max_literal_repairs=0, max_coverage_foci=0)
         options.update(settings)
         originals = videos([source])

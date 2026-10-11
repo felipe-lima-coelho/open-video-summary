@@ -87,6 +87,7 @@ class InformationReferenceCoreIntegrationTests(unittest.TestCase):
                     max_calls=256,
                     max_coverage_rounds=0,
                     max_literal_repairs=0,
+                    max_source_sentences=0,
                     max_relation_adjudications=0,
                     direct_window_chars=4000,
                     pair_batch_size=1,
