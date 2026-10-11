@@ -256,20 +256,17 @@ class SemanticInventory:
         identifiers = tuple(item.id for item in children)
         identifier = "d:" + fingerprint((parent.id, identifiers, state, tuple(signals), reason))[:20]
         existing = next((item for item in self.decompositions if item.id == identifier), None)
-        if existing is not None:
+        if existing is not None and state == "verified" and (
+                existing.state != "verified" or existing.superseded_by is not None):
+            # A fresh review can repeat the same scores after dependencies have
+            # changed. Keep the old invalidation instead of reviving its record.
+            identifier = "d:" + fingerprint((identifier, "revalidation", len(self.decompositions)))[:20]
+        elif existing is not None:
             self._inherit_decomposition_state()
             return next(item for item in self.decompositions if item.id == identifier)
         record = InformationDecomposition(identifier, parent.id, identifiers, state,
                                           tuple(signals), reason=reason)
         self.decompositions.append(record)
-        if state == "verified":
-            records = {item.id: item for item in self.candidates if item.candidate is not None}
-            parent_meaning = exact_proposition_key(parent)
-            self.decompositions = [replace(item, superseded_by=identifier)
-                if item.parent_candidate_id in records
-                and exact_proposition_key(records[item.parent_candidate_id]) == parent_meaning
-                and item.id != identifier
-                and item.superseded_by is None else item for item in self.decompositions]
         members = {parent.id, *identifiers}
         for index, candidate in enumerate(self.candidates):
             if candidate.id not in members:
@@ -281,7 +278,65 @@ class SemanticInventory:
                     + ((parent.id,) if candidate.id != parent.id else ()))),
                 decomposition_ids=tuple(dict.fromkeys(candidate.decomposition_ids + (identifier,))))
         self._inherit_decomposition_state()
+        current = next(item for item in self.decompositions if item.id == identifier)
+        if current.state == "verified":
+            # A circular newcomer must not erase an older grounded partition.
+            # Revalidation supersedes the same component meaning set; genuinely
+            # different verified alternatives remain explicit until reconciled.
+            records = {item.id: item for item in self.candidates if item.candidate is not None}
+            parent_meaning = exact_proposition_key(parent)
+            component_keys = lambda proof: frozenset(exact_proposition_key(records[value])
+                for value in proof.component_candidate_ids if value in records)
+            meanings = component_keys(current)
+            self.decompositions = [replace(item, superseded_by=identifier)
+                if item.parent_candidate_id in records
+                and exact_proposition_key(records[item.parent_candidate_id]) == parent_meaning
+                and item.id != identifier and item.superseded_by is None
+                and (item.state != "verified" or component_keys(item) == meanings)
+                else item for item in self.decompositions]
+            self._inherit_decomposition_state()
         return next(item for item in self.decompositions if item.id == identifier)
+
+    @staticmethod
+    def _cyclic_decomposition_ids(active, records):
+        """Find certificates with an edge inside an exact-meaning graph cycle."""
+        graph, reverse, edges = {}, {}, {}
+        for parent, proofs in active.items():
+            for proof in proofs:
+                if proof.state != "verified":
+                    continue
+                children = {exact_proposition_key(records[value])
+                            for value in proof.component_candidate_ids if value in records}
+                edges[proof.id] = (parent, children)
+                graph.setdefault(parent, set()).update(children)
+                reverse.setdefault(parent, set())
+                for child in children:
+                    graph.setdefault(child, set())
+                    reverse.setdefault(child, set()).add(parent)
+        # Iterative Kosaraju traversal avoids recursion limits on deep chains.
+        visited, finished = set(), []
+        for node in graph:
+            stack = [(node, False)]
+            while stack:
+                current, expanded = stack.pop()
+                if expanded:
+                    finished.append(current)
+                elif current not in visited:
+                    visited.add(current)
+                    stack.append((current, True))
+                    stack.extend((child, False) for child in graph[current] if child not in visited)
+        components = {}
+        for node in reversed(finished):
+            if node in components:
+                continue
+            label, stack = len(components), [node]
+            while stack:
+                current = stack.pop()
+                if current not in components:
+                    components[current] = label
+                    stack.extend(reverse[current])
+        return {identifier for identifier, (parent, children) in edges.items()
+                if any(components[parent] == components[child] for child in children)}
 
     def _inherit_decomposition_state(self):
         """Apply one active structural decision to every exact validated alias.
@@ -304,6 +359,11 @@ class SemanticInventory:
                 parent = records.get(decomposition.parent_candidate_id)
                 if parent is not None and decomposition.superseded_by is None:
                     active.setdefault(exact_proposition_key(parent), []).append(decomposition)
+            cyclic = self._cyclic_decomposition_ids(active, records)
+            if cyclic:
+                self.decompositions = [replace(item, state="conflicting", reason="cyclic_decomposition")
+                    if item.id in cyclic else item for item in self.decompositions]
+                continue
             refinements = {key for key, proofs in active.items()
                            if any(item.state == "verified" for item in proofs)}
             unresolved = {}
@@ -890,8 +950,14 @@ class SemanticInventory:
                 self.issue("coverage_focus_unresolved", f"Source focus {focus.id} remains {focus.state}; no complete correspondence was verified.", (focus.segment_id,))
         for decomposition in self.decompositions:
             if self._decomposition_is_provisional(decomposition, membership):
-                self.issue("granularity_unresolved", "An alternative parent/parts representation remains "
-                    + decomposition.state + "; its visible units are provisional, not established distinct contents.",
+                kind, detail = (
+                    ("decomposition_cycle", "An exact-meaning refinement cycle invalidated this partition; its visible units remain provisional.")
+                    if decomposition.reason == "cyclic_decomposition" else
+                    ("decomposition_alternatives_unresolved", "Verified alternative partitions have not resolved to the same final component units; their combined count remains provisional.")
+                    if decomposition.state == "verified" else
+                    ("granularity_unresolved", "An alternative parent/parts representation remains "
+                     + decomposition.state + "; its visible units are provisional, not established distinct contents."))
+                self.issue(kind, detail,
                     candidates=(decomposition.parent_candidate_id,) + decomposition.component_candidate_ids)
 
     def _verified_proper_part(self, decomposition, candidate_id):
@@ -917,8 +983,21 @@ class SemanticInventory:
 
     def _decomposition_is_provisional(self, decomposition, membership):
         """Keep real structural uncertainty without duplicating resolved atoms."""
-        if decomposition.state == "verified" or decomposition.superseded_by is not None:
+        if decomposition.superseded_by is not None:
             return False
+        if decomposition.state == "verified":
+            records = {item.id: item for item in self.candidates if item.candidate is not None}
+            parent = records.get(decomposition.parent_candidate_id)
+            alternatives = [item for item in self.decompositions if item.state == "verified"
+                and item.superseded_by is None and item.parent_candidate_id in records and parent is not None
+                and exact_proposition_key(records[item.parent_candidate_id]) == exact_proposition_key(parent)]
+            if len(alternatives) < 2:
+                return False
+            components = [frozenset(membership.get(value) for value in item.component_candidate_ids)
+                          for item in alternatives]
+            return (any(None in group or len(group) != len(item.component_candidate_ids)
+                        for group, item in zip(components, alternatives))
+                    or any(group != components[0] for group in components[1:]))
         if not decomposition.component_candidate_ids:
             return True
         identifiers = {decomposition.parent_candidate_id, *decomposition.component_candidate_ids}

@@ -321,6 +321,23 @@ superseded historical conflicts do not establish this contradiction. Reconciliat
 preserves the original proof signals and links, and consumes no model calls or
 additional budget.
 
+Refinement support must also be acyclic over exact complete-meaning families,
+including aliases. Only active verified certificates create graph edges. Every
+certificate with an edge inside a self-cycle or multi-family cycle becomes
+conflicting, with its original signals retained; unresolved support then propagates
+to dependent parents. Earlier atomic labels cannot hide a circular certificate.
+The graph check is local, deterministic, iterative and does not call a provider.
+
+A new certificate must survive reconciliation before it can supersede history.
+Revalidation of the same component meaning set replaces its previous certificate;
+distinct grounded alternatives coexist. Their combined units remain provisional
+until complete-link equivalence maps every alternative to the same final component
+units. A circular newcomer cannot supersede an older grounded alternative, and a
+separate alternative outside the cycle can still support its parent. Superseded
+certificates and unverified generation ancestry are not graph edges. A fresh review
+with repeated scores receives a new provenance revision if the earlier certificate
+was invalidated or superseded, preserving the earlier decision and its reason.
+
 For a comparison, keep and report every run's signature, digest, status, settings,
 counts and diagnostics. A changed signature means a recorded manifest field
 differs. A matching signature with a changed digest shows that the canonical
