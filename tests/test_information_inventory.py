@@ -29,27 +29,29 @@ class InventoryEvaluator(SyntheticEvaluator):
         self.matches = matches or {}
         self.revision = revision
         self.inventory_states = []
+        self.inventory_calls = []
 
     def evaluate(self, context, noul=None, choice=None):
         if not context.startswith("{"):
             return super().evaluate(context, noul, choice)
         state = json.loads(context)
         self.inventory_states.append(state)
-        if "atomicity_review" in state:
+        self.inventory_calls.append((state, dict(noul)))
+        if "claim0_text" in state:
             values = {}
-            for index, item in enumerate(state["atomicity_review"]):
-                compound = bool(self.splits.get(item["candidate"]["text"]))
+            for index in range(len(state["source_scopes"])):
+                compound = bool(self.splits.get(state[f"claim{index}_text"]))
                 values.update({f"claim{index}_atomic": .01 if compound else .99,
                                f"claim{index}_compound": .99 if compound else .01})
         elif "focus_revision" in state:
             values = dict.fromkeys(noul, self.revision)
-        elif "parent" in state:
-            text = state["parent"]["candidate"]["text"]
+        elif "parent_claim_text" in state:
+            text = state["parent_claim_text"]
             if "splittable" in noul:
                 components = self.splits.get(text, ())
                 values = {"splittable": .99 if components else .01}
-                values.update({f"component{index}": .99 if item["candidate"]["text"] in components else .01
-                               for index, item in enumerate(state["components"])})
+                values.update({f"component{index}": .99 if item in components else .01
+                               for index, item in enumerate(state["component_claim_texts"])})
                 values.update(self.joint.get(text, {}))
             else:
                 values = dict.fromkeys(DECOMPOSITION_QUESTIONS, .99)

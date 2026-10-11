@@ -102,7 +102,7 @@ def evaluation_state(context):
 
     if context.startswith("{"):
         value = json.loads(context)
-        if "atomicity_review" in value:
+        if "claim0_text" in value:
             return value
     if context.startswith("Candidate id:"):
         first = context.split("\n\n", 1)[0].splitlines()
@@ -202,7 +202,7 @@ class SyntheticEvaluator:
             probability = self.validation.get(state["candidate"]["text"], 0.99)
         choices = []
         noul_values = dict.fromkeys(noul, probability)
-        if "atomicity_review" in state:
+        if "claim0_text" in state:
             noul_values = {key: .01 if key.endswith("_compound") else .99 for key in noul}
         if "left" in state:
             pair = frozenset((state["left"]["text"], state["right"]["text"]))

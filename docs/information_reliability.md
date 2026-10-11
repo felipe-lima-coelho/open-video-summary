@@ -88,6 +88,17 @@ consume the shared logical-call budget and remain subject to context and provide
 limits. The report records `atomicity_review_requests` separately from
 `granularity_checks`.
 
+These judges receive explicit claim-text fields: `parent_claim_text` and indexed
+`component_claim_texts` for joint review, and `claim0_text`, `claim1_text`, etc. for
+atomicity. Questions name those fields directly. Separate `source_scopes` retain
+marked assertion spans and each claim's own cited reference context for reference
+resolution, governing qualifiers and occurrence fidelity. Source assertions that
+the claim does not communicate cannot enlarge its meaning. Candidate annotations,
+IDs and other provenance are not additional propositions. An identical statement
+or complete paraphrase cannot be a proper component merely because its source
+contains other facts. Decomposition generation likewise targets only the explicit
+parent claim; original candidates, raw scores and evidence remain in the report.
+
 `CandidateRecord.atomicity_state` is `not_reviewed`, `atomic`, `compound`, or
 `uncertain`, with audit signals and the representative review candidate retained
 on the record. Existing granularity proposals and support validation remain

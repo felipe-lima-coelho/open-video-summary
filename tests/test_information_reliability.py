@@ -72,8 +72,8 @@ class InformationReliabilityTests(unittest.TestCase):
         verified = [item for item in report.decompositions if item.state == "verified"]
         self.assertEqual(["c2"], [item.parent_candidate_id for item in verified])
         self.assertEqual(("c0", "c1"), verified[0].component_candidate_ids)
-        parent_reviews = [state for state in evaluator.inventory_states if "parent" in state]
-        self.assertEqual([source, source], [state["parent"]["candidate"]["text"] for state in parent_reviews])
+        parent_reviews = [state for state in evaluator.inventory_states if "parent_claim_text" in state]
+        self.assertEqual([source, source], [state["parent_claim_text"] for state in parent_reviews])
 
     def test_condition_attribution_negation_and_uncertainty_are_not_separate_facts(self):
         source = "Segundo Ana, se a rede cair, o backup talvez não seja realizado."
@@ -165,8 +165,8 @@ class InformationReliabilityTests(unittest.TestCase):
                         attribution="Ana", negated=True)
         evaluator = InventoryEvaluator()
         report, _ = self.inventory(source, [raw], evaluator=evaluator)
-        review = next(state for state in evaluator.inventory_states if "atomicity_review" in state)
-        marked = review["atomicity_review"][0]["assertion_scopes"][0]["marked_text"]
+        review = next(state for state in evaluator.inventory_states if "claim0_text" in state)
+        marked = review["source_scopes"]["claim0_text"]["assertion_scopes"][0]["marked_text"]
         self.assertIn("<selected-assertion>Não haverá aumento.</selected-assertion>", marked)
         self.assertNotIn("A decisão", marked)
         state, _ = anchor_binding_spec(report.candidates[0].candidate, report.snapshot.current_segments[0])
