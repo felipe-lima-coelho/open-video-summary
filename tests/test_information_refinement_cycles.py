@@ -11,7 +11,7 @@ from test_information_analysis import ScriptedGenerator, candidate, videos
 from test_information_stability import RefinementEvaluator
 from open_video_summary.core.summarizers.information_analysis import InformationAnalyzer, _AnalysisRun
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
-from open_video_summary.core.summarizers.information_contracts import InformationRelation, capture_snapshot
+from open_video_summary.core.summarizers.information_contracts import InformationDecomposition, InformationRelation, capture_snapshot
 from open_video_summary.core.summarizers.information_evaluation import exact_proposition_key
 from open_video_summary.core.summarizers.information_inventory import DECOMPOSITION_QUESTIONS
 
@@ -131,7 +131,12 @@ class InformationRefinementCycleTests(unittest.TestCase):
                 self.assertEqual(("verified", None), (proofs[grounded.id].state, proofs[grounded.id].superseded_by))
                 self.assertEqual(("verified", None), (proofs[ancestor.id].state, proofs[ancestor.id].superseded_by))
                 rejected = [item for item in proofs.values() if item.id not in {grounded.id, ancestor.id}]
-                self.assertTrue(all(item.state == "conflicting" and item.reason == "cyclic_decomposition" for item in rejected))
+                self.assertTrue(all(item.state == "conflicting" for item in rejected))
+                # A nested repeated terminal can now disprove the first
+                # newcomer before its later counterpart closes a cycle.
+                self.assertTrue(all(item.reason in {"cyclic_decomposition",
+                    "component_equivalence_conflicts_with_joint_distinctness", "component_refinement_unresolved"}
+                    for item in rejected))
                 self.assertTrue(all(item.signals == self.signals for item in proofs.values()))
                 self.assertEqual(before, self.counters(run))
                 self.assertFalse(run._inherit_decomposition_state())
@@ -299,8 +304,222 @@ class InformationRefinementCycleTests(unittest.TestCase):
                 membership = {identifier:item.id for item in units for identifier in item.candidate_ids}
                 for proof in run.decompositions:
                     if proof.parent_candidate_id == rows[self.parent].id:
-                        self.assertEqual(unresolved, run._decomposition_is_provisional(proof, membership))
+                        nested = rows[self.intermediate].id in proof.component_candidate_ids
+                        self.assertEqual(unresolved and nested, run._decomposition_is_provisional(proof, membership))
+                        self.assertEqual("uncertain" if unresolved and nested else "verified", proof.state)
                 self.assertEqual(before, self.counters(run))
+
+    def test_public_every_partition_requires_disjoint_grounded_terminal_branches(self):
+        for kind, alias, reverse in product(("valid", "exact", "equivalent"), (False, True), (False, True)):
+            with self.subTest(kind=kind, alias=alias, reverse=reverse):
+                splits = {self.parent:(self.intermediate, self.network), self.intermediate:
+                    (self.network, self.backup) if kind == "exact" else (self.backup, self.retention)}
+                texts = (self.parent, self.intermediate, self.network, self.backup)
+                if kind != "exact":
+                    texts += (self.retention,)
+                if alias:
+                    texts += (self.parent, self.intermediate, self.network)
+                relation = {frozenset((self.network, self.backup)):"equivalent"} if kind == "equivalent" else {}
+                report = self.public_report(self.parent, splits, texts[::-1] if reverse else texts,
+                                            reverse=reverse, relation=relation)
+                rows = {item.id:item for item in report.candidates}
+                proofs = {rows[item.parent_candidate_id].candidate.text:item for item in report.decompositions
+                          if item.superseded_by is None}
+                conflict = kind != "valid"
+                self.assertEqual("conflicting" if conflict else "verified", proofs[self.parent].state)
+                self.assertEqual("verified", proofs[self.intermediate].state)
+                self.assertEqual("partial" if conflict else "completed", report.status)
+                self.assertEqual(conflict, report.counts.counts_provisional)
+                expected = {self.network, self.backup}
+                if kind != "exact":
+                    expected.add(self.retention)
+                if conflict:
+                    expected.add(self.parent)
+                self.assertEqual(expected, {item.text for item in report.units})
+                self.assertEqual(len(expected), len(report.occurrences))
+                unit_members = {identifier for item in report.units for identifier in item.candidate_ids}
+                occurrence_members = {identifier for item in report.occurrences for identifier in item.candidate_ids}
+                for record in report.candidates:
+                    if record.candidate.text == self.parent:
+                        self.assertEqual("unit_candidate" if conflict else "decomposed_parent", record.inventory_role)
+                        self.assertEqual(conflict, record.id in unit_members)
+                        self.assertEqual(conflict, record.id in occurrence_members)
+                    if record.candidate.text == self.intermediate:
+                        self.assertEqual("decomposed_parent", record.inventory_role)
+                self.assertEqual(self.parent, report.snapshot.current_segments[0].content)
+                if conflict:
+                    self.assertIn("granularity_unresolved", {item.kind for item in report.issues})
+                    self.assertEqual("component_equivalence_conflicts_with_joint_distinctness", proofs[self.parent].reason)
+                self.assertTrue(all(item.signals for item in proofs.values()))
+
+    def test_deep_cross_branch_conflicts_propagate_to_all_ancestors_without_calls(self):
+        outer, other, extra, extra2 = "The full service was recorded.", "The full copy was recorded.", "An external copy exists.", "The copy is encrypted."
+        texts = (outer, other, self.parent, self.intermediate, self.backup, self.retention, self.network, extra, extra2)
+        for order, reverse, late_alias in product(permutations((outer, other, self.parent, self.intermediate)), (False, True), (False, True)):
+            with self.subTest(order=order, reverse=reverse, late_alias=late_alias):
+                run, rows = self.seeded_run(texts)
+                children = {outer:(self.parent, extra), other:(self.parent, extra2),
+                    self.parent:(self.intermediate, self.network), self.intermediate:(self.backup, self.retention)}
+                for parent in order:
+                    run._record_decomposition(rows[parent], [rows[text] for text in children[parent]], "verified", self.signals)
+                target = run.snapshot.current_segments[0]
+                aliases = {}
+                if not late_alias:
+                    aliases = {text:run._validate(candidate(target.id, target.content, text=text), target, "qa", 0, (target.id,))
+                               for text in (outer, other, self.parent, self.network)}
+                relation = InformationRelation(rows[self.network].id, rows[self.backup].id, "equivalent", .97, .96,
+                    adjudication_signals=(("left_entails_right", .97), ("right_entails_left", .96)))
+                unrelated = InformationRelation(rows[extra].id, rows[extra2].id, "distinct", .99, .99)
+                run.relations = [relation, unrelated][::-1] if reverse else [relation, unrelated]
+                before = self.counters(run)
+                self.assertTrue(run._reconcile_decomposition_relations())
+                self.assertEqual(before, self.counters(run))
+                by_id = {item.id:item for item in run.candidates}
+                proofs = {by_id[item.parent_candidate_id].candidate.text:item for item in run.decompositions}
+                self.assertEqual("verified", proofs[self.intermediate].state)
+                for parent in (outer, other, self.parent):
+                    self.assertEqual("conflicting", proofs[parent].state)
+                self.assertTrue(all(item.signals == self.signals for item in proofs.values()))
+                adjusted = next(item for item in run.relations if item.left_candidate_id == relation.left_candidate_id)
+                self.assertEqual(("uncertain", "equivalent", .97),
+                    (adjusted.equivalence_state, adjusted.initial_relation, adjusted.initial_probability))
+                self.assertEqual(relation.adjudication_signals, adjusted.adjudication_signals)
+                settled = (list(run.candidates), list(run.decompositions), list(run.relations))
+                self.assertFalse(run._reconcile_decomposition_relations())
+                self.assertFalse(run._inherit_decomposition_state())
+                self.assertEqual(settled, (run.candidates, run.decompositions, run.relations))
+                self.assertEqual(before, self.counters(run))
+                if late_alias:
+                    aliases = {text:run._validate(candidate(target.id, target.content, text=text), target, "qa", 0, (target.id,))
+                               for text in (outer, other, self.parent, self.network)}
+                    run._inherit_decomposition_state()
+                for text, alias in aliases.items():
+                    current = next(item for item in run.candidates if item.id == alias.id)
+                    self.assertEqual("unit_candidate", current.inventory_role)
+                    if text in proofs:
+                        self.assertIn(proofs[text].id, current.decomposition_ids)
+
+    def test_unresolved_nested_alternative_restores_unsupported_parent_but_keeps_both_child_proofs(self):
+        backup_alias, retention_alias = "Backups occur daily.", "Retention lasts thirty days."
+        run, rows = self.seeded_run((self.parent, self.intermediate, self.backup, self.retention,
+                                   self.network, backup_alias, retention_alias))
+        outer = run._record_decomposition(rows[self.parent], [rows[self.intermediate], rows[self.network]], "verified", self.signals)
+        for parts in ((self.backup, self.retention), (backup_alias, retention_alias)):
+            run._record_decomposition(rows[self.intermediate], [rows[text] for text in parts], "verified", self.signals)
+        units, occurrences = run._consolidate()
+        before = self.counters(run)
+        run._finalize_semantic_inventory(units)
+        self.assertEqual({self.parent, self.backup, self.retention, self.network, backup_alias, retention_alias},
+                         {item.text for item in units})
+        self.assertEqual(6, len(occurrences))
+        self.assertTrue(all(item.inventory_state == "provisional_granularity" for item in units))
+        current = next(item for item in run.decompositions if item.id == outer.id)
+        self.assertEqual(("uncertain", "component_refinement_unresolved"), (current.state, current.reason))
+        self.assertTrue(all(item.state == "verified" for item in run.decompositions if item.id != outer.id))
+        self.assertIn("decomposition_alternatives_unresolved", {item.kind for item in run.issues})
+        membership = {identifier:item.id for item in units for identifier in item.candidate_ids}
+        self.assertFalse(run._reconcile_decomposition_relations(membership, final=True))
+        self.assertEqual(before, self.counters(run))
+
+    def test_in_run_ambiguity_resolves_after_pair_evidence_without_rejudging_proofs(self):
+        backup_alias, retention_alias = "Backups occur daily.", "Retention lasts thirty days."
+        run, rows = self.seeded_run((self.parent, self.intermediate, self.backup, self.retention,
+                                   self.network, backup_alias, retention_alias))
+        outer = run._record_decomposition(rows[self.parent], [rows[self.intermediate], rows[self.network]], "verified", self.signals)
+        for parts in ((self.backup, self.retention), (backup_alias, retention_alias)):
+            run._record_decomposition(rows[self.intermediate], [rows[text] for text in parts], "verified", self.signals)
+        unresolved = {item.id:item.id for item in run.candidates if item.inventory_role != "decomposed_parent"}
+        proofs = list(run.decompositions)
+        before = self.counters(run)
+        self.assertIsNone(run._terminal_component_units(outer, unresolved))
+        self.assertFalse(run._reconcile_decomposition_relations(unresolved))
+        self.assertEqual(proofs, run.decompositions)
+        for left, right in ((self.backup, backup_alias), (self.retention, retention_alias)):
+            run.relations.append(InformationRelation(rows[left].id, rows[right].id, "equivalent", .99, .99))
+        resolved = dict(unresolved)
+        resolved[rows[backup_alias].id] = resolved[rows[self.backup].id]
+        resolved[rows[retention_alias].id] = resolved[rows[self.retention].id]
+        self.assertFalse(run._reconcile_decomposition_relations(resolved, final=True))
+        self.assertEqual(proofs, run.decompositions)
+        self.assertEqual(3, len(run._terminal_component_units(outer, resolved)))
+        self.assertFalse(run._decomposition_is_provisional(outer, resolved))
+        self.assertEqual(before, self.counters(run))
+        # Exercise the actual final grouping/occurrence path with the already
+        # supplied comparisons, while prohibiting any additional endpoint call.
+        run.effective_pair_limit = 0
+        run.config = replace(run.config, max_pair_comparisons=0)
+        with patch.object(run, "_evaluate", side_effect=AssertionError("No additional judging")):
+            units, occurrences = run._consolidate()
+        self.assertEqual(3, len(units))
+        self.assertEqual(3, len(occurrences))
+        self.assertTrue(all(item.inventory_state == "validated" for item in units))
+        self.assertEqual(proofs, run.decompositions)
+        self.assertEqual(before, self.counters(run))
+
+    def test_terminal_overlap_requires_identity_or_direct_confirmation_not_transitivity(self):
+        bridge = "Another wording of a claim."
+        run, rows = self.seeded_run((self.parent, self.intermediate, self.network, self.backup, self.retention, bridge))
+        outer = run._record_decomposition(rows[self.parent], [rows[self.intermediate], rows[self.network]], "verified", self.signals)
+        run._record_decomposition(rows[self.intermediate], [rows[self.backup], rows[self.retention]], "verified", self.signals)
+        run.relations = [InformationRelation(rows[left].id, rows[right].id, "equivalent", .99, .99)
+                         for left, right in ((self.network, bridge), (bridge, self.backup))]
+        before = self.counters(run)
+        self.assertFalse(run._reconcile_decomposition_relations())
+        self.assertTrue(all(item.state == "verified" for item in run.decompositions))
+        self.assertEqual(before, self.counters(run))
+        # A missing comparison is not a negative proof or transitive identity.
+        membership = {item.id:item.id for item in run.candidates if item.inventory_role != "decomposed_parent"}
+        self.assertEqual(3, len(run._terminal_component_units(outer, membership)))
+        run.relations.append(InformationRelation(rows[self.network].id, rows[self.backup].id,
+                                               "uncertain", .5, .5))
+        self.assertFalse(run._reconcile_decomposition_relations())
+        self.assertEqual(before, self.counters(run))
+
+    def test_public_deep_conflict_restores_ancestor_occurrences_and_preserves_inner_refinement(self):
+        extra = "Existe uma copia externa."
+        source = self.parent + " " + extra
+        splits = {source:(self.parent, extra), self.parent:(self.intermediate, self.network),
+                  self.intermediate:(self.backup, self.retention)}
+        texts = (source, self.parent, self.intermediate, self.backup, self.retention, self.network, extra, source)
+        for reverse in (False, True):
+            report = self.public_report(source, splits, texts[::-1] if reverse else texts,
+                relation={frozenset((self.network, self.backup)):"equivalent"})
+            expected = {source, self.parent, self.backup, self.retention, self.network, extra}
+            self.assertEqual(expected, {item.text for item in report.units})
+            self.assertEqual(len(expected), len(report.occurrences))
+            self.assertEqual("partial", report.status)
+            self.assertTrue(report.counts.counts_provisional)
+            rows = {item.id:item for item in report.candidates}
+            for proof in report.decompositions:
+                text = rows[proof.parent_candidate_id].candidate.text
+                self.assertEqual("verified" if text == self.intermediate else "conflicting", proof.state)
+            visible = {identifier for item in report.occurrences for identifier in item.candidate_ids}
+            for row in rows.values():
+                if row.candidate.text in (source, self.parent):
+                    self.assertIn(row.id, visible)
+
+    def test_terminal_support_is_iterative_beyond_python_recursion_depth(self):
+        run, _ = self.seeded_run((self.backup,))
+        template = run.candidates[0]
+        depth = 1050
+        # Synthetic already-audited records isolate graph traversal only. This
+        # fixture makes no claim that their copied evidence proves these texts.
+        records = [replace(template, id=f"chain:{index}", candidate=replace(template.candidate,
+                   text=f"Synthetic graph node {index}")) for index in range(2 * depth + 1)]
+        proofs = [InformationDecomposition(f"chain-proof:{index}", records[index].id,
+                  (records[index + 1].id, records[depth + index + 1].id), "verified", self.signals)
+                  for index in range(depth)]
+        run.candidates, run.decompositions = records, proofs
+        root_id = proofs[0].id
+        before = self.counters(run)
+        for reverse in (False, True):
+            if reverse:
+                run.candidates.reverse()
+                run.decompositions.reverse()
+            support, _ = run._terminal_support()
+            self.assertTrue(all(item.state == "resolved" for item in support.values()))
+            self.assertEqual(depth + 1, len(support[root_id].terminals))
+        self.assertEqual(before, self.counters(run))
 
     def test_terminal_expansion_never_uses_an_unaudited_or_circular_certificate(self):
         run, rows = self.seeded_run((self.parent, self.backup, self.retention))

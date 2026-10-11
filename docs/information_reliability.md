@@ -344,12 +344,28 @@ their exact component families, then changes their states together. An identity
 relation between aliases of a single component is not a conflict between parts.
 The original relation label, probabilities and audit signals remain available.
 
-Alternative partitions are compared after expanding verified acyclic refinements
-to independently audited terminal unit memberships. Thus a nested partition and
-its direct equivalent can resolve to the same units without false uncertainty.
-An unresolved inner alternative, missing atomicity evidence, circular refinement
-or overlapping terminal components prevents a resolved alternative count. This
-expansion only uses existing evidence and adds no model calls.
+Every active partition, including a sole alternative, uses one iterative terminal
+support analysis for reconciliation and reporting. Each immediate child expands
+separately through verified acyclic refinements to independently audited terminal
+claims. An exact terminal repeated across two child branches, or a directly
+confirmed equivalence between their terminals, contradicts that partition's
+distinctness. The outer parent and its affected ancestors become visible again;
+a valid inner refinement remains active. Reconciliation collects shared conflicts
+from an unchanged relation snapshot, preserving the original scores and proof
+links. It does not infer equivalence by transitive closure.
+
+Alternatives are separate certificates and are never added together as branches.
+A nested partition and its direct equivalent can resolve to the same complete-link
+terminal memberships without false uncertainty. Different inner alternatives may
+remain locally valid while supplying no resolved terminal support to an ancestor.
+Their correspondence stays reversible during discovery and the existing bounded
+pair checks. After those checks, an ancestor that still lacks resolved support is
+marked uncertain and restored; any independently grounded alternative remains
+valid. Missing atomicity, circular support and repeated terminals cannot use that
+deferral. Final reconciliation rebuilds only local groups and occurrences until
+all affected parents have been restored, without additional endpoint calls or
+budget resets. Unknown pair comparisons remain uncertainty, not invented overlap
+or equivalence evidence.
 
 For a comparison, keep and report every run's signature, digest, status, settings,
 counts and diagnostics. A changed signature means a recorded manifest field

@@ -5,7 +5,7 @@ generator proposals nor model confidence alone establishes semantic coverage.
 """
 
 import re
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 
 from open_video_summary.adapters.information_schema import information_schema, validate_information
 from open_video_summary.contracts import GenerationRequest, OutputSpec
@@ -148,6 +148,17 @@ def assertion_overlap(left, right):
                and max(a.start_char, b.start_char) < min(a.end_char, b.end_char)
                for a in left.evidence if a.role == "assertion"
                for b in right.evidence if b.role == "assertion")
+
+
+@dataclass(frozen=True)
+class _TerminalSupport:
+    """Local certificate result; terminal families retain their source identity."""
+
+    state: str
+    reason: str = ""
+    terminals: frozenset = frozenset()
+    signature: frozenset = frozenset()
+    relation_positions: frozenset = frozenset()
 
 
 class SemanticInventory:
@@ -338,7 +349,129 @@ class SemanticInventory:
         return {identifier for identifier, (parent, children) in edges.items()
                 if any(components[parent] == components[child] for child in children)}
 
-    def _inherit_decomposition_state(self):
+    def _terminal_support(self, membership=None, *, relations=()):
+        """Analyze every active certificate bottom-up, without model calls.
+
+        Alternatives are separate certificates, never additive branches. A
+        family's resolved alternatives must agree on complete-link terminal
+        membership. Before pair consolidation, only exact identity can settle
+        that correspondence. Ambiguity is deferred until those bounded checks
+        finish; contradictions and missing atomic support are not deferred.
+        """
+        records = {item.id: item for item in self.candidates if item.candidate is not None}
+        families, active = {}, {}
+        for record in records.values():
+            families.setdefault(exact_proposition_key(record), []).append(record)
+        for proof in self.decompositions:
+            if proof.superseded_by is None and proof.parent_candidate_id in records:
+                active.setdefault(exact_proposition_key(records[proof.parent_candidate_id]), []).append(proof)
+        cyclic = self._cyclic_decomposition_ids(active, records)
+        equivalent = {}
+        for position, relation in enumerate(relations):
+            left, right = records.get(relation.left_candidate_id), records.get(relation.right_candidate_id)
+            if left is not None and right is not None and relation.equivalence_state == "equivalent":
+                pair = frozenset((exact_proposition_key(left), exact_proposition_key(right)))
+                if len(pair) == 2:
+                    equivalent.setdefault(pair, set()).add(position)
+        dependencies = {key: set() for key in families}
+        parents = {key: set() for key in families}
+        for key, proofs in active.items():
+            for proof in proofs:
+                if proof.state == "verified" and proof.id not in cyclic:
+                    dependencies[key].update(exact_proposition_key(records[value])
+                        for value in proof.component_candidate_ids if value in records)
+            for child in dependencies[key]:
+                parents[child].add(key)
+        pending = {key: len(children) for key, children in dependencies.items()}
+        ready = [key for key, count in pending.items() if not count]
+        proof_support, family_support = {}, {}
+
+        def preservation(proof):
+            signals = dict(proof.signals)
+            return all(name in signals and passes_probability_cutoff(
+                signals[name], self.config.acceptance_threshold) for name in DECOMPOSITION_QUESTIONS)
+
+        while ready:
+            key = ready.pop()
+            proofs = active.get(key, ())
+            verified = [item for item in proofs if item.state == "verified"]
+            for proof in verified:
+                if proof.id in cyclic:
+                    proof_support[proof.id] = _TerminalSupport("conflicting", "cyclic_decomposition")
+                    continue
+                branches, invalid = [], []
+                for identifier in proof.component_candidate_ids:
+                    record = records.get(identifier)
+                    if record is None or not self._content_eligible(record):
+                        invalid.append(_TerminalSupport("uncertain", "component_atomicity_unresolved"))
+                        continue
+                    child = family_support[exact_proposition_key(record)]
+                    if child.state != "resolved":
+                        invalid.append(child)
+                    else:
+                        branches.append(child)
+                if invalid:
+                    state = ("conflicting" if any(item.state == "conflicting" for item in invalid) else
+                             "uncertain" if any(item.state == "uncertain" for item in invalid) else "ambiguous")
+                    # Preserve the distinction between an unaudited leaf and a
+                    # child whose own structural certificate is unresolved.
+                    reason = ("component_refinement_unresolved" if any(
+                        item.reason not in {"component_atomicity_unresolved", "component_atomicity_conflicts_with_partition"}
+                        for item in invalid) else
+                        "component_atomicity_conflicts_with_partition" if state == "conflicting" else
+                        "component_atomicity_unresolved")
+                    proof_support[proof.id] = _TerminalSupport(state, reason)
+                    continue
+                terminals, signature, witnesses, overlap = set(), set(), set(), False
+                for branch in branches:
+                    for left in terminals:
+                        for right in branch.terminals:
+                            positions = equivalent.get(frozenset((left, right)), ())
+                            if left == right or positions:
+                                overlap = True
+                                witnesses.update(positions)
+                    terminals.update(branch.terminals)
+                    signature.update(branch.signature)
+                proof_support[proof.id] = (
+                    _TerminalSupport("conflicting", "component_equivalence_conflicts_with_joint_distinctness",
+                                     relation_positions=frozenset(witnesses)) if overlap else
+                    _TerminalSupport("resolved", terminals=frozenset(terminals), signature=frozenset(signature))
+                    if len(branches) >= 2 else
+                    _TerminalSupport("uncertain", "insufficient_distinct_components"))
+            results = [proof_support[item.id] for item in verified]
+            grounded = [item for item in results if item.state == "resolved"]
+            ambiguous = any(item.state == "ambiguous" for item in results)
+            if grounded:
+                terminals = frozenset().union(*(item.terminals for item in grounded))
+                same = not ambiguous and all(item.signature == grounded[0].signature for item in grounded)
+                family_support[key] = _TerminalSupport("resolved" if same else "ambiguous",
+                    "" if same else "alternative_terminal_correspondence_unresolved", terminals,
+                    grounded[0].signature if same else frozenset())
+            elif ambiguous:
+                family_support[key] = _TerminalSupport("ambiguous", "alternative_terminal_correspondence_unresolved")
+            elif any(preservation(item) for item in proofs):
+                conflicting = any(item.state == "conflicting" for item in results) or any(
+                    item.state == "conflicting" and preservation(item) for item in proofs)
+                family_support[key] = _TerminalSupport("conflicting" if conflicting else "uncertain",
+                                                        "component_refinement_unresolved")
+            else:
+                aliases = [item for item in families[key] if self._content_eligible(item)]
+                if aliases and all(self._component_eligible(item) for item in aliases):
+                    units = frozenset(membership.get(item.id) for item in aliases) if membership is not None else frozenset((key,))
+                    family_support[key] = (_TerminalSupport("resolved", terminals=frozenset((key,)), signature=units)
+                        if len(units) == 1 and None not in units else
+                        _TerminalSupport("ambiguous", "terminal_membership_unresolved"))
+                else:
+                    compound = any(self._with_known_atomicity(item).atomicity_state == "compound" for item in aliases)
+                    family_support[key] = _TerminalSupport("conflicting" if compound else "uncertain",
+                        "component_atomicity_conflicts_with_partition" if compound else "component_atomicity_unresolved")
+            for parent in parents[key]:
+                pending[parent] -= 1
+                if not pending[parent]:
+                    ready.append(parent)
+        return proof_support, family_support
+
+    def _inherit_decomposition_state(self, membership=None, *, final=False):
         """Apply one active structural decision to every exact validated alias.
 
         The canonical decomposition remains the evidence record. Alias parents
@@ -347,58 +480,21 @@ class SemanticInventory:
         the entire exact family, including aliases introduced by a later route.
         """
         records = {item.id: item for item in self.candidates if item.candidate is not None}
-        # Keep valid nested refinements, but do not let an earlier atomic label
-        # conceal a refinement whose complete preservation proof later failed.
-        # Only positive complete proof signals establish that contradiction;
-        # rejected speculative children are not evidence of compoundness.
-        # Each iteration only invalidates active certificates, so dependencies
-        # and aliases reach the same fixed point in every traversal order.
+        # Only invalidate in a pass; raw signals and rejected/superseded history
+        # are never promoted into fresh support. Alternative correspondence can
+        # resolve during pair consolidation, so defer that uncertainty until the
+        # complete-link membership is available.
         while True:
-            active = {}
-            for decomposition in self.decompositions:
-                parent = records.get(decomposition.parent_candidate_id)
-                if parent is not None and decomposition.superseded_by is None:
-                    active.setdefault(exact_proposition_key(parent), []).append(decomposition)
-            cyclic = self._cyclic_decomposition_ids(active, records)
-            if cyclic:
-                self.decompositions = [replace(item, state="conflicting", reason="cyclic_decomposition")
-                    if item.id in cyclic else item for item in self.decompositions]
-                continue
-            refinements = {key for key, proofs in active.items()
-                           if any(item.state == "verified" for item in proofs)}
-            unresolved = {}
-            for key, proofs in active.items():
-                if key in refinements:
-                    continue
-                preserved = []
-                for proof in proofs:
-                    signals = dict(proof.signals)
-                    if all(name in signals and passes_probability_cutoff(signals[name], self.config.acceptance_threshold)
-                           for name in DECOMPOSITION_QUESTIONS):
-                        preserved.append(proof)
-                if preserved:
-                    unresolved[key] = ("conflicting" if any(item.state == "conflicting" for item in preserved)
-                                       else "uncertain")
+            support, _ = self._terminal_support(membership)
             invalidated = False
             for index, decomposition in enumerate(self.decompositions):
                 if decomposition.state != "verified" or decomposition.superseded_by is not None:
                     continue
-                children = [records.get(identifier) for identifier in decomposition.component_candidate_ids]
-                conflicts = [unresolved[exact_proposition_key(item)] for item in children
-                             if item is not None and exact_proposition_key(item) in unresolved]
-                invalid_children = [item for item in children if item is None or not self._content_eligible(item)
-                    or not self._component_eligible(item) and exact_proposition_key(item) not in refinements]
-                if conflicts:
-                    state = "conflicting" if "conflicting" in conflicts else "uncertain"
-                    reason = "component_refinement_unresolved"
-                elif invalid_children:
-                    compound = any(item is not None and self._with_known_atomicity(item).atomicity_state == "compound"
-                                   for item in invalid_children)
-                    state = "conflicting" if compound else "uncertain"
-                    reason = "component_atomicity_conflicts_with_partition" if compound else "component_atomicity_unresolved"
-                else:
+                result = support.get(decomposition.id)
+                if result is None or result.state == "resolved" or result.state == "ambiguous" and not final:
                     continue
-                self.decompositions[index] = replace(decomposition, state=state, reason=reason)
+                self.decompositions[index] = replace(decomposition,
+                    state="uncertain" if result.state == "ambiguous" else result.state, reason=result.reason)
                 invalidated = True
             if not invalidated:
                 break
@@ -982,56 +1078,10 @@ class SemanticInventory:
                 and all(yes(key) for key in DECOMPOSITION_QUESTIONS if key != "components_cover_parent"))
 
     def _terminal_component_units(self, decomposition, membership):
-        """Expand verified acyclic alternatives to independently atomic units."""
-        records = {item.id:item for item in self.candidates if item.candidate is not None}
-        active, families = {}, {}
-        for record in records.values():
-            families.setdefault(exact_proposition_key(record), []).append(record)
-        for proof in self.decompositions:
-            if proof.superseded_by is None and proof.parent_candidate_id in records:
-                active.setdefault(exact_proposition_key(records[proof.parent_candidate_id]), []).append(proof)
-        cyclic = self._cyclic_decomposition_ids(active, records)
-        resolved = {}
-
-        def terminal_units(record, ancestors):
-            if record is None or not self._content_eligible(record):
-                return None
-            key = exact_proposition_key(record)
-            if key in ancestors:
-                return None
-            if key in resolved:
-                return resolved[key]
-            proofs = active.get(key, ())
-            verified = [item for item in proofs if item.state == "verified"]
-            if verified:
-                alternatives = [component_units(item, ancestors | {key}) for item in verified]
-                result = (alternatives[0] if alternatives[0] is not None
-                          and all(item == alternatives[0] for item in alternatives) else None)
-            elif any(all(name in dict(item.signals) and passes_probability_cutoff(
-                    dict(item.signals)[name], self.config.acceptance_threshold)
-                    for name in DECOMPOSITION_QUESTIONS) for item in proofs):
-                result = None
-            else:
-                aliases = [item for item in families[key] if self._content_eligible(item)]
-                units = frozenset(membership.get(item.id) for item in aliases)
-                result = (units if len(units) == 1 and None not in units
-                          and all(self._component_eligible(item) for item in aliases) else None)
-            resolved[key] = result
-            return result
-
-        def component_units(proof, ancestors):
-            if proof.state != "verified" or proof.superseded_by is not None or proof.id in cyclic:
-                return None
-            result = frozenset()
-            for identifier in proof.component_candidate_ids:
-                units = terminal_units(records.get(identifier), ancestors)
-                if units is None or result & units:
-                    return None
-                result |= units
-            return result or None
-
-        parent = records.get(decomposition.parent_candidate_id)
-        return component_units(decomposition, {exact_proposition_key(parent)}) if parent is not None else None
+        """Use the same support result for lifecycle and reported membership."""
+        support, _ = self._terminal_support(membership, relations=tuple(self.relations))
+        result = support.get(decomposition.id)
+        return result.signature if result is not None and result.state == "resolved" else None
 
     def _decomposition_is_provisional(self, decomposition, membership):
         """Keep real structural uncertainty without duplicating resolved atoms."""
@@ -1043,10 +1093,8 @@ class SemanticInventory:
             alternatives = [item for item in self.decompositions if item.state == "verified"
                 and item.superseded_by is None and item.parent_candidate_id in records and parent is not None
                 and exact_proposition_key(records[item.parent_candidate_id]) == exact_proposition_key(parent)]
-            if len(alternatives) < 2:
-                return False
             components = [self._terminal_component_units(item, membership) for item in alternatives]
-            return (any(group is None for group in components)
+            return (not components or any(group is None for group in components)
                     or any(group != components[0] for group in components[1:]))
         if not decomposition.component_candidate_ids:
             return True
@@ -1073,16 +1121,22 @@ class SemanticInventory:
                 return True
         return decomposition.reason == "component_equivalence_conflicts_with_joint_distinctness"
 
-    def _reconcile_decomposition_relations(self):
+    def _reconcile_decomposition_relations(self, membership=None, *, final=False):
         """Do not conceal conflicts between joint structure and later pair checks."""
         restored, conflicting_proofs, conflicting_relations = set(), set(), set()
         records = {item.id: item for item in self.candidates if item.candidate is not None}
         # One relation can contradict several certificates. Collect every
         # affected proof from the same evidence snapshot before mutating either.
         relations = tuple(self.relations)
+        support, _ = self._terminal_support(membership, relations=relations)
         for index, decomposition in enumerate(self.decompositions):
             if decomposition.superseded_by is not None:
                 continue
+            result = support.get(decomposition.id)
+            if result is not None and result.state == "conflicting" and result.relation_positions:
+                conflicting_proofs.add(index)
+                conflicting_relations.update(result.relation_positions)
+                restored.add(decomposition.parent_candidate_id)
             components = set(decomposition.component_candidate_ids)
             component_meanings = {exact_proposition_key(records[value]) for value in components if value in records}
             parent = records.get(decomposition.parent_candidate_id)
@@ -1117,9 +1171,8 @@ class SemanticInventory:
         for index in conflicting_proofs:
             self.decompositions[index] = replace(self.decompositions[index], state="conflicting",
                 reason="component_equivalence_conflicts_with_joint_distinctness")
-        if restored:
-            self._inherit_decomposition_state()
-        return bool(restored)
+        inherited = self._inherit_decomposition_state(membership, final=final)
+        return bool(restored) or inherited
 
     @staticmethod
     def _focus_revision_data(record):

@@ -1802,7 +1802,12 @@ class _AnalysisRun(SemanticInventory):
                         origin="exact_proposition_pair_reuse" if reused else relation.origin,
                         reused_from=(relation.left_candidate_id, relation.right_candidate_id) if reused else None))
                     self.reused_pair_relations += int(reused)
-        if self._reconcile_decomposition_relations():
+        self._reconcile_decomposition_relations()
+        # Resolve terminal support against the actual complete-link groups.
+        # Restoring an unsupported ancestor can change those memberships; repeat
+        # only this local phase until no certificate is invalidated. All paid
+        # comparison work above remains bounded and is never restarted.
+        while True:
             accepted = sorted(self._accepted(), key=lambda record: canonical_candidate_key(record, source_order))
             total_pairs = len(accepted) * (len(accepted) - 1) // 2
             # Restored parent aliases were inactive during pair scheduling.
@@ -1816,8 +1821,20 @@ class _AnalysisRun(SemanticInventory):
                     self.relations.append(InformationRelation(left.id, right.id, "equivalent", 1.0,
                         None, origin="exact_validated_proposition"))
                     self.exact_pair_relations += 1
+            compatible = {frozenset((item.left_candidate_id, item.right_candidate_id)):
+                          item.equivalence_state == "equivalent" for item in self.relations}
+            groups = []
+            for record in accepted:
+                group = next((group for group in groups if all(
+                    compatible.get(frozenset((record.id, member.id)), False) for member in group)), None)
+                if group is None:
+                    groups.append([record])
+                else:
+                    group.append(record)
+            memberships = {record.id: f"u{index}" for index, group in enumerate(groups) for record in group}
+            if not self._reconcile_decomposition_relations(memberships, final=True):
+                break
         for relation in self.relations:
-            compatible[frozenset((relation.left_candidate_id, relation.right_candidate_id))] = relation.equivalence_state == "equivalent"
             if relation.equivalence_state == "uncertain":
                 self.issue("relation_uncertain",
                     "Meaning remained unresolved after bounded source-scoped checks; candidates were kept distinct and counts remain provisional.",
@@ -1826,25 +1843,7 @@ class _AnalysisRun(SemanticInventory):
             self.unexamined_pair_count = total_pairs - len(self.relations)
             self.issue("pair_budget_exhausted",
                 f"{self.unexamined_pair_count} candidate pairs remain unexamined; unique-unit counts are provisional.")
-        groups = []
-        for record in accepted:
-            group = next(
-                (
-                    group
-                    for group in groups
-                    if all(
-                        compatible.get(frozenset((record.id, member.id)), False)
-                        for member in group
-                    )
-                ),
-                None,
-            )
-            if group is None:
-                groups.append([record])
-            else:
-                group.append(record)
         units, occurrences = [], []
-        memberships = {record.id: f"u{index}" for index, group in enumerate(groups) for record in group}
         for index, group in enumerate(groups):
             unit_id = f"u{index}"
             representative = group[0]
