@@ -406,8 +406,11 @@ class InformationInventoryTests(unittest.TestCase):
             coverage={"v0:s0": [.99, .01]},
             relation={frozenset((child["text"], self.retention["text"])): "equivalent"}
             if conflicting_pair else None)
-        report, _ = self.run_inventory(direct=[self.parent], foci=[self.frequency, self.retention],
-                                      recovery=[child, self.retention], evaluator=evaluator)
+        # Isolate post-decomposition correspondence from the separate promotion
+        # route, whose default behavior has dedicated integration regressions.
+        with patch.object(_AnalysisRun, "_promote_validated_foci", return_value=()):
+            report, _ = self.run_inventory(direct=[self.parent], foci=[self.frequency, self.retention],
+                                          recovery=[child, self.retention], evaluator=evaluator)
         return report
 
     def test_failed_refresh_cannot_leave_covered_focus_bound_only_to_inactive_parent(self):
@@ -521,27 +524,28 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual(2, report.counts.candidates)
         self.assertEqual(2, len(report.coverage_foci))
         focus = next(item for item in report.coverage_foci if item.proposition.text == self.retention["text"])
-        self.assertEqual(("covered", "resolved"), (focus.state, focus.history[0].outcome))
+        self.assertEqual(("covered", ()), (focus.state, focus.history))
         self.assertEqual(("c1",), focus.candidate_ids)
         self.assertEqual(("u1",), focus.unit_ids)
         self.assertEqual(focus.id, report.candidates[1].recovery_focus_id)
-        self.assertEqual("missing", focus.history[0].previous_state)
-        self.assertEqual(["gap_detected", "no_gap_signaled"], [item.state for item in report.coverage])
+        self.assertEqual("coverage_promotion", report.candidates[1].route)
+        self.assertEqual(focus.id, report.candidates[1].validation_reused_from)
+        self.assertEqual(["gap_detected"], [item.state for item in report.coverage])
         self.assertFalse(json.loads(report.metadata_json)["completeness_proven"])
         requests = [json.loads(item.prompt.split("\nInput:\n", 1)[1]) for item in generator.requests]
         discovery = next(item for item in requests if item.get("analysis_task") == "discover_coverage_foci")
         self.assertNotIn("accepted", discovery)
         self.assertNotIn("repair_candidates", discovery)
-        repair = next(item for item in requests if "coverage_focus" in item)
-        self.assertEqual(focus.id, repair["coverage_focus"]["id"])
+        self.assertFalse(any("coverage_focus" in item for item in requests))
 
     def test_reformulations_and_exact_duplicate_rows_do_not_close_a_different_gap(self):
         reformulation = candidate("v0:s0", self.source, text="Os backups do Alfa ocorrem a cada 24 horas.", quantities=("24 horas",))
         for recovery in ([self.frequency], [reformulation]):
             with self.subTest(recovery=recovery[0]["text"]):
                 evaluator = InventoryEvaluator(coverage={"v0:s0": [.99, .01]})
-                report, _ = self.run_inventory(direct=[self.frequency], foci=[self.retention],
-                                              recovery=recovery, evaluator=evaluator)
+                with patch.object(_AnalysisRun, "_promote_validated_foci", return_value=()):
+                    report, _ = self.run_inventory(direct=[self.frequency], foci=[self.retention],
+                                                  recovery=recovery, evaluator=evaluator)
                 focus = report.coverage_foci[0]
                 self.assertEqual("missing", focus.state)
                 self.assertEqual("no_progress", focus.history[0].outcome)
@@ -556,8 +560,9 @@ class InformationInventoryTests(unittest.TestCase):
                                   ((.99, .01, .01), "missing")):
             with self.subTest(signals=signals):
                 evaluator = InventoryEvaluator(matches={(self.retention["text"], self.frequency["text"]): signals})
-                report, _ = self.run_inventory(direct=[self.frequency], foci=[self.retention], evaluator=evaluator,
-                                              max_coverage_rounds=0)
+                with patch.object(_AnalysisRun, "_promote_validated_foci", return_value=()):
+                    report, _ = self.run_inventory(direct=[self.frequency], foci=[self.retention], evaluator=evaluator,
+                                                  max_coverage_rounds=0)
                 self.assertEqual(expected, report.coverage_foci[0].state)
                 self.assertEqual((), report.coverage_foci[0].unit_ids)
                 self.assertTrue(report.counts.counts_provisional)
@@ -604,8 +609,9 @@ class InformationInventoryTests(unittest.TestCase):
         one = candidate("v0:s0", source, quote="A cópia é diária.", offset=0)
         two = candidate("v0:s0", source, quote="A cópia é diária.", offset=18)
         report, _ = self.run_inventory(texts=[source], direct=[one], foci=[two], max_coverage_rounds=0)
-        self.assertEqual("missing", report.coverage_foci[0].state)
-        self.assertEqual(1, report.counts.occurrences)
+        self.assertEqual("covered", report.coverage_foci[0].state)
+        self.assertEqual(2, report.counts.occurrences)
+        self.assertEqual({0, 18}, {e.start_char for item in report.occurrences for e in item.assertion_evidence})
         self.assertEqual(18, report.coverage_foci[0].proposition.evidence[0].start_char)
 
     def test_all_four_modes_share_validation_granularity_and_frozen_input(self):
@@ -640,8 +646,10 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual(2, len(report.coverage_foci))
         self.assertEqual("not_evaluated", report.coverage_foci[1].proposal_record.validation)
         self.assertEqual("uncertain", report.coverage_foci[1].state)
-        self.assertEqual(0, report.counts.candidates)
-        self.assertEqual(0, report.counts.unique_units)
+        self.assertEqual(1, report.counts.candidates)
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual("accepted", report.coverage_foci[0].proposal_record.validation)
+        self.assertEqual("coverage_promotion", report.candidates[0].route)
         self.assertEqual(1, len(report.coverage))
         self.assertFalse(report.counts.valid_zero)
         self.assertEqual(5, json.loads(report.metadata_json)["logical_calls"])
@@ -690,7 +698,7 @@ class InformationInventoryTests(unittest.TestCase):
         with redirect_stdout(stream):
             _print_information_report(report, None)
         self.assertIn("Granularity alternatives:", stream.getvalue())
-        self.assertIn("Source coverage foci: 1 tracked; 1 pending", stream.getvalue())
+        self.assertIn("Source coverage foci: 1 tracked; 0 pending", stream.getvalue())
 
 
 if __name__ == "__main__":

@@ -290,9 +290,32 @@ def validation_spec(candidate, candidate_id, target, context=()):
 
 
 def exact_proposition_key(record):
-    """Require identical text, type and full source evidence for exact reuse."""
+    """Identify the same complete claim in the same complete evidence scope.
+
+    Type labels are unverified discovery annotations, not an additional claim.
+    Attribution, modality and other qualified meaning must still match literally
+    in the accepted text and its source scope. Evidence order is provenance only;
+    a different occurrence or reference scope never receives this shortcut.
+    """
     candidate = record.candidate
-    return candidate.text, candidate.unit_type, candidate.evidence
+    evidence = tuple(sorted(set(candidate.evidence), key=lambda item: (
+        item.source_identity, item.segment_id, item.start_char, item.end_char,
+        item.role, item.quote, item.segment_start, item.segment_end)))
+    return candidate.text, evidence
+
+
+def canonical_candidate_key(record, source_order):
+    """Order semantic work by immutable source coordinates and complete text."""
+    candidate = record.candidate
+    anchors = tuple(sorted((source_order[item.segment_id], item.start_char, item.end_char)
+                           for item in candidate.evidence if item.role == "assertion"))
+    evidence = tuple((item.source_identity, item.segment_id, item.start_char,
+                      item.end_char, item.role, item.quote)
+                     for item in exact_proposition_key(record)[1])
+    literal = any(item.role == "assertion" and candidate.text == item.quote for item in candidate.evidence)
+    return (anchors, not literal, candidate.text, evidence,
+            record.annotation_state != "verified", candidate.unit_type,
+            repr(candidate.qualifiers), record.route, record.id)
 
 
 def coverage_spec(target, context, accepted, markers):

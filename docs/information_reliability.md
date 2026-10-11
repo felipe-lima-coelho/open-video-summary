@@ -101,6 +101,21 @@ unfinished under the configured budget.
 
 ## Granularity and equivalence
 
+The counted object is one complete contextual proposition, including its
+attribution, modality, negation, conditions, quantities and scope. Multiple
+discovery routes are provenance, not additional propositions. A source sentence
+can contain zero, one or several such propositions; a source slot is never a
+unit count. Unresolved alternatives stay visible with provisional counts.
+
+An independently discovered coverage focus that passes the complete candidate
+validation may enter the inventory verbatim when it lacks a verified active
+correspondence. The `coverage_promotion` candidate retains the focus's exact
+text, evidence, proposed qualifiers, raw proposal and validation signals;
+`validation_reused_from` and `recovery_focus_id` identify the original focus.
+It still receives independent atomicity review and ordinary consolidation.
+Unvalidated foci are never promoted, and this route cannot restore a verified
+decomposed parent. Promotion does not establish exhaustive coverage.
+
 Atomicity and parent/parts review are two bounded checks. By default, each target
 can use up to 8 independent atomicity audit requests, with at most 8 distinct
 accepted meanings in each request, plus up to 8 joint parent/parts reviews. Both
@@ -132,8 +147,23 @@ parent's entire meaning, qualifiers and source occurrence. Setting
 atomicity and joint parent/parts checks, so it provides no independent
 atomicity-based reliability evidence.
 
-The exact duplicate shortcut applies only when validated candidate text, type and
-complete evidence match. Every other proposed semantic merge needs an individual
+A gray abstract splittability decision can now request concrete component
+witnesses within the same joint-review budget. Each exact parent meaning has
+at most one generation attempt. Newly discovered semantic peers can prompt a
+new bounded joint review; repeated route or annotation variants cannot.
+Only the full concrete parent/parts verification can authorize replacement,
+including its unchanged parent-compound, collective preservation, independence,
+distinctness, source-occurrence and qualifier gates. Gray or failed concrete
+checks retain the parent and proposed parts as unresolved alternatives.
+
+The exact duplicate shortcut applies only when validated complete candidate text
+and complete evidence match, ignoring evidence list order and repeated identical
+evidence entries. Unverified type labels do not add meaning: all raw labels and
+qualifier annotations remain on their candidates. A different asserted occurrence
+or cited reference scope still requires semantic evaluation. Canonical source
+coordinates, literal wording and complete text determine scheduling and the
+representative, so discovery order alone does not choose a different grouping.
+Every other proposed semantic merge needs an individual
 source-scoped follow-up with directional entailment checks in both directions.
 The analyzer prioritizes prospective equivalents and uncertain pair decisions
 under `--information-relation-adjudications` (default 256, at most one follow-up

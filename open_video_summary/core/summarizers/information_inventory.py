@@ -347,10 +347,13 @@ class SemanticInventory:
             0 if record.atomicity_state == "compound" else
             1 if record.granularity == "compound" else
             2 if record.atomicity_state == "uncertain" else 3))
+        reviewed_meanings = set()
         for initial_parent in eligible:
             parent = next(item for item in self.candidates if item.id == initial_parent.id)
-            if parent.inventory_role == "decomposed_parent":
+            meaning = exact_proposition_key(parent)
+            if parent.inventory_role == "decomposed_parent" or meaning in reviewed_meanings:
                 continue
+            reviewed_meanings.add(meaning)
             peers, seen = [], set()
             for peer in self._accepted(target.id):
                 if peer.id == parent.id or not assertion_overlap(parent.candidate, peer.candidate):
@@ -361,9 +364,11 @@ class SemanticInventory:
                 peers.append(peer)
                 seen.add(key)
             compound = parent.granularity == "compound" or parent.atomicity_state == "compound"
-            if not peers and not compound:
+            if not peers and not compound and parent.atomicity_state != "uncertain":
                 continue
-            signature = (parent.id, tuple(item.id for item in peers))
+            # New semantic witnesses can justify another review; repeated
+            # routes and annotation changes alone cannot.
+            signature = (meaning, frozenset(exact_proposition_key(peer) for peer in peers))
             if signature in self.granularity_reviewed:
                 continue
             if self.granularity_checks >= self.config.max_granularity_checks or self.budget.remaining <= 2:
@@ -391,11 +396,16 @@ class SemanticInventory:
             selected = [peer for index, peer in enumerate(peers) if yes(signals[f"component{index}"])]
             if no(signals["splittable"]) and not selected and not compound:
                 continue
-            if not yes(signals["splittable"]):
+            if no(signals["splittable"]):
                 self._record_decomposition(parent, selected or peers, "conflicting" if selected else "uncertain",
                                            joint_signals, "joint_atomicity_unresolved")
                 continue
-            if len(selected) < 2 and self.budget.remaining > 4:
+            # A gray abstract splittability answer can request witnesses. It
+            # never validates a split: the concrete parent/parts review below
+            # must still pass every original preservation gate.
+            if (len(selected) < 2 and self.budget.remaining > 4
+                    and meaning not in self.decomposition_generated):
+                self.decomposition_generated.add(meaning)
                 try:
                     raw_components, permitted = self._inventory_generate(target, "decompose_candidate",
                         DECOMPOSITION_INSTRUCTION, {"parent_claim_text": parent.candidate.text,
@@ -419,6 +429,34 @@ class SemanticInventory:
             else:
                 self._record_decomposition(parent, (), "partial", joint_signals, "no_verified_components")
         self._review_atomicity(target)
+
+    def _promote_validated_foci(self, target):
+        """Retain independently validated missing content without regenerating it.
+
+        Promotion adds an ordinary candidate, not a counted unit. Independent
+        atomicity and complete-link consolidation still apply. Failed focus
+        hypotheses remain solely in the ledger; verified decomposed parents
+        are never restored through this route.
+        """
+        known = {exact_proposition_key(item) for item in self.candidates
+                 if item.candidate is not None and item.validation == "accepted"}
+        promoted = []
+        for focus in self.coverage_foci:
+            record = focus.proposal_record
+            if (focus.segment_id != target.id or focus.state == "covered"
+                    or record.validation != "accepted" or record.candidate is None
+                    or exact_proposition_key(record) in known):
+                continue
+            identifier = f"{self.candidate_prefix}c{len(self.candidates)}"
+            self.candidates.append(replace(record, id=identifier, route="coverage_promotion",
+                validation_reused_from=focus.id, recovery_focus_id=focus.id,
+                inventory_role="unit_candidate", parent_candidate_ids=(), decomposition_ids=(),
+                atomicity_state="not_reviewed", atomicity_signals=(), atomicity_review_origin=None))
+            known.add(exact_proposition_key(record))
+            promoted.append(identifier)
+        if promoted:
+            self._reconcile_granularity(target)
+        return tuple(promoted)
 
     def _discover_foci(self, target, audit=None):
         existing = [item for item in self.coverage_foci if item.segment_id == target.id]
@@ -616,6 +654,8 @@ class SemanticInventory:
         try:
             self._discover_foci(target)
             self._refresh_foci(target)
+            self._promote_validated_foci(target)
+            self._refresh_foci(target)
         except Exception as exc:
             self.issue("focus_tracking_failed", type(exc).__name__, (target.id,))
         for round_number in range(self.config.max_coverage_rounds + 1):
@@ -629,6 +669,8 @@ class SemanticInventory:
                 return
             if not pending:
                 added = self._discover_foci(target, audit)
+                self._refresh_foci(target)
+                self._promote_validated_foci(target)
                 self._refresh_foci(target)
                 pending = [item for item in self.coverage_foci if item.segment_id == target.id and item.state != "covered"]
                 if not added or not pending:

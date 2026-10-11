@@ -639,7 +639,7 @@ class InformationRecoveryTests(unittest.TestCase):
                     self.assertEqual("gap_detected", report.coverage[-1].state)
                     self.assertTrue(report.counts.counts_provisional)
 
-    def test_coverage_projection_keeps_different_types_and_full_evidence_separate(self):
+    def test_coverage_projection_groups_type_annotations_but_keeps_full_evidence_separate(self):
         source = "O sistema operacional Android, que pertence ao Google."
         proposals = [candidate("v0:s0", source, text="O Android pertence ao Google.", quote=quote)
                      for quote in ("que pertence ao Google.", "sistema operacional Android, que pertence ao Google")]
@@ -650,9 +650,8 @@ class InformationRecoveryTests(unittest.TestCase):
         state, _ = coverage_spec(report.snapshot.current_segments[0], (),
             (first, duplicate, second, different_type), ())
         represented = state.split("Represented claims:\n", 1)[1]
-        self.assertIn("c0, duplicate: ", represented)
+        self.assertIn("c0, duplicate, different_type: ", represented)
         self.assertIn("c1: ", represented)
-        self.assertIn("different_type: ", represented)
         for record in (first, second):
             evidence = record.candidate.evidence[0]
             self.assertIn(f"[{evidence.start_char},{evidence.end_char})", represented)
