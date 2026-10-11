@@ -96,7 +96,7 @@ class InformationReferenceCoreIntegrationTests(unittest.TestCase):
             result = evaluate_information_report(report, reference)
         self.assertEqual(original, reference)
         self.assertEqual(
-            (10, "contextual-propositions-v2", "completed"),
+            (11, "contextual-propositions-v2", "completed"),
             (report.schema_version, report.protocol_version, report.status),
         )
         self.assertEqual(5, report.counts.unique_units)

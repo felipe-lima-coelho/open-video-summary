@@ -527,12 +527,13 @@ class _AnalysisRun(SemanticInventory):
             if record.target_segment_id != target.id:
                 continue
             candidate = record.candidate
-            if record.validation == "accepted" and record.inventory_role != "decomposed_parent":
+            if self._content_eligible(record) and record.inventory_role != "decomposed_parent":
                 value = {
                     "text": candidate.text, "unit_type": candidate.unit_type,
                     "evidence": [evidence_ref(asdict(item)) for item in candidate.evidence],
                     "qualifiers": asdict(candidate.qualifiers) if record.annotation_state == "verified" else None,
                     "annotation_state": record.annotation_state,
+                    "validation": record.validation, "atomicity_state": record.atomicity_state,
                 }
                 append_unique(accepted, accepted_indexes, value, record.id)
             elif record.validation in {"literal_rejected", "needs_repair", "needs_review"}:
@@ -1049,6 +1050,8 @@ class _AnalysisRun(SemanticInventory):
                 reasons += ("granularity",)
             if not reasons:
                 validation = "accepted"
+            elif reasons == ("granularity",) and decision.selected in {"atomic", "compound"}:
+                validation = "supported_pending_granularity"
             elif (
                 decision.selected == "not_information"
                 and probability >= self.config.acceptance_threshold
@@ -1123,7 +1126,7 @@ class _AnalysisRun(SemanticInventory):
         return [
             record
             for record in self.candidates
-            if record.validation == "accepted"
+            if self._content_eligible(record)
             and record.inventory_role != "decomposed_parent"
             and (target_id is None or record.target_segment_id == target_id)
         ]
@@ -1816,6 +1819,8 @@ class _AnalysisRun(SemanticInventory):
                                                     for identifier in record.decomposition_ids))
             provisional = (any(item.id in decomposition_ids and self._decomposition_is_provisional(item, memberships)
                                for item in self.decompositions)
+                           or any(record.validation == "supported_pending_granularity"
+                                  and record.atomicity_state != "atomic" for record in group)
                            or bool(self.config.max_granularity_checks)
                            and any(record.atomicity_state != "atomic" for record in group))
             units.append(
@@ -1990,15 +1995,16 @@ class _AnalysisRun(SemanticInventory):
                         (identifier,),
                     )
             for record in self.candidates:
-                if (self.config.max_granularity_checks and record.validation == "accepted"
+                if ((self.config.max_granularity_checks or record.validation == "supported_pending_granularity")
+                        and self._content_eligible(record)
                         and record.inventory_role != "decomposed_parent" and record.atomicity_state != "atomic"):
                     self.issue("atomicity_unresolved", "Independent source-scoped atomicity is "
-                        + record.atomicity_state + "; the accepted claim remains visible with provisional granularity.",
+                        + record.atomicity_state + "; the source-supported claim remains visible with provisional granularity.",
                         (record.target_segment_id,), (record.id,))
-                if record.validation == "accepted" and record.annotation_state != "verified":
+                if self._content_eligible(record) and record.annotation_state != "verified":
                     self.issue(
                         "annotation_unresolved",
-                        "The proposition is accepted; proposed auxiliary annotations are unverified and canonical qualifiers remain unknown.",
+                        "The proposition is source-supported; proposed auxiliary annotations are unverified and canonical qualifiers remain unknown.",
                         (record.target_segment_id,),
                         (record.id,),
                     )
@@ -2104,10 +2110,13 @@ class _AnalysisRun(SemanticInventory):
             "joint_granularity": "Single-candidate atomicity is followed by bounded joint review of overlapping original-source assertions, including already accepted parents. A verified decomposition requires distinct independent components, mutual collective content preservation, unchanged qualifiers and source occurrence. Only then is the parent retained as provenance outside unit counts. Gray abstract splittability may request bounded concrete witnesses, never automatic replacement. One generation attempt is allowed per exact parent meaning; new semantic peers can receive another bounded joint review. Independent equivalence conflicts only with a verified partition or a positively verified proper part, including a source-grounded residual with every other decomposition gate passed. Joint component checks retain both their original index and candidate identity; legacy indices never imply an unknown filtered association. Unresolved alternatives stay visible and provisional unless every member is an accepted atom in one complete-link equivalence group with no positive compound, part or residual evidence. Specificity alone never suppresses content.",
             "source_content_ledger": "Independent source traversal proposes source foci without access to the accepted inventory. Each focus keeps literal evidence, a full proposal validation, stable ID, verified per-candidate correspondence and bounded individual repair history. Only complete qualified meaning at the same source occurrence closes a gap. Final covered states require a verified correspondence to an active inventory unit; inactive matches remain provenance and decomposition alone never transfers coverage to children. Citations, reformulations, extra candidates and no-progress stops do not prove coverage. The separate open source audit can still signal undiscovered content. Foci do not count as inventory units. An accepted uncovered focus may be promoted verbatim to an ordinary candidate with explicit focus provenance, independent atomicity and normal consolidation; failed hypotheses and verified decomposed parents are never promoted.",
             "thresholds_calibrated": False,
-            "independent_atomicity": "Every unique active accepted claim receives separate atomic/compound source-scoped binary checks, including lone claims and newly generated children. Original Choice labels remain provenance. Up to eight claims share an independently keyed audit, with max_granularity_checks audit requests per target, in addition to that many joint reviews. The shared call cap and exact context size can leave unreviewed claims visible with provisional granularity. Setting max_granularity_checks=0 is an explicit audit ablation; it does not validate original atomic labels.",
+            "content_acceptance": "accepted retains its original source-fidelity and atomic Choice meaning. supported_pending_granularity passes every unchanged content, anchor and reference gate, but the original atomic/compound Choice has a granularity defect. Both states are inventory-eligible; the latter remains provisional until an independent structural audit resolves atomicity. Original labels, probabilities, reasons and source provenance are retained. Unknown references, needs_context, not_information and failed fidelity remain ineligible. Newly eligible gray/compound children need independent atomicity evidence before all collective partition checks; content support alone never authorizes replacement.",
+            "independent_atomicity": "Every unique active source-supported claim receives separate atomic/compound source-scoped binary checks, including lone claims and newly generated children. Original Choice labels remain provenance. Up to eight claims share an independently keyed audit, with max_granularity_checks audit requests per target, in addition to that many joint reviews. The shared call cap and exact context size can leave unreviewed claims visible with provisional granularity. Setting max_granularity_checks=0 is an explicit audit ablation; it does not validate original atomic labels.",
             "count_semantics": (
                 "Accepted candidates count all accepted validation records, including retained "
-                "decomposed parents. Unique units count active accepted semantic groups; verified "
+                "decomposed parents. supported_pending_granularity_candidates separately counts "
+                "source-supported records with an unresolved original granularity decision. "
+                "Unique units count active content-supported semantic groups from these two states; verified "
                 "decomposed parents contribute provenance, not extra units. Unresolved parent/parts "
                 "alternatives stay visible as provisional_granularity units, except wholly collapsed "
                 "accepted atomic alternatives without positive structural evidence. Source foci are separate "
@@ -2127,7 +2136,7 @@ class _AnalysisRun(SemanticInventory):
         metadata["reliability_diagnostics"] = reliability_diagnostics(self.issues, self.candidates,
             self.relations, self.coverage_foci, self.unexamined_pair_count)
         report = InformationReport(
-            10,
+            11,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -2275,6 +2284,7 @@ class _AnalysisRun(SemanticInventory):
             status != "completed",
             sum(unit.inventory_state == "provisional_granularity" for unit in units),
             sum(record.inventory_role == "decomposed_parent" for record in self.candidates),
+            sum(record.validation == "supported_pending_granularity" for record in self.candidates),
         )
 
 
@@ -2291,7 +2301,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         counts_provisional=True,
     )
     return InformationReport(
-        10,
+        11,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",

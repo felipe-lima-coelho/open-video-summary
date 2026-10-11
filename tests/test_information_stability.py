@@ -13,6 +13,33 @@ from open_video_summary.core.summarizers.information_evaluation import exact_pro
 from open_video_summary.core.summarizers.information_sources import source_sentence_spans
 
 
+class GranularityEvaluator(InventoryEvaluator):
+    """Control granularity independently from all source-fidelity decisions."""
+
+    def __init__(self, *, choice_probability=.99, atomicity=None, failed_gate=None, **kwargs):
+        super().__init__(**kwargs)
+        self.choice_probability, self.atomicity, self.failed_gate = choice_probability, atomicity, failed_gate
+
+    def evaluate(self, context, noul=None, choice=None):
+        result = super().evaluate(context, noul, choice)
+        if choice and "granularity" in choice:
+            result = replace(result, choice=tuple(replace(item,
+                probabilities=tuple((key, self.choice_probability if key == item.selected else
+                    (1 - self.choice_probability) / (len(item.probabilities) - 1)) for key, _ in item.probabilities),
+                confidence=self.choice_probability) for item in result.choice))
+            if self.failed_gate:
+                result = replace(result, noul=tuple(replace(item, probability=.5)
+                    if item.id == self.failed_gate else item for item in result.noul))
+        if self.atomicity is not None and context.startswith('{') and '"claim0_text"' in context:
+            state = json.loads(context)
+            # Parents with an explicit witness remain compounds in the fixture.
+            result = replace(result, noul=tuple(replace(item,
+                probability=self.atomicity if item.id.endswith("_atomic") else 1 - self.atomicity)
+                if not self.splits.get(state[item.id.rsplit("_", 1)[0] + "_text"]) else item
+                for item in result.noul))
+        return result
+
+
 class InformationStabilityTests(unittest.TestCase):
     def run_for(self, source, *, evaluator=None, generator=None, **settings):
         options = dict(concurrency=1, qa_enabled=False, max_calls=256,
@@ -140,11 +167,11 @@ class InformationStabilityTests(unittest.TestCase):
         operations = [call.operation for call in report.calls]
         self.assertLess(operations.index("coverage_audit"), operations.index("validate_candidate"))
 
-    def test_source_hypotheses_still_fail_fidelity_references_and_compound_gates(self):
+    def test_source_hypotheses_still_fail_fidelity_and_reference_gates(self):
         source = "Segundo Ana, o serviço talvez não retorne."
         for evaluator in (InventoryEvaluator(validation={source: .01}),
                           InventoryEvaluator(granularity={source: "needs_context"}),
-                          InventoryEvaluator(granularity={source: "compound"})):
+                          InventoryEvaluator(granularity={source: "not_information"})):
             with self.subTest(evaluator=evaluator.granularity):
                 report = InformationAnalyzer(ScriptedGenerator(), evaluator).analyze(capture_snapshot(videos([source])))
                 self.assertEqual(0, report.counts.unique_units)
@@ -152,6 +179,109 @@ class InformationStabilityTests(unittest.TestCase):
                 self.assertEqual(source, report.candidates[0].candidate.text)
                 self.assertEqual("literal_identity", report.candidates[0].anchor_binding_origin)
                 self.assertTrue(any(call.operation == "validate_candidate" for call in report.calls))
+
+    def test_supported_gray_or_compound_claim_remains_provisional_with_original_decisions(self):
+        source = "A regra permite o serviço por 90 dias."
+        for label, probability in (("atomic", .72), ("compound", .99)):
+            with self.subTest(label=label):
+                evaluator = GranularityEvaluator(granularity={source: label},
+                                                  choice_probability=probability, atomicity=.5)
+                raw = candidate("v0:s0", source, quantities=("90 dias",))
+                report = InformationAnalyzer(ScriptedGenerator({("v0:s0", "direct"): [raw]}), evaluator,
+                    InformationAnalysisConfig(qa_enabled=False, max_granularity_checks=0,
+                                              max_source_sentences=0)).analyze(capture_snapshot(videos([source])))
+                record = report.candidates[0]
+                self.assertEqual("supported_pending_granularity", record.validation)
+                self.assertEqual(("granularity",), record.reasons)
+                self.assertEqual((label, probability, probability),
+                    (record.granularity, record.granularity_probability, record.granularity_confidence))
+                self.assertEqual(raw, json.loads(record.raw_json))
+                self.assertTrue(all(value >= .85 for _, value in record.signals))
+                self.assertEqual((0, 1, 1), (report.counts.accepted_candidates,
+                    report.counts.supported_pending_granularity_candidates, report.counts.unique_units))
+                self.assertEqual("provisional_granularity", report.units[0].inventory_state)
+                self.assertTrue(report.counts.counts_provisional)
+                exported = json.loads(json.dumps(report.to_dict(), ensure_ascii=False))
+                self.assertEqual(11, exported["schema_version"])
+                self.assertEqual(record.validation, exported["candidates"][0]["validation"])
+                self.assertEqual(1, exported["counts"]["supported_pending_granularity_candidates"])
+
+    def test_supported_gray_source_receives_independent_audit_and_focus_promotion(self):
+        source = "A regra permite o serviço por 90 dias."
+        evaluator = GranularityEvaluator(choice_probability=.72)
+        report = InformationAnalyzer(ScriptedGenerator(), evaluator).analyze(capture_snapshot(videos([source])))
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual("supported_pending_granularity", report.candidates[0].validation)
+        self.assertEqual("atomic", report.candidates[0].atomicity_state)
+        self.assertTrue(any(call.operation == "review_candidate_atomicity" for call in report.calls))
+        run = self.run_for(source, evaluator=GranularityEvaluator(choice_probability=.72, atomicity=.5),
+                           max_granularity_checks=0)
+        proposal = self.validate(run, candidate("v0:s0", source), destination=[], identifier="f:gray")
+        run.coverage_foci.append(CoverageFocus("f:gray", "v0:s0", proposal.candidate, proposal, state="missing"))
+        target = run.snapshot.current_segments[0]
+        self.assertEqual(("c0",), run._promote_validated_foci(target))
+        run._refresh_foci(target)
+        units, _ = run._consolidate()
+        self.assertEqual("covered", run.coverage_foci[0].state)
+        self.assertEqual("supported_pending_granularity", run.candidates[0].validation)
+        self.assertEqual("provisional_granularity", units[0].inventory_state)
+
+    def test_supported_status_never_bypasses_content_or_reference_failure(self):
+        source = "Segundo Ana, a regra talvez não mude por 90 dias."
+        for defect in ("support", "conditions", "negation", "quantities", "modality", "attribution",
+                       "unresolved_references", "needs_context", "not_information"):
+            with self.subTest(defect=defect):
+                raw = candidate("v0:s0", source)
+                if defect == "unresolved_references":
+                    raw["unresolved_references"] = ["a regra"]
+                label = defect if defect in {"needs_context", "not_information"} else "atomic"
+                evaluator = GranularityEvaluator(granularity={source: label}, choice_probability=.72,
+                    failed_gate=defect if defect in {"support", "conditions", "negation", "quantities", "modality", "attribution"} else None)
+                run = self.run_for(source, evaluator=evaluator)
+                record = self.validate(run, raw)
+                self.assertFalse(record.content_supported)
+                self.assertEqual([], run._accepted())
+                self.assertNotEqual("supported_pending_granularity", record.validation)
+
+    def test_gray_or_compound_children_cannot_replace_parent_without_atomic_evidence(self):
+        source = "O backup é diário e a retenção dura 30 dias."
+        parts = [candidate("v0:s0", source, text="O backup é diário."),
+                 candidate("v0:s0", source, text="A retenção dura 30 dias.")]
+        for atomicity, expected in ((.5, False), (.99, True)):
+            with self.subTest(atomicity=atomicity):
+                evaluator = GranularityEvaluator(choice_probability=.72, atomicity=atomicity,
+                    splits={source: tuple(item["text"] for item in parts)})
+                generator = ScriptedGenerator(callback=lambda data, route:
+                    [candidate("v0:s0", source)] if route == "direct" else parts if route == "decompose_candidate" else [])
+                report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
+                    qa_enabled=False, max_source_sentences=0)).analyze(capture_snapshot(videos([source])))
+                self.assertEqual(expected, any(item.state == "verified" for item in report.decompositions))
+                self.assertEqual("decomposed_parent" if expected else "unit_candidate",
+                                 report.candidates[0].inventory_role)
+                self.assertEqual(2 if expected else 3, report.counts.unique_units)
+                self.assertTrue(all(record.validation == "supported_pending_granularity" for record in report.candidates))
+
+    def test_supported_parent_aliases_inherit_partition_across_default_source_route(self):
+        source = "O backup é diário e a retenção dura 30 dias."
+        parent = candidate("v0:s0", source)
+        parts = [candidate("v0:s0", source, text="O backup é diário."),
+                 candidate("v0:s0", source, text="A retenção dura 30 dias.")]
+        generator = ScriptedGenerator(callback=lambda data, route:
+            [parent, parent, *parts] if route == "direct" else [])
+        evaluator = GranularityEvaluator(choice_probability=.72,
+            splits={source: tuple(item["text"] for item in parts)})
+        report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
+            qa_enabled=False)).analyze(capture_snapshot(videos([source])))
+        parents = [record for record in report.candidates if record.candidate.text == source]
+        self.assertEqual(3, len(parents))
+        self.assertTrue(all(record.validation == "supported_pending_granularity" for record in parents))
+        self.assertTrue(all(record.inventory_role == "decomposed_parent" for record in parents))
+        self.assertEqual(2, report.counts.unique_units)
+        proof = next(item for item in report.decompositions if item.state == "verified")
+        self.assertTrue(all(proof.id in record.decomposition_ids for record in parents))
+        self.assertTrue(all({record.id for record in parents} <= set(child.parent_candidate_ids)
+                            for child in report.candidates if child.id in proof.component_candidate_ids))
+        self.assertEqual(1, sum(call.operation == "verify_decomposition" for call in report.calls))
 
     def test_sentence_visitation_handles_abbreviations_unicode_numbers_and_final_fragment(self):
         source = '  Dr. João mede 3.14 m. "A ação mudou!" Sr. A. Silva chegou. sem pontuação  '

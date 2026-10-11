@@ -808,9 +808,11 @@ class InformationRecoveryTests(unittest.TestCase):
                        evaluator,qa_enabled=False,max_literal_repairs=1)
         repairs=[c for c in report.candidates if c.route == "literal_recovery"]
         self.assertEqual(1,len(repairs))
-        self.assertEqual("needs_repair",repairs[0].validation)
+        self.assertEqual("supported_pending_granularity",repairs[0].validation)
         self.assertEqual("compound",repairs[0].granularity)
         self.assertEqual(0,report.counts.accepted_candidates)
+        self.assertEqual(1,report.counts.supported_pending_granularity_candidates)
+        self.assertEqual("provisional_granularity",report.units[0].inventory_state)
 
     def test_literal_repair_context_limit_preserves_failed_candidate_and_runs_affordable_audit(self):
         source = "A regra estabelece " + ("conteudo " * 330) + "final."

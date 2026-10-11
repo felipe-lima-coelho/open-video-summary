@@ -86,9 +86,9 @@ def reliability_diagnostics(issues, candidates, relations, coverage_foci, unexam
     return {
         "budget_limits": budget_kinds,
         "provider_failures": sorted(kind for kind in kinds if "failed" in kind or kind == "provider_stopped"),
-        "unreviewed_atomicity_candidates": sum(item.validation == "accepted" and item.inventory_role != "decomposed_parent"
+        "unreviewed_atomicity_candidates": sum(item.content_supported and item.inventory_role != "decomposed_parent"
             and item.atomicity_state == "not_reviewed" for item in candidates),
-        "uncertain_atomicity_candidates": sum(item.validation == "accepted" and item.inventory_role != "decomposed_parent"
+        "uncertain_atomicity_candidates": sum(item.content_supported and item.inventory_role != "decomposed_parent"
             and item.atomicity_state in {"compound", "uncertain"} for item in candidates),
         "unconfirmed_equivalence_pairs": sum(item.equivalence_origin == "confirmation_pending" for item in relations),
         "uncertain_equivalence_pairs": sum(item.equivalence_state == "uncertain" for item in relations),

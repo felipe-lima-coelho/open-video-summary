@@ -6,6 +6,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from dataclasses import replace
@@ -99,7 +100,7 @@ class InformationIOTests(unittest.TestCase):
         save_information_report(report, path, csv_path=csv_path)
         exported = json.loads(path.read_text(encoding="utf-8"))
         unit, record = exported["units"][0], exported["candidates"][0]
-        self.assertEqual(10, exported["schema_version"])
+        self.assertEqual(11, exported["schema_version"])
         self.assertIsNone(unit["qualifiers"])
         self.assertEqual("unknown", unit["qualifier_state"])
         self.assertEqual(record["id"], unit["representative_candidate_id"])
@@ -710,7 +711,7 @@ class InformationConfigurationAndCLITests(unittest.TestCase):
     ):
         code = "import sys; import open_video_summary.core.summarizers.information_analysis; assert 'open_video_summary.classifiers.text' not in sys.modules; assert 'tensorflow' not in sys.modules; assert 'open_video_summary.adapters.typesafe' not in sys.modules"
         result = subprocess.run(
-            [str(PROJECT_DIR / ".venv/Scripts/python.exe"), "-c", code],
+            [sys.executable, "-c", code],
             capture_output=True,
             text=True,
             cwd=PROJECT_DIR,

@@ -133,6 +133,26 @@ discovery routes are provenance, not additional propositions. A source sentence
 can contain zero, one or several such propositions; a source slot is never a
 unit count. Unresolved alternatives stay visible with provisional counts.
 
+Report schema 11 separates source support from the first granularity decision.
+`validation="supported_pending_granularity"` means every unchanged content,
+anchor-binding and explicit-reference gate passed, while an atomic or compound
+Choice left granularity unresolved. Original labels, probabilities, confidence,
+reasons and raw proposals remain recorded. These claims participate in ordinary
+coverage, equivalence and structural review; they remain
+`provisional_granularity` units until independent atomicity is established,
+including when the structural-review budget is zero. Failed support or governing
+qualifiers, unresolved references, `needs_context` and `not_information` remain
+outside the inventory. Annotation proposals still cannot supply missing meaning.
+
+`accepted_candidates` retains its earlier definition; the additional
+`supported_pending_granularity_candidates` count reports these provisional
+source-supported candidates separately. `unique_units` groups eligible records
+from both states and remains provisional when their structure is unresolved.
+The shared content-eligibility predicate also applies to focus promotion and
+exact-alias decomposition inheritance. A gray or compound child cannot authorize
+replacement merely because its source content passed: it needs independent
+atomicity evidence before all existing collective partition checks are applied.
+
 An independently discovered coverage focus that passes the complete candidate
 validation may enter the inventory verbatim when it lacks a verified active
 correspondence. The `coverage_promotion` candidate retains the focus's exact
@@ -144,7 +164,7 @@ decomposed parent. Promotion does not establish exhaustive coverage.
 
 Atomicity and parent/parts review are two bounded checks. By default, each target
 can use up to 8 independent atomicity audit requests, with at most 8 distinct
-accepted meanings in each request, plus up to 8 joint parent/parts reviews. Both
+source-supported meanings in each request, plus up to 8 joint parent/parts reviews. Both
 limits use `--information-granularity-checks` (range 0–64); the requests also
 consume the shared logical-call budget and remain subject to context and provider
 limits. The report records `atomicity_review_requests` separately from

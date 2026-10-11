@@ -153,6 +153,17 @@ def assertion_overlap(left, right):
 class SemanticInventory:
     """Methods use the owning run's existing budget, adapter and progress controls."""
 
+    @staticmethod
+    def _content_eligible(record):
+        """Keep source support separate from the unresolved number of atoms."""
+        return record.content_supported
+
+    def _component_eligible(self, record):
+        """A supported compound or unaudited gray child is not a verified atom."""
+        return (self._content_eligible(record) and record.atomicity_state != "compound"
+                and (record.atomicity_state == "atomic" or
+                     record.validation == "accepted" and record.granularity == "atomic"))
+
     def _inventory_request(self, target, task, instruction, extra=None, *, limit=None,
                            focus_fallback=False):
         from open_video_summary.core.summarizers.information_analysis import PROTOCOL
@@ -277,7 +288,7 @@ class SemanticInventory:
         inherited, child_parents = {}, {}
         for record in records.values():
             decisions = families.get(exact_proposition_key(record), ())
-            if not decisions or not (record.validation == "accepted" or any(
+            if not decisions or not (self._content_eligible(record) or any(
                     item.parent_candidate_id == record.id for item in decisions)):
                 continue
             verified = [item for item in decisions if item.state == "verified"]
@@ -306,7 +317,8 @@ class SemanticInventory:
             raise
         yes = lambda key: passes_probability_cutoff(signals[key], self.config.acceptance_threshold)
         no = lambda key: passes_probability_cutoff(1 - signals[key], self.config.acceptance_threshold)
-        if len(children) >= 2 and all(yes(key) for key in DECOMPOSITION_QUESTIONS):
+        if (len(children) >= 2 and all(self._component_eligible(item) for item in children)
+                and all(yes(key) for key in DECOMPOSITION_QUESTIONS)):
             state = "verified"
         elif any(no(key) for key in ("parent_covers_components", "components_independent",
                                      "components_distinct", "source_occurrence", "qualifiers_preserved")):
@@ -318,7 +330,7 @@ class SemanticInventory:
         return self._record_decomposition(parent, children, state, (*joint_signals, *signals.items()))
 
     def _review_atomicity(self, target):
-        """Audit every distinct accepted meaning, including isolated false atoms."""
+        """Audit each supported meaning, including gray claims and false atoms."""
         groups = {}
         for record in self._accepted(target.id):
             groups.setdefault(exact_proposition_key(record), []).append(record)
@@ -381,9 +393,7 @@ class SemanticInventory:
         self._review_atomicity(target)
         eligible = [record for record in self.candidates if record.target_segment_id == target.id
                     and record.candidate is not None and record.inventory_role != "decomposed_parent"
-                    and (record.validation == "accepted" or
-                         (record.granularity == "compound" and record.signals
-                          and all(value >= self.config.acceptance_threshold for _, value in record.signals)))]
+                    and self._content_eligible(record)]
         # Reserve the bounded decomposition opportunities for observed compounds
         # before lower-priority overlapping atomic alternatives. sort is stable,
         # so candidates of equal priority retain their original source order.
@@ -437,7 +447,8 @@ class SemanticInventory:
             # comparisons, including when generated components are added.
             joint_signals = (*signals.items(), *(("proper_part:" + peer.id, signals[f"component{index}"])
                                                  for index, peer in enumerate(peers)))
-            selected = [peer for index, peer in enumerate(peers) if yes(signals[f"component{index}"])]
+            selected = [peer for index, peer in enumerate(peers)
+                        if yes(signals[f"component{index}"]) and self._component_eligible(peer)]
             if no(signals["splittable"]) and not selected and not compound:
                 continue
             if no(signals["splittable"]):
@@ -458,12 +469,18 @@ class SemanticInventory:
                 except Exception as exc:
                     self._record_decomposition(parent, selected, "uncertain", joint_signals, reason=type(exc).__name__)
                     raise
+                generated = []
                 for raw in raw_components:
                     if self.budget.remaining <= 2:
                         break
                     record = self._validate(raw, target, "decomposition", 0, permitted,
                                             parent_candidate_ids=(parent.id,))
-                    if record.validation == "accepted" and record.id not in {item.id for item in selected}:
+                    generated.append(record)
+                if any(item.validation == "supported_pending_granularity" for item in generated):
+                    self._review_atomicity(target)
+                for record in generated:
+                    record = next(item for item in self.candidates if item.id == record.id)
+                    if self._component_eligible(record) and record.id not in {item.id for item in selected}:
                         if exact_proposition_key(record) not in {exact_proposition_key(item) for item in selected}:
                             selected.append(record)
             if self.budget.remaining <= 1:
@@ -483,12 +500,12 @@ class SemanticInventory:
         are never restored through this route.
         """
         known = {exact_proposition_key(item) for item in self.candidates
-                 if item.candidate is not None and item.validation == "accepted"}
+                 if self._content_eligible(item)}
         promoted = []
         for focus in self.coverage_foci:
             record = focus.proposal_record
             if (focus.segment_id != target.id or focus.state == "covered"
-                    or record.validation != "accepted" or record.candidate is None
+                    or not self._content_eligible(record)
                     or exact_proposition_key(record) in known):
                 continue
             identifier = f"{self.candidate_prefix}c{len(self.candidates)}"
@@ -541,7 +558,7 @@ class SemanticInventory:
         return added
 
     def _focus_matches(self, target, focus):
-        if focus.proposal_record.validation != "accepted" or focus.proposition is None:
+        if not self._content_eligible(focus.proposal_record) or focus.proposition is None:
             return replace(focus, state="uncertain", candidate_ids=(), matches=())
         candidates = [record for record in self._accepted(target.id)
                       if assertion_overlap(focus.proposition, record.candidate)]
@@ -664,10 +681,10 @@ class SemanticInventory:
 
     def _revise_focus(self, target, focus, proposals):
         """Keep a gap identity when a verified repair corrects its own hypothesis."""
-        if focus.proposal_record.validation == "accepted" or focus.proposition is None:
+        if self._content_eligible(focus.proposal_record) or focus.proposition is None:
             return focus
         for record in proposals:
-            if (record.validation != "accepted" or record.inventory_role == "decomposed_parent"
+            if (not self._content_eligible(record) or record.inventory_role == "decomposed_parent"
                     or not assertion_overlap(focus.proposition, record.candidate)
                     or self.budget.remaining <= 1):
                 continue
@@ -748,7 +765,7 @@ class SemanticInventory:
             scoped = {identifier: record for identifier, record in active.items()
                       if record.target_segment_id == focus.segment_id}
             known = {item.candidate_id: item for item in (*focus.inactive_matches, *focus.matches)}
-            valid_proposal = focus.proposal_record.validation == "accepted" and focus.proposition is not None
+            valid_proposal = self._content_eligible(focus.proposal_record) and focus.proposition is not None
             if valid_proposal:
                 for identifier, record in scoped.items():
                     if exact_proposition_key(focus.proposal_record) == exact_proposition_key(record):
@@ -841,7 +858,7 @@ class SemanticInventory:
             parent = records.get(decomposition.parent_candidate_id)
             parents = {decomposition.parent_candidate_id}
             if parent is not None:
-                parents.update(item.id for item in records.values() if item.validation == "accepted"
+                parents.update(item.id for item in records.values() if self._content_eligible(item)
                                and exact_proposition_key(item) == exact_proposition_key(parent))
             for position, relation in enumerate(self.relations):
                 pair = {relation.left_candidate_id, relation.right_candidate_id}

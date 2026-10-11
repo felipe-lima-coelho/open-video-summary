@@ -400,6 +400,9 @@ def _integrity(report, units, occurrences, candidates):
         "accepted_candidates": sum(
             row.get("validation") == "accepted" for row in candidates.values()
         ),
+        "supported_pending_granularity_candidates": sum(
+            row.get("validation") == "supported_pending_granularity" for row in candidates.values()
+        ),
         "unique_units": len(units),
         "occurrences": len(occurrences),
     }
