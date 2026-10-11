@@ -11,7 +11,7 @@ import math
 import re
 
 
-EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v10"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v10-no-record-ids"
 SENTENCE_BOUNDARY = r"[.!?][\"'“”‘’«»)\]}]*(?:\s+|$)"
 SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
 ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
@@ -76,7 +76,7 @@ RELATION_SUBTYPE_CHECKS = ("left_entails_right", "right_entails_left", "incompat
 DISTINCT_RELATION_LABELS = tuple(label for label in RELATION_CRITERIA
                                 if label not in {"equivalent", "uncertain"})
 RELATION_BATCH_QUESTION = (
-    "Evaluate only {pair_id}, Left candidate {left_id} and Right candidate {right_id}. "
+    "Evaluate only {pair_id}, its Left claim and its Right claim. "
     "Only their own marked source scopes and cited reference context may be used; "
     "assertions in other pairs supply no evidence. "
 )
@@ -270,7 +270,7 @@ def validation_spec(candidate, candidate_id, target, context=()):
     """Return source-scope fidelity checks and a separate annotation audit."""
     has_qa = validate_qa_pair(candidate)
     blocks = [
-        f"Candidate id: {candidate_id}\nTarget id: {target.id}",
+        f"Target id: {target.id}",
         SCOPE_INSTRUCTION,
         *_source_scope(candidate, target, context),
         "Candidate claim:\n" + candidate.text,
@@ -334,7 +334,7 @@ def coverage_spec(target, context, accepted, markers):
     groups = {}
     for record in accepted:
         groups.setdefault(exact_proposition_key(record), []).append(record)
-    for records in groups.values():
+    for index, records in enumerate(groups.values()):
         record = records[0]
         candidate = record.candidate
         spans = ", ".join(
@@ -342,7 +342,7 @@ def coverage_spec(target, context, accepted, markers):
             for item in candidate.evidence if item.role == "assertion"
         )
         represented.append(
-            f"{', '.join(item.id for item in records)}: {candidate.text}\nAssertion spans: {spans}\n"
+            f"Claim {index}: {candidate.text}\nAssertion spans: {spans}\n"
             + "Assertion evidence: " + _evidence_text(candidate, "assertion")
         )
     blocks = [
@@ -367,7 +367,7 @@ def relation_state(left, right, segments):
     for label, record in (("Left", left), ("Right", right)):
         candidate = record.candidate
         blocks.extend((
-            f"{label} candidate id: {record.id}",
+            f"{label} candidate:",
             SCOPE_INSTRUCTION,
             *(
                 f"{label} {block}" for block in _source_scope(
@@ -392,8 +392,7 @@ def relation_batch_spec(pairs, segments, instruction):
     for index, (left, right) in enumerate(pairs):
         identifier = f"pair{index}"
         blocks.append(f"BEGIN {identifier}\n{relation_state(left, right, segments)}\nEND {identifier}")
-        choices[identifier] = (RELATION_BATCH_QUESTION.format(
-            pair_id=identifier, left_id=left.id, right_id=right.id) + instruction,
+        choices[identifier] = (RELATION_BATCH_QUESTION.format(pair_id=identifier) + instruction,
             RELATION_CRITERIA)
     return "\n\n".join(blocks), choices
 

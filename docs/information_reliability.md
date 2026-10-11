@@ -284,6 +284,15 @@ counted, and it does not abort recovery of other candidates. The analyzer never
 fills in the missing answer from the claim or silently discards the malformed
 annotation.
 
+Internal candidate and focus identifiers, discovery routes and raw provenance do
+not enter evaluator semantic state. Local claim and pair indices address batched
+questions; each call's metadata retains their original identifier mapping under
+`correlation`. Source video/segment identity, exact assertion offsets, reference
+scope and semantic defects remain available to the applicable source checks.
+Renaming an internal record therefore does not change its semantic request hash.
+This removes one irrelevant input difference; it does not make provider responses
+deterministic or resolve uncertainty about meaning.
+
 For a comparison, keep and report every run's signature, digest, status, settings,
 counts and diagnostics. A changed signature means a recorded manifest field
 differs. A matching signature with a changed digest shows that the canonical

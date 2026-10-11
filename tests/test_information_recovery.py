@@ -46,8 +46,8 @@ class InformationRecoveryTests(unittest.TestCase):
                 if question["type"] == "noul":
                     probability = (signals or {}).get(identifier, 0.01)
                     if signals is None and labels is not None:
-                        left = request["state"].split("Left candidate id: ", 1)[1].split("\n", 1)[0]
-                        right = request["state"].split("Right candidate id: ", 1)[1].split("\n", 1)[0]
+                        left = request["state"].split("Left claim:\n", 1)[1].split("\n\n", 1)[0]
+                        right = request["state"].split("Right claim:\n", 1)[1].split("\n\n", 1)[0]
                         label = labels.get((left, right), "complementary")
                         truth = {"left_entails_right": label in {"equivalent", "more_specific_left"},
                             "right_entails_left": label in {"equivalent", "more_specific_right"},
@@ -61,8 +61,8 @@ class InformationRecoveryTests(unittest.TestCase):
                 else:
                     scope = request["state"].split(f"BEGIN {identifier}\n", 1)[1].split(f"\nEND {identifier}", 1)[0]
                     self.assertIn(f"Evaluate only {identifier}", question["instructions"])
-                left = scope.split("Left candidate id: ", 1)[1].split("\n", 1)[0]
-                right = scope.split("Right candidate id: ", 1)[1].split("\n", 1)[0]
+                left = scope.split("Left claim:\n", 1)[1].split("\n\n", 1)[0]
+                right = scope.split("Right claim:\n", 1)[1].split("\n\n", 1)[0]
                 # A borderline equivalence class leaves the family genuinely open.
                 label = (labels or {}).get((left, right), "equivalent" if low else "complementary")
                 mass = 0.89 if low else 0.99
@@ -82,8 +82,8 @@ class InformationRecoveryTests(unittest.TestCase):
 
     def test_keyed_batches_match_individual_decisions_and_complete_link_groups(self):
         texts = ["Backup diário", "Backup todo dia", "Backup a cada 24 horas", "Retenção de 30 dias"]
-        labels = {("c0", "c1"): "equivalent", ("c1", "c2"): "equivalent",
-                  ("c0", "c2"): "contradiction", ("c2", "c3"): "more_specific_right"}
+        labels = {(texts[0], texts[1]): "equivalent", (texts[1], texts[2]): "equivalent",
+                  (texts[0], texts[2]): "contradiction", (texts[2], texts[3]): "more_specific_right"}
         reports = []
         requests_by_size = []
         for batch_size in (1, 4):
@@ -586,8 +586,8 @@ class InformationRecoveryTests(unittest.TestCase):
                 self.assertTrue(report.counts.counts_provisional)
                 self.assertIn("coverage_no_progress", [issue.kind for issue in report.issues])
                 represented = coverage_states[0].split("Represented claims:\n", 1)[1]
-                labels = re.findall(r"(?m)^(c\d+(?:, c\d+)*): ", represented)
-                self.assertEqual(["c0, c4", "c1", "c2, c5", "c3, c6"], labels)
+                labels = re.findall(r"(?m)^(Claim \d+): ", represented)
+                self.assertEqual(["Claim 0", "Claim 1", "Claim 2", "Claim 3"], labels)
                 self.assertTrue(all(claim["text"] in represented for claim in claims))
                 self.assertIn(source, coverage_states[0])
                 self.assertEqual(source, report.snapshot.current_segments[0].content)
@@ -610,8 +610,8 @@ class InformationRecoveryTests(unittest.TestCase):
                 self.assertNotIn("coverage_no_progress", [issue.kind for issue in report.issues])
                 target = report.snapshot.current_segments[0]
                 state, _ = coverage_spec(target, (), report.candidates, ())
-                self.assertIn("c0: ", state)
-                self.assertIn("c1: ", state)
+                self.assertIn("Claim 0: ", state)
+                self.assertIn("Claim 1: ", state)
 
     def test_recovery_annotation_progress_requires_new_unambiguous_verification(self):
         source = "A cópia é diária."
@@ -650,8 +650,9 @@ class InformationRecoveryTests(unittest.TestCase):
         state, _ = coverage_spec(report.snapshot.current_segments[0], (),
             (first, duplicate, second, different_type), ())
         represented = state.split("Represented claims:\n", 1)[1]
-        self.assertIn("c0, duplicate, different_type: ", represented)
-        self.assertIn("c1: ", represented)
+        self.assertEqual(2, len(re.findall(r"(?m)^Claim \d+: ", represented)))
+        self.assertNotIn("duplicate", represented)
+        self.assertNotIn("different_type", represented)
         for record in (first, second):
             evidence = record.candidate.evidence[0]
             self.assertIn(f"[{evidence.start_char},{evidence.end_char})", represented)
@@ -835,7 +836,7 @@ class InformationRecoveryTests(unittest.TestCase):
         self.assertEqual(["extract_direct", "bind_candidate_anchor", "coverage_audit"],
                          [call.operation for call in report.calls])
         issues = {issue.kind:issue for issue in report.issues}
-        self.assertIn("validate_candidate requires 8571 characters; limit is 7136", issues["context_budget_exceeded"].detail)
+        self.assertIn("validate_candidate requires 8554 characters; limit is 7136", issues["context_budget_exceeded"].detail)
         self.assertIn("254 logical calls remain", issues["context_budget_exceeded"].detail)
         self.assertEqual((original.id,), issues["literal_repair_failed"].candidate_ids)
         self.assertNotIn("coverage_not_audited", issues)

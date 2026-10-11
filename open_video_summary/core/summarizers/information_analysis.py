@@ -428,7 +428,7 @@ class _AnalysisRun(SemanticInventory):
         self._notify("call_completed", operation=operation, provider=provider, segment_id=target_id, operation_seconds=time.monotonic() - started)
         return result
 
-    def _evaluate(self, operation, context, noul=None, choice=None, *, reservation=None):
+    def _evaluate(self, operation, context, noul=None, choice=None, *, reservation=None, correlation=None):
         noul, choice = noul or {}, choice or {}
         encoded = context if isinstance(context, str) else canonical_json(context)
         self._permit(
@@ -438,14 +438,25 @@ class _AnalysisRun(SemanticInventory):
             reservation=reservation,
             operation=operation,
         )
-        result = self._invoke(
-            self.evaluator,
-            operation,
-            {"context": encoded, "noul": noul, "choice": choice},
-            lambda: self.evaluator.evaluate(encoded, noul=noul, choice=choice),
-            getattr(getattr(self.evaluator, "config", None), "provider", "unknown"),
-            request_role="evaluator",
-        )
+        before = len(self.calls)
+        try:
+            result = self._invoke(
+                self.evaluator,
+                operation,
+                {"context": encoded, "noul": noul, "choice": choice},
+                lambda: self.evaluator.evaluate(encoded, noul=noul, choice=choice),
+                getattr(getattr(self.evaluator, "config", None), "provider", "unknown"),
+                request_role="evaluator",
+            )
+        finally:
+            # Record identity maps belong to client provenance, never model state
+            # or the semantic request hash. Preserve them even on failed calls.
+            if correlation is not None:
+                for index in range(before, len(self.calls)):
+                    call = self.calls[index]
+                    metadata = json.loads(call.metadata_json)
+                    metadata["correlation"] = correlation
+                    self.calls[index] = replace(call, metadata_json=canonical_json(metadata))
         signals = {item.id: item.probability for item in result.noul}
         choices = {item.id: item for item in result.choice}
         if (
@@ -1014,7 +1025,8 @@ class _AnalysisRun(SemanticInventory):
             else:
                 anchor_state, anchor_questions = anchor_binding_spec(candidate, target)
                 binding_signals, _ = self._evaluate(
-                    "bind_candidate_anchor", anchor_state, anchor_questions
+                    "bind_candidate_anchor", anchor_state, anchor_questions,
+                    correlation={"candidate_id": identifier}
                 )
                 binding, binding_origin = binding_signals["anchor_binding"], "evaluator"
             if binding < self.config.acceptance_threshold:
@@ -1026,7 +1038,8 @@ class _AnalysisRun(SemanticInventory):
                 self.validation_cache[cache_key] = records[-1]
                 return records[-1]
             signals, choices = self._evaluate(
-                "validate_candidate", state, questions, granularity
+                "validate_candidate", state, questions, granularity,
+                correlation={"candidate_id": identifier}
             )
             decision = choices["granularity"]
             probability = dict(decision.probabilities).get(decision.selected, 0.0)
@@ -1188,7 +1201,8 @@ class _AnalysisRun(SemanticInventory):
         accepted = self._accepted(target.id)
         markers = self._markers(target.content)
         state, questions = coverage_spec(target, self._context(target), accepted, markers)
-        signals, _ = self._evaluate("coverage_audit", state, questions)
+        signals, _ = self._evaluate("coverage_audit", state, questions,
+            correlation={"candidate_ids": [item.id for item in accepted]})
         if any(value >= self.config.gap_threshold for value in signals.values()):
             status = "gap_detected"
         elif all(value <= 1 - self.config.gap_threshold for value in signals.values()):
@@ -1500,6 +1514,7 @@ class _AnalysisRun(SemanticInventory):
                 state,
                 choice={"relation": (RELATION_INSTRUCTION, RELATION_CRITERIA)},
                 reservation=reservation,
+                correlation={"left_candidate_id": left.id, "right_candidate_id": right.id},
             )
             result = decisions["relation"]
             relation = self._primary_relation(left, right, result)
@@ -1587,7 +1602,8 @@ class _AnalysisRun(SemanticInventory):
                 left, right = pairs[0]
                 signals, _ = worker._evaluate("adjudicate_relation",
                     relation_state(left, right, self.segments),
-                    noul=RELATION_ADJUDICATION_QUESTIONS, reservation=reservation)
+                    noul=RELATION_ADJUDICATION_QUESTIONS, reservation=reservation,
+                    correlation={"left_candidate_id": left.id, "right_candidate_id": right.id})
                 label, strength = resolve_relation(signals, self.config.equivalence_threshold)
                 equivalence, equivalence_strength, equivalence_origin = resolve_equivalence(
                     signals, self.config.equivalence_threshold)
@@ -1602,7 +1618,9 @@ class _AnalysisRun(SemanticInventory):
             else:
                 context, choices = self._pair_request(pairs)
                 _, decisions = worker._evaluate("compare_candidate_batch", context,
-                    choice=choices, reservation=reservation)
+                    choice=choices, reservation=reservation,
+                    correlation={f"pair{index}": {"left_candidate_id": left.id, "right_candidate_id": right.id}
+                                 for index, (left, right) in enumerate(pairs)})
                 for index, (left, right) in enumerate(pairs):
                     result = decisions[f"pair{index}"]
                     relations.append(self._primary_relation(left, right, result, "keyed_pair_batch"))

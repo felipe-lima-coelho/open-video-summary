@@ -433,10 +433,11 @@ class InformationInventoryTests(unittest.TestCase):
                 if fail_refresh and context.startswith("{"):
                     state = json.loads(context)
                     if (state.get("focus", {}).get("text") == focus_text
-                            and any(item["id"] != "c0" for item in state.get("claims", []))):
+                            and any(item["candidate"]["text"] != self_source for item in state.get("claims", []))):
                         raise InvalidResponseError("Fixture interrupted the post-decomposition focus refresh.")
                 return super().evaluate(context, noul, choice)
 
+        self_source = self.source
         evaluator = RefreshEvaluator(
             splits={self.source: (child["text"], self.retention["text"])},
             matches={(focus_text, self.source): (.99, .01, .99),

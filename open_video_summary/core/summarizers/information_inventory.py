@@ -311,7 +311,8 @@ class SemanticInventory:
     def _verify_decomposition(self, target, parent, children, joint_signals=()):
         try:
             signals, _ = self._evaluate("verify_decomposition", self._joint_state(target, parent, children),
-                                       DECOMPOSITION_QUESTIONS)
+                DECOMPOSITION_QUESTIONS, correlation={"parent_candidate_id": parent.id,
+                    "component_candidate_ids": [item.id for item in children]})
         except Exception as exc:
             self._record_decomposition(parent, children, "uncertain", joint_signals, reason=type(exc).__name__)
             raise
@@ -367,7 +368,8 @@ class SemanticInventory:
                 continue
             self.atomicity_review_requests += 1
             try:
-                signals, _ = self._evaluate("review_candidate_atomicity", self._atomicity_state(target, batch), questions)
+                signals, _ = self._evaluate("review_candidate_atomicity", self._atomicity_state(target, batch), questions,
+                    correlation={f"claim{index}": item.id for index, item in enumerate(batch)})
             except Exception as exc:
                 self.issue("atomicity_review_failed", type(exc).__name__, (target.id,), tuple(item.id for item in batch))
                 raise
@@ -447,7 +449,9 @@ class SemanticInventory:
             peers = peers[:self.config.max_candidates_per_route]
             questions = joint_granularity_questions(len(peers))
             try:
-                signals, _ = self._evaluate("review_joint_granularity", self._joint_state(target, parent, peers), questions)
+                signals, _ = self._evaluate("review_joint_granularity", self._joint_state(target, parent, peers), questions,
+                    correlation={"parent_candidate_id": parent.id,
+                        "component_candidate_ids": [item.id for item in peers]})
             except Exception as exc:
                 self._record_decomposition(parent, peers, "uncertain", reason=type(exc).__name__)
                 raise
@@ -574,6 +578,8 @@ class SemanticInventory:
             return replace(focus, state="uncertain", candidate_ids=(), matches=())
         candidates = [record for record in self._accepted(target.id)
                       if assertion_overlap(focus.proposition, record.candidate)]
+        source_order = {identifier: index for index, identifier in enumerate(self.snapshot.current_order)}
+        candidates.sort(key=lambda item: canonical_candidate_key(item, source_order))
         matches, pending = [], []
         for record in candidates:
             key = (focus.id, exact_proposition_key(record))
@@ -591,18 +597,21 @@ class SemanticInventory:
             questions = {}
             for index, record in enumerate(selected):
                 questions.update({
-                    f"match{index}_full": f"Does claim {record.id} express the complete source-focus proposition, including all necessary conditions, attribution, modality, negation, quantities and scope?",
-                    f"match{index}_partial": f"Does claim {record.id} express some but NOT ALL of the source-focus content? An equivalent complete claim requires no here.",
-                    f"match{index}_anchor": f"Does claim {record.id} represent the SAME asserted occurrence as the focus, without borrowing assertions from context or a different repetition? Overlap alone is insufficient.",
+                    f"match{index}_full": f"Does claim{index} express the complete source-focus proposition, including all necessary conditions, attribution, modality, negation, quantities and scope?",
+                    f"match{index}_partial": f"Does claim{index} express some but NOT ALL of the source-focus content? An equivalent complete claim requires no here.",
+                    f"match{index}_anchor": f"Does claim{index} represent the SAME asserted occurrence as the focus, without borrowing assertions from context or a different repetition? Overlap alone is insufficient.",
                 })
             cited = {evidence.segment_id for item in (focus.proposal_record, *selected)
                      for evidence in item.candidate.evidence if evidence.role == "context"}
             state = {"instruction": MATCH_INSTRUCTION, "target": self._segment_data(target),
                      "context": [self._segment_data(self.segments[identifier])
                                  for identifier in self.snapshot.current_order if identifier in cited],
-                     "focus_id": focus.id, "focus": self._claim_data(focus.proposal_record),
-                     "claims": [{"id": item.id, "candidate": self._claim_data(item)} for item in selected]}
-            signals, _ = self._evaluate("verify_focus_correspondence", state, questions)
+                     "focus": self._claim_data(focus.proposal_record),
+                     "claims": [{"label": f"claim{index}", "candidate": self._claim_data(item)}
+                                for index, item in enumerate(selected)]}
+            signals, _ = self._evaluate("verify_focus_correspondence", state, questions,
+                correlation={"focus_id": focus.id,
+                    **{f"claim{index}": item.id for index, item in enumerate(selected)}})
             yes = lambda value: passes_probability_cutoff(value, self.config.acceptance_threshold)
             no = lambda value: passes_probability_cutoff(1 - value, self.config.acceptance_threshold)
             for index, record in enumerate(selected):
@@ -708,13 +717,14 @@ class SemanticInventory:
                 "Does the repair fully resolve the recorded source-focus defects, retaining all "
                 "necessary conditions, negation, attribution, modality, quantities, references and "
                 "the same asserted occurrence? A different valid fact is not a repair of this focus."}
-            state = {"target": self._segment_data(target), "focus_id": focus.id,
+            state = {"target": self._segment_data(target),
                      "context": [self._segment_data(self.segments[identifier]) for identifier in dict.fromkeys(
                          evidence.segment_id for item in (focus.proposition, record.candidate)
                          for evidence in item.evidence if evidence.role == "context")],
-                     "focus_revision": asdict(focus.proposal_record),
-                     "repair": {"id": record.id, "candidate": self._claim_data(record)}}
-            signals, _ = self._evaluate("verify_focus_revision", state, questions)
+                     "focus_revision": self._focus_revision_data(focus.proposal_record),
+                     "repair": {"candidate": self._claim_data(record)}}
+            signals, _ = self._evaluate("verify_focus_revision", state, questions,
+                correlation={"focus_id": focus.id, "repair_candidate_id": record.id})
             if all(passes_probability_cutoff(value, self.config.acceptance_threshold) for value in signals.values()):
                 revised = replace(record, id=focus.id, route="coverage_focus", validation_reused_from=record.id,
                                   recovery_focus_id=None)
@@ -891,6 +901,14 @@ class SemanticInventory:
         if restored:
             self._inherit_decomposition_state()
         return bool(restored)
+
+    @staticmethod
+    def _focus_revision_data(record):
+        """Preserve recorded semantic defects without discovery bookkeeping."""
+        provenance = {"id", "route", "round", "raw_json", "validation_reused_from",
+            "literal_repair_of", "parent_candidate_ids", "decomposition_ids",
+            "recovery_focus_id", "atomicity_review_origin"}
+        return {key: value for key, value in asdict(record).items() if key not in provenance}
 
     @staticmethod
     def _claim_data(record):

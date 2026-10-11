@@ -104,11 +104,10 @@ def evaluation_state(context):
         value = json.loads(context)
         if "claim0_text" in value:
             return value
-    if context.startswith("Candidate id:"):
+    if context.startswith("Target id:"):
         first = context.split("\n\n", 1)[0].splitlines()
         return {
-            "candidate_id": first[0].split(": ", 1)[1],
-            "target_id": first[1].split(": ", 1)[1],
+            "target_id": first[0].split(": ", 1)[1],
             "candidate": {"text": section("Candidate claim")},
         }
     if context.startswith("Selected assertion wording:"):
@@ -118,7 +117,7 @@ def evaluation_state(context):
         return {
             "original_target": {"id": identifier, "text": section(f"Original target [{identifier}]")}
         }
-    if context.startswith("Left candidate id:"):
+    if context.startswith("Left candidate:"):
         return {"left": {"text": section("Left claim")}, "right": {"text": section("Right claim")}}
     raise AssertionError("Unexpected evaluator test state.")
 
@@ -1170,7 +1169,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         def evaluate(state, noul=None, choice=None):
             states.append(state)
             result = original_evaluate(state, noul, choice)
-            if state.startswith("Candidate id:") and "Candidate claim:\n" + quote in state:
+            if state.startswith("Target id:") and "Candidate claim:\n" + quote in state:
                 self.assertIn("Se a conexão cair, <source-assertion-0>" + quote, state)
                 return replace(result, noul=tuple(
                     replace(item, probability=0.02) if item.id == "conditions" else item
@@ -1243,7 +1242,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         def evaluate(state, noul=None, choice=None):
             requests.append(state)
             result = evaluate_original(state, noul, choice)
-            if state.startswith("Candidate id:"):
+            if state.startswith("Target id:"):
                 return replace(result, noul=tuple(
                     replace(item, probability=0.02) if item.id == "attribution_annotation" else item
                     for item in result.noul
