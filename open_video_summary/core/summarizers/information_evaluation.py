@@ -11,7 +11,7 @@ import math
 import re
 
 
-EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v10-no-record-ids"
+EVALUATION_TEMPLATE_VERSION = "source-scope-fidelity-v10"
 SENTENCE_BOUNDARY = r"[.!?][\"'“”‘’«»)\]}]*(?:\s+|$)"
 SCOPE_INSTRUCTION = "The markers select exact source occurrences, not complete propositions. Interpret each marked assertion with its governing wording in the whole original source. Other independent assertions are not support for the candidate. Marked reference context resolves references only."
 ANCHOR_BINDING_QUESTION = "Does the candidate claim refer to the property or event expressed by the selected assertion wording? Governing conditions, attribution, modality and negation may be outside the selected wording and are checked separately."
@@ -76,7 +76,7 @@ RELATION_SUBTYPE_CHECKS = ("left_entails_right", "right_entails_left", "incompat
 DISTINCT_RELATION_LABELS = tuple(label for label in RELATION_CRITERIA
                                 if label not in {"equivalent", "uncertain"})
 RELATION_BATCH_QUESTION = (
-    "Evaluate only {pair_id}, its Left claim and its Right claim. "
+    "Evaluate only {pair_id}, Left candidate {left_id} and Right candidate {right_id}. "
     "Only their own marked source scopes and cited reference context may be used; "
     "assertions in other pairs supply no evidence. "
 )
@@ -256,21 +256,10 @@ def _source_scope(candidate, target, context):
     ]
 
 
-def validate_qa_pair(candidate):
-    """Keep a malformed optional QA pair distinct from an absent pair."""
-    if candidate.question is None and candidate.answer is None:
-        return False
-    if not all(isinstance(value, str) and value.strip()
-               for value in (candidate.question, candidate.answer)):
-        raise ValueError("Candidate question and answer must both be nonempty strings or both null.")
-    return True
-
-
 def validation_spec(candidate, candidate_id, target, context=()):
     """Return source-scope fidelity checks and a separate annotation audit."""
-    has_qa = validate_qa_pair(candidate)
     blocks = [
-        f"Target id: {target.id}",
+        f"Candidate id: {candidate_id}\nTarget id: {target.id}",
         SCOPE_INSTRUCTION,
         *_source_scope(candidate, target, context),
         "Candidate claim:\n" + candidate.text,
@@ -289,7 +278,7 @@ def validation_spec(candidate, candidate_id, target, context=()):
     questions["negation_annotation"] = NEGATION_ANNOTATION_QUESTIONS[
         qualifiers.negated
     ]
-    if has_qa:
+    if candidate.question is not None:
         blocks += [
             "Candidate question:\n" + candidate.question,
             "Candidate answer:\n" + candidate.answer,
@@ -301,32 +290,9 @@ def validation_spec(candidate, candidate_id, target, context=()):
 
 
 def exact_proposition_key(record):
-    """Identify the same complete claim in the same complete evidence scope.
-
-    Type labels are unverified discovery annotations, not an additional claim.
-    Attribution, modality and other qualified meaning must still match literally
-    in the accepted text and its source scope. Evidence order is provenance only;
-    a different occurrence or reference scope never receives this shortcut.
-    """
+    """Require identical text, type and full source evidence for exact reuse."""
     candidate = record.candidate
-    evidence = tuple(sorted(set(candidate.evidence), key=lambda item: (
-        item.source_identity, item.segment_id, item.start_char, item.end_char,
-        item.role, item.quote, item.segment_start, item.segment_end)))
-    return candidate.text, evidence
-
-
-def canonical_candidate_key(record, source_order):
-    """Order semantic work by immutable source coordinates and complete text."""
-    candidate = record.candidate
-    anchors = tuple(sorted((source_order[item.segment_id], item.start_char, item.end_char)
-                           for item in candidate.evidence if item.role == "assertion"))
-    evidence = tuple((item.source_identity, item.segment_id, item.start_char,
-                      item.end_char, item.role, item.quote)
-                     for item in exact_proposition_key(record)[1])
-    literal = any(item.role == "assertion" and candidate.text == item.quote for item in candidate.evidence)
-    return (anchors, not literal, candidate.text, evidence,
-            record.annotation_state != "verified", candidate.unit_type,
-            repr(candidate.qualifiers), record.route, record.id)
+    return candidate.text, candidate.unit_type, candidate.evidence
 
 
 def coverage_spec(target, context, accepted, markers):
@@ -334,7 +300,7 @@ def coverage_spec(target, context, accepted, markers):
     groups = {}
     for record in accepted:
         groups.setdefault(exact_proposition_key(record), []).append(record)
-    for index, records in enumerate(groups.values()):
+    for records in groups.values():
         record = records[0]
         candidate = record.candidate
         spans = ", ".join(
@@ -342,7 +308,7 @@ def coverage_spec(target, context, accepted, markers):
             for item in candidate.evidence if item.role == "assertion"
         )
         represented.append(
-            f"Claim {index}: {candidate.text}\nAssertion spans: {spans}\n"
+            f"{', '.join(item.id for item in records)}: {candidate.text}\nAssertion spans: {spans}\n"
             + "Assertion evidence: " + _evidence_text(candidate, "assertion")
         )
     blocks = [
@@ -367,7 +333,7 @@ def relation_state(left, right, segments):
     for label, record in (("Left", left), ("Right", right)):
         candidate = record.candidate
         blocks.extend((
-            f"{label} candidate:",
+            f"{label} candidate id: {record.id}",
             SCOPE_INSTRUCTION,
             *(
                 f"{label} {block}" for block in _source_scope(
@@ -392,7 +358,8 @@ def relation_batch_spec(pairs, segments, instruction):
     for index, (left, right) in enumerate(pairs):
         identifier = f"pair{index}"
         blocks.append(f"BEGIN {identifier}\n{relation_state(left, right, segments)}\nEND {identifier}")
-        choices[identifier] = (RELATION_BATCH_QUESTION.format(pair_id=identifier) + instruction,
+        choices[identifier] = (RELATION_BATCH_QUESTION.format(
+            pair_id=identifier, left_id=left.id, right_id=right.id) + instruction,
             RELATION_CRITERIA)
     return "\n\n".join(blocks), choices
 

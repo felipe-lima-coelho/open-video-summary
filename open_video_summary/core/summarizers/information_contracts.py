@@ -269,12 +269,6 @@ class CandidateRecord:
     atomicity_signals: tuple[tuple[str, float], ...] = ()
     atomicity_review_origin: str | None = None
 
-    @property
-    def content_supported(self):
-        """Source validation passed; structural acceptance may remain pending."""
-        return (self.validation in {"accepted", "supported_pending_granularity"}
-                and self.candidate is not None and not self.candidate.unresolved_references)
-
 
 @dataclass(frozen=True)
 class InformationUnit:
@@ -436,7 +430,6 @@ class InformationCounts:
     counts_provisional: bool = False
     provisional_granularity_units: int = 0
     decomposed_parent_candidates: int = 0
-    supported_pending_granularity_candidates: int = 0
 
 
 @dataclass(frozen=True)

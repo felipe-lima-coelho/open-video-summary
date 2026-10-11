@@ -87,7 +87,6 @@ class InformationReferenceCoreIntegrationTests(unittest.TestCase):
                     max_calls=256,
                     max_coverage_rounds=0,
                     max_literal_repairs=0,
-                    max_source_sentences=0,
                     max_relation_adjudications=0,
                     direct_window_chars=4000,
                     pair_batch_size=1,
@@ -96,7 +95,7 @@ class InformationReferenceCoreIntegrationTests(unittest.TestCase):
             result = evaluate_information_report(report, reference)
         self.assertEqual(original, reference)
         self.assertEqual(
-            (11, "contextual-propositions-v2", "completed"),
+            (10, "contextual-propositions-v2", "completed"),
             (report.schema_version, report.protocol_version, report.status),
         )
         self.assertEqual(5, report.counts.unique_units)

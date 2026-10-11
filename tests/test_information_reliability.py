@@ -26,7 +26,6 @@ class InformationReliabilityTests(unittest.TestCase):
         generator = ScriptedGenerator(callback=lambda data, route:
             list(components if route == "decompose_candidate" else proposals if route == "direct" else ()))
         options = dict(qa_enabled=False, experimental_mode="direct", concurrency=1, max_calls=200,
-                       max_source_sentences=0,
                        direct_window_chars=4000, max_literal_repairs=0, max_coverage_foci=0)
         options.update(settings)
         originals = videos([source])
@@ -103,8 +102,7 @@ class InformationReliabilityTests(unittest.TestCase):
         run = make_run(["O backup é diário", "O backup ocorre todo dia"])
         run.config = replace(run.config, max_relation_adjudications=followups)
         helper = recovery_helpers.InformationRecoveryTests()
-        run.evaluator, requests = helper.evaluator(labels={
-            ("O backup é diário", "O backup ocorre todo dia"): "equivalent"}, signals=signals)
+        run.evaluator, requests = helper.evaluator(labels={("c0", "c1"): "equivalent"}, signals=signals)
         return run.run(), requests
 
     def test_confident_primary_equivalence_still_needs_both_directions(self):
@@ -142,18 +140,13 @@ class InformationReliabilityTests(unittest.TestCase):
         signals = dict.fromkeys(RELATION_ADJUDICATION_QUESTIONS, .01) | {
             "left_entails_right": .99, "right_entails_left": .99, "same_complete_meaning": .99}
         helper = recovery_helpers.InformationRecoveryTests()
-        run.evaluator, requests = helper.evaluator(labels={
-            ("A primeira propriedade", "A segunda propriedade"): "uncertain",
-            ("A segunda propriedade", "A terceira propriedade"): "equivalent"}, signals=signals)
+        run.evaluator, requests = helper.evaluator(labels={("c0", "c1"): "uncertain", ("c1", "c2"): "equivalent"}, signals=signals)
         report = run.run()
         confirmed = next(item for item in report.relations if (item.left_candidate_id, item.right_candidate_id) == ("c1", "c2"))
         self.assertEqual("equivalent", confirmed.equivalence_state)
         self.assertEqual(1, json.loads(report.metadata_json)["relation_adjudications"])
         followup = next(request for request in requests if "left_entails_right" in request["questions"])
-        self.assertIn("Left claim:\nA segunda propriedade", followup["state"])
-        call = next(call for call in report.calls if call.operation == "adjudicate_relation")
-        self.assertEqual({"left_candidate_id": "c1", "right_candidate_id": "c2"},
-                         json.loads(call.metadata_json)["correlation"])
+        self.assertIn("Left candidate id: c1", followup["state"])
 
     def test_anchor_binding_receives_local_subject_and_condition_but_no_other_sentence(self):
         source = "Se a rede cair, os backups não são realizados. A retenção dura 30 dias."

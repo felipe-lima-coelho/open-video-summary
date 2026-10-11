@@ -181,7 +181,6 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
         tape = _Tape(failure=failure, barrier=barrier, delay=delay, other_delay=other_delay)
         generator, evaluator = _Generator(tape), _Evaluator(tape)
         config = InformationAnalysisConfig(concurrency=2, direct_window_chars=160,
-            max_source_sentences=0,
             qa_window_chars=160, max_pair_comparisons=0, **(settings or {}), max_calls=max_calls)
         analyzer = InformationAnalyzer(generator, evaluator, config)
         started = time.monotonic()
@@ -223,10 +222,7 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
         self.assertEqual(0, new.active)
         self.assertTrue(all(item.closed for item in new.instances[2:]))
         self.assertEqual([], new.instances[0].records)
-        self.assertFalse(new.instances[1].closed)
-        self.assertEqual(sum(call.operation in {"review_candidate_atomicity", "review_joint_granularity",
-                                               "verify_decomposition"} for call in parallel.calls),
-                         len(new.instances[1].records))
+        self.assertEqual([], new.instances[1].records)
 
     def test_independent_first_requests_overlap_and_reduce_controlled_wall_time(self):
         serial, _, serial_seconds = self.replay(lookahead=False, delay=.07, other_delay=0,
@@ -370,8 +366,7 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
             generator, evaluator = StatelessGenerator(tape), _Evaluator(tape)
             self.assertFalse(hasattr(generator, "close"))
             config = InformationAnalysisConfig(concurrency=2, max_calls=1000,
-                direct_window_chars=160, qa_window_chars=160, max_pair_comparisons=0,
-                max_source_sentences=0)
+                direct_window_chars=160, qa_window_chars=160, max_pair_comparisons=0)
             analyzer = InformationAnalyzer(generator, evaluator, config)
             snapshot = capture_snapshot(videos([SENTENCES[0], "Bom dia."]))
             if lookahead:

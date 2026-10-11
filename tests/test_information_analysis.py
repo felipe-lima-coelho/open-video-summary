@@ -104,10 +104,11 @@ def evaluation_state(context):
         value = json.loads(context)
         if "claim0_text" in value:
             return value
-    if context.startswith("Target id:"):
+    if context.startswith("Candidate id:"):
         first = context.split("\n\n", 1)[0].splitlines()
         return {
-            "target_id": first[0].split(": ", 1)[1],
+            "candidate_id": first[0].split(": ", 1)[1],
+            "target_id": first[1].split(": ", 1)[1],
             "candidate": {"text": section("Candidate claim")},
         }
     if context.startswith("Selected assertion wording:"):
@@ -117,7 +118,7 @@ def evaluation_state(context):
         return {
             "original_target": {"id": identifier, "text": section(f"Original target [{identifier}]")}
         }
-    if context.startswith("Left candidate:"):
+    if context.startswith("Left candidate id:"):
         return {"left": {"text": section("Left claim")}, "right": {"text": section("Right claim")}}
     raise AssertionError("Unexpected evaluator test state.")
 
@@ -268,7 +269,6 @@ def analyze(source, generator=None, evaluator=None, **settings):
     settings.setdefault("qa_window_chars", 4000)
     settings.setdefault("direct_window_chars", 4000)
     settings.setdefault("max_literal_repairs", 0)
-    settings.setdefault("max_source_sentences", 0)
     return InformationAnalyzer(
         generator or ScriptedGenerator(),
         evaluator or SyntheticEvaluator(),
@@ -788,7 +788,7 @@ class InformationProtocolTests(unittest.TestCase):
         )
         self.assertEqual("literal_rejected", no_assertion.candidates[0].validation)
 
-    def test_qualifiers_are_checked_and_supported_compound_remains_provisional(self):
+    def test_qualifiers_and_compound_are_semantically_checked_and_not_counted(self):
         text = "Se a conexão cair, o backup não é realizado."
         raw = candidate(
             "v0:s0",
@@ -832,9 +832,8 @@ class InformationProtocolTests(unittest.TestCase):
             SyntheticEvaluator(granularity={compound["text"]: "compound"}),
             qa_enabled=False,
         )
-        self.assertEqual("supported_pending_granularity", rejected.candidates[0].validation)
-        self.assertEqual(1, rejected.counts.unique_units)
-        self.assertEqual("provisional_granularity", rejected.units[0].inventory_state)
+        self.assertEqual("needs_repair", rejected.candidates[0].validation)
+        self.assertEqual(0, rejected.counts.unique_units)
 
     def test_coverage_reads_source_and_recovers_missing_property_bounded(self):
         text = "Os backups ocorrem a cada 24 horas e são guardados por 30 dias."
@@ -1066,7 +1065,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         resolution = record.evidence_resolutions[0]
         self.assertEqual((76, 154, 76, 155), (resolution.supplied_start_char, resolution.supplied_end_char, resolution.resolved_start_char, resolution.resolved_end_char))
         self.assertEqual("unique_exact_quote", resolution.method)
-        self.assertEqual(11, report.to_dict()["schema_version"])
+        self.assertEqual(10, report.to_dict()["schema_version"])
         self.assertEqual(155, report.to_dict()["candidates"][0]["evidence_resolutions"][0]["resolved_end_char"])
         self.assertEqual(text, report.snapshot.current_segments[0].content)
 
@@ -1169,7 +1168,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         def evaluate(state, noul=None, choice=None):
             states.append(state)
             result = original_evaluate(state, noul, choice)
-            if state.startswith("Target id:") and "Candidate claim:\n" + quote in state:
+            if state.startswith("Candidate id:") and "Candidate claim:\n" + quote in state:
                 self.assertIn("Se a conexão cair, <source-assertion-0>" + quote, state)
                 return replace(result, noul=tuple(
                     replace(item, probability=0.02) if item.id == "conditions" else item
@@ -1242,7 +1241,7 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         def evaluate(state, noul=None, choice=None):
             requests.append(state)
             result = evaluate_original(state, noul, choice)
-            if state.startswith("Target id:"):
+            if state.startswith("Candidate id:"):
                 return replace(result, noul=tuple(
                     replace(item, probability=0.02) if item.id == "attribution_annotation" else item
                     for item in result.noul
@@ -1422,9 +1421,8 @@ class InformationEvaluationRegressionTests(unittest.TestCase):
         evaluator, bodies = self.evaluator(granularity="compound")
         report = analyze(videos([compound_source]), ScriptedGenerator({("v0:s0", "direct"): [raw]}), evaluator, qa_enabled=False)
         self.assertEqual("literal_source_passage", report.candidates[0].anchor_binding_origin)
-        self.assertEqual("supported_pending_granularity", report.candidates[0].validation)
-        self.assertEqual(1, report.counts.unique_units)
-        self.assertEqual("provisional_granularity", report.units[0].inventory_state)
+        self.assertEqual("needs_repair", report.candidates[0].validation)
+        self.assertEqual(0, report.counts.unique_units)
         self.assertTrue(any("granularity" in body["questions"] for body in bodies))
 
     def test_literal_containment_cannot_combine_disjoint_passages(self):

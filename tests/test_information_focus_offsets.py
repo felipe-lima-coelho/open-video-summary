@@ -179,7 +179,7 @@ class FocusEvidenceOffsetTests(unittest.TestCase):
         self.assertTrue(evaluator.calls)
         report = run.run()
         exported = report.to_dict()
-        self.assertEqual(11, exported["schema_version"])
+        self.assertEqual(10, exported["schema_version"])
         self.assertEqual(fingerprint(focus_protocol()), exported["metadata"]["prompt_template_hashes"]["focus_protocol"])
         exported_focus = exported["coverage_foci"][0]
         self.assertIsNone(exported_focus["proposal_record"]["raw"]["evidence"][0]["start_char"])

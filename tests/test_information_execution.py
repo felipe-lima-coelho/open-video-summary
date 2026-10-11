@@ -82,8 +82,8 @@ class _Requests:
         payload = json.loads(body)
         state = evaluation_state(payload["state"])
         with self.lock:
-            if "target_id" in state:
-                self.evaluation_ids.append(state["target_id"])
+            if "candidate_id" in state:
+                self.evaluation_ids.append((state["target_id"], state["candidate_id"]))
         if state.get("target_id") in self.evaluation_failures:
             return TransportResponse(self.evaluation_failures[state["target_id"]], {}, b"private service detail")
         answers = {}
@@ -111,7 +111,6 @@ class InformationExecutionTests(unittest.TestCase):
         analyzer = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
             concurrency=concurrency, reproducible=reproducible, qa_enabled=False, max_coverage_rounds=0, max_calls=max_calls,
             max_granularity_checks=0, max_coverage_foci=0,
-            max_source_sentences=0,
             pair_batch_size=1),
             progress=progress, progress_interval_seconds=0.01)
         self.addCleanup(generator.close)
@@ -132,10 +131,7 @@ class InformationExecutionTests(unittest.TestCase):
         self.assertEqual(3, report.counts.occurrences)
         self.assertEqual(1, report.counts.unique_units)
         self.assertEqual(["c0", "t1:c0", "t2:c0"], [item.id for item in report.candidates])
-        self.assertEqual({"v0:s0", "v0:s1", "v0:s2"}, set(tracker.evaluation_ids))
-        self.assertEqual({"c0", "t1:c0", "t2:c0"}, {
-            json.loads(call.metadata_json)["correlation"]["candidate_id"]
-            for call in report.calls if call.operation == "validate_candidate"})
+        self.assertEqual({("v0:s0", "c0"), ("v0:s1", "t1:c0"), ("v0:s2", "t2:c0")}, set(tracker.evaluation_ids))
         self.assertEqual([], generator.records)
         self.assertEqual(0, len(evaluator.records))  # Pair workers also own private records.
         self.assertEqual(4, len(tracker.clients))  # Parent preflight plus three workers.
@@ -204,8 +200,7 @@ class InformationExecutionTests(unittest.TestCase):
         tracker = _Requests(evaluation_failures={f"v0:s{index}": 404 for index in range(3)})
         report, _, _ = self.run_native(tracker, concurrency=1)
         self.assertEqual(["v0:s0"], tracker.targets)
-        self.assertEqual(["v0:s0"], tracker.evaluation_ids)
-        self.assertEqual({"candidate_id": "c0"}, json.loads(report.calls[-1].metadata_json)["correlation"])
+        self.assertEqual([("v0:s0", "c0")], tracker.evaluation_ids)
         self.assertEqual(2, len(report.calls))
         self.assertEqual("ProviderConfigurationError", json.loads(report.metadata_json)["permanent_provider_failure"])
         self.assertEqual("failed", report.status)

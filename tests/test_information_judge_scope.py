@@ -3,17 +3,14 @@
 import json
 import socket
 import unittest
-from dataclasses import replace
 from unittest.mock import patch
 
 from test_information_analysis import ScriptedGenerator, candidate, videos
 from test_information_inventory import InventoryEvaluator
 from open_video_summary.core.summarizers.information_analysis import InformationAnalyzer, _AnalysisRun
 from open_video_summary.core.summarizers.information_config import InformationAnalysisConfig
-from open_video_summary.core.summarizers.information_contracts import CoverageFocus, capture_snapshot
-from open_video_summary.core.summarizers.information_evaluation import (
-    EVALUATION_TEMPLATE_VERSION, validation_spec, coverage_spec, relation_batch_spec,
-)
+from open_video_summary.core.summarizers.information_contracts import capture_snapshot
+from open_video_summary.core.summarizers.information_evaluation import EVALUATION_TEMPLATE_VERSION
 from open_video_summary.core.summarizers.information_inventory import (
     ATOMICITY_QUESTIONS, DECOMPOSITION_INSTRUCTION, DECOMPOSITION_QUESTIONS,
     JOINT_COMPONENT_QUESTION, inventory_templates, joint_granularity_questions,
@@ -57,8 +54,7 @@ class InformationJudgeScopeTests(unittest.TestCase):
                 calls = [(state, questions) for state, questions in evaluator.inventory_calls
                          if "splittable" in questions]
                 self.assertEqual(2, len(calls))
-                state, questions = next((state, questions) for state, questions in calls
-                                        if state["parent_claim_text"] == claim)
+                state, questions = calls[0]
                 self.assertEqual(claim, state["parent_claim_text"])
                 self.assertEqual([peer_text], state["component_claim_texts"])
                 self.assert_claim_only_state(state)
@@ -70,21 +66,18 @@ class InformationJudgeScopeTests(unittest.TestCase):
                 self.assertEqual([proposal["text"] for proposal in proposals],
                                  [record.candidate.text for record in run.candidates])
 
-    def test_single_identical_component_preserves_provenance_without_impossible_verification(self):
+    def test_single_identical_component_is_judged_and_cannot_bypass_minimum_partition_size(self):
         source = "A repercussão é mundial. Outra notícia foi publicada."
         proposal = candidate("v0:s0", source, text="A repercussão é mundial.")
         run, target, evaluator, _ = self.seeded_run([source], [proposal, proposal])
-        state = run._joint_state(target, run.candidates[0], run.candidates[1:])
+        record = run._verify_decomposition(target, run.candidates[0], run.candidates[1:])
+        state, questions = evaluator.inventory_calls[-1]
         self.assertEqual(state["parent_claim_text"], state["component_claim_texts"][0])
-        joint = (("splittable", .8), ("proper_part:" + run.candidates[1].id, .9))
-        before = (len(run.calls), run.budget.remaining, run.granularity_checks)
-        record = run._verify_decomposition(target, run.candidates[0], run.candidates[1:], joint)
-        self.assertEqual(before, (len(run.calls), run.budget.remaining, run.granularity_checks))
-        self.assertEqual([], evaluator.inventory_calls)
-        self.assertEqual(joint, record.signals)
-        self.assertEqual("insufficient_distinct_components", record.reason)
+        self.assertIn("An identical statement or complete paraphrase covers", questions["components_cover_parent"])
+        # Deliberately inconsistent all-positive fixture scores still cannot replace
+        # a parent with one child; scores remain visible rather than being rewritten.
+        self.assertEqual(dict.fromkeys(DECOMPOSITION_QUESTIONS, .99), dict(record.signals))
         self.assertEqual("partial", record.state)
-        self.assertEqual((run.candidates[1].id,), record.component_candidate_ids)
         self.assertEqual("unit_candidate", run.candidates[0].inventory_role)
 
     def test_true_compound_generation_and_verification_use_only_explicit_parent_meaning(self):
@@ -169,78 +162,12 @@ class InformationJudgeScopeTests(unittest.TestCase):
         self.assertIn("separate repetition", DECOMPOSITION_QUESTIONS["source_occurrence"])
 
     def test_prompt_manifest_includes_indexed_part_question_and_construction_version(self):
-        self.assertEqual("source-scope-fidelity-v10-no-record-ids", EVALUATION_TEMPLATE_VERSION)
+        self.assertEqual("source-scope-fidelity-v10", EVALUATION_TEMPLATE_VERSION)
         self.assertEqual(JOINT_COMPONENT_QUESTION, inventory_templates()["joint_component_question"])
         self.assertEqual({"splittable"}, set(joint_granularity_questions(0)))
         questions = joint_granularity_questions(2)
         self.assertEqual({"splittable", "component0", "component1"}, set(questions))
         self.assertIn("component_claim_texts[1]", questions["component1"])
-
-    def test_candidate_identity_and_route_never_change_semantic_builder_inputs(self):
-        source = "Segundo Ana, se a rede cair, o backup talvez não seja realizado. A retenção dura 30 dias."
-        first = candidate("v0:s0", source, quote=source.split(". ")[0] + ".",
-            attribution="Ana", conditions=("se a rede cair",), negated=True, modality="talvez")
-        second = candidate("v0:s0", source, quote="A retenção dura 30 dias.", quantities=("30 dias",))
-        run, target, _, _ = self.seeded_run([source], [first, second])
-        records = run.candidates
-        renamed = [replace(row, id=f"private-renamed-{index}", route="different-route",
-            raw_json='{"provenance":"different"}', round=99) for index, row in enumerate(records)]
-        def payloads(rows):
-            return (
-                validation_spec(rows[0].candidate, rows[0].id, target),
-                coverage_spec(target, (), rows, ()),
-                relation_batch_spec([(rows[0], rows[1]), (rows[1], rows[0])], run.segments, "Compare."),
-                run._joint_state(target, rows[0], rows[1:]),
-                run._atomicity_state(target, rows),
-                run._focus_revision_data(rows[0]),
-            )
-        self.assertEqual(payloads(records), payloads(renamed))
-        encoded = json.dumps(payloads(renamed), ensure_ascii=False)
-        self.assertNotIn("private-renamed", encoded)
-        self.assertNotIn("different-route", encoded)
-        for value in ("Ana", "se a rede cair", "talvez", "30 dias", target.source_identity):
-            self.assertIn(value, encoded)
-        self.assertIn("v0:s0", encoded)
-        self.assertEqual(first, json.loads(records[0].raw_json))
-
-    def test_focus_ids_and_routes_stay_in_correlation_not_judge_state(self):
-        source = "O backup é diário. A retenção dura 30 dias."
-        proposals = [candidate("v0:s0", source, quote="O backup é diário."),
-                     candidate("v0:s0", source, quote="A retenção dura 30 dias.")]
-        captures = []
-        for prefix, route in (("original", "direct"), ("renamed", "recovery")):
-            run, target, evaluator, _ = self.seeded_run([source], proposals)
-            run.candidates = [replace(record, id=f"{prefix}:{index}", route=route,
-                raw_json=json.dumps({"route":route})) for index, record in enumerate(run.candidates)]
-            first = run.candidates[0]
-            proposal = replace(first, id=prefix + ":focus", candidate=replace(first.candidate,
-                text="A frequência do backup é diária."))
-            focus = CoverageFocus(prefix + ":focus", target.id, proposal.candidate, proposal)
-            run._focus_matches(target, focus)
-            damaged = replace(proposal, validation="needs_repair", reasons=("conditions",))
-            run._revise_focus(target, replace(focus, proposal_record=damaged), run.candidates)
-            calls = run.calls[-2:]
-            captures.append((evaluator.inventory_calls, [call.input_hash for call in calls]))
-            for call in calls:
-                correlation = json.loads(call.metadata_json)["correlation"]
-                self.assertEqual(prefix + ":focus", correlation["focus_id"])
-            state = json.dumps(evaluator.inventory_calls)
-            self.assertNotIn(prefix + ":", state)
-            self.assertNotIn('"route"', state)
-        self.assertEqual(captures[0], captures[1])
-
-    def test_same_validation_payload_keeps_distinct_external_candidate_correlation(self):
-        source = "O backup é diário."
-        run, target, _, _ = self.seeded_run([source], [candidate("v0:s0", source)])
-        claim = run.candidates[0].candidate
-        for identifier in ("route-one:c91", "route-two:c3"):
-            state, questions, choices = validation_spec(claim, identifier, target)
-            run._evaluate("validate_candidate", state, questions, choices,
-                          correlation={"candidate_id":identifier})
-        one, two = run.calls[-2:]
-        self.assertEqual(one.input_hash, two.input_hash)
-        self.assertEqual("route-one:c91", json.loads(one.metadata_json)["correlation"]["candidate_id"])
-        self.assertEqual("route-two:c3", json.loads(two.metadata_json)["correlation"]["candidate_id"])
 
 
 if __name__ == "__main__":

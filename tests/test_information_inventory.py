@@ -17,7 +17,6 @@ from open_video_summary.core.summarizers.information_contracts import (
     CoverageFocus, CoverageMatch, InformationRelation, capture_snapshot,
 )
 from open_video_summary.core.summarizers.information_inventory import DECOMPOSITION_QUESTIONS
-from open_video_summary.core.summarizers.information_evaluation import validation_spec
 from open_video_summary.errors import AuthenticationError, ConfigurationError, InvalidResponseError, RequestCancelledError
 
 
@@ -83,7 +82,6 @@ class InformationInventoryTests(unittest.TestCase):
                     "recovery": recovery, "decompose_candidate": components}.get(route, ())
         generator = ScriptedGenerator(callback=lambda data, route: list(generate(data, route)))
         settings = dict(concurrency=1, qa_enabled=False, max_calls=256, max_literal_repairs=0,
-                        max_source_sentences=0,
                         pair_batch_size=1, max_relation_adjudications=256,
                         direct_window_chars=4000, qa_window_chars=4000)
         settings.update(config)
@@ -96,42 +94,6 @@ class InformationInventoryTests(unittest.TestCase):
 
     def split_evaluator(self, **kwargs):
         return InventoryEvaluator(splits={self.source: (self.frequency["text"], self.retention["text"])}, **kwargs)
-
-    def test_incomplete_optional_qa_retains_record_without_judging_or_crashing_recovery(self):
-        source = "O backup foi concluído. A retenção mudou."
-        malformed = candidate("v0:s0", source, quote="O backup foi concluído.")
-        malformed.update(question="O que foi concluído?", answer=None,
-                         unresolved_references=["O que foi concluído."])
-        valid = candidate("v0:s0", source, quote="A retenção mudou.")
-        evaluator = InventoryEvaluator(coverage={"v0:s0": [.99, .01]})
-        report, _ = self.run_inventory(texts=[source], recovery=[malformed, valid],
-            evaluator=evaluator, max_coverage_foci=0, max_granularity_checks=0)
-        damaged = report.candidates[0]
-        self.assertEqual(("recovery", "needs_repair", ("incomplete_qa",)),
-            (damaged.route, damaged.validation, damaged.reasons))
-        self.assertEqual(malformed, json.loads(damaged.raw_json))
-        self.assertEqual((malformed["question"], None, tuple(malformed["unresolved_references"])),
-            (damaged.candidate.question, damaged.candidate.answer, damaged.candidate.unresolved_references))
-        self.assertEqual((), damaged.signals)
-        self.assertEqual("not_evaluated", damaged.annotation_state)
-        self.assertEqual("accepted", report.candidates[1].validation)
-        self.assertEqual(1, report.counts.unique_units)
-        self.assertTrue(all(damaged.id not in unit.candidate_ids for unit in report.units))
-        self.assertIn("incomplete_candidate_qa", [item.kind for item in report.issues])
-        self.assertNotIn("gap_repair_failed", [item.kind for item in report.issues])
-        with self.assertRaisesRegex(ValueError, "both be nonempty strings or both null"):
-            validation_spec(damaged.candidate, damaged.id, report.snapshot.current_segments[0])
-
-    def test_answer_without_question_is_also_preserved_as_needing_repair(self):
-        raw = dict(self.frequency, question=None, answer=self.frequency["text"])
-        report, _ = self.run_inventory(direct=[raw], experimental_mode="direct")
-        record = report.candidates[0]
-        self.assertEqual("needs_repair", record.validation)
-        self.assertEqual(("incomplete_qa",), record.reasons)
-        self.assertEqual(raw, json.loads(record.raw_json))
-        self.assertEqual(0, report.counts.unique_units)
-        self.assertFalse(any(call.operation in {"validate_candidate", "bind_candidate_anchor"}
-                             for call in report.calls))
 
     def test_joint_structure_replaces_misclassified_accepted_parent_with_verified_parts(self):
         report, _ = self.run_inventory(direct=[self.parent, self.frequency, self.retention],
@@ -147,7 +109,7 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertTrue(all(record.parent_candidate_ids == ("c0",) for record in report.candidates[1:]))
         self.assertFalse(report.counts.counts_provisional)
         self.assertEqual("contextual-propositions-v2", report.protocol_version)
-        self.assertEqual(11, report.schema_version)
+        self.assertEqual(10, report.schema_version)
         self.assertEqual(3, report.counts.accepted_candidates)
 
     def test_joint_structure_retains_each_component_source_span(self):
@@ -201,7 +163,7 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual(1, json.loads(report.metadata_json)["atomicity_review_requests"])
         self.assertIn("coverage_no_progress", [item.kind for item in report.issues])
 
-    def test_legacy_recovery_joins_one_final_atomicity_batch_without_resetting_cap(self):
+    def test_legacy_recovery_does_not_reset_the_shared_atomicity_review_budget(self):
         evaluator = InventoryEvaluator(coverage={"v0:s0": [.99, .01]})
         report, _ = self.run_inventory(direct=[self.frequency], recovery=[self.retention],
             evaluator=evaluator, max_coverage_foci=0, max_granularity_checks=1, max_calls=200)
@@ -209,10 +171,10 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual(1, metadata["atomicity_review_requests"])
         self.assertLessEqual(metadata["granularity_checks"], 1)
         self.assertLessEqual(metadata["logical_calls"], 200)
-        self.assertEqual(["atomic", "atomic"], [item.atomicity_state for item in report.candidates])
+        self.assertEqual(["atomic", "not_reviewed"], [item.atomicity_state for item in report.candidates])
         self.assertEqual(2, report.counts.unique_units)
         self.assertTrue(report.counts.counts_provisional)
-        self.assertNotIn("atomicity_review_budget", [item.kind for item in report.issues])
+        self.assertIn("atomicity_review_budget", [item.kind for item in report.issues])
 
     def test_legacy_recovered_compound_stays_visible_when_the_call_budget_prevents_its_split(self):
         for max_calls, atomicity in ((5, "not_reviewed"), (8, "compound")):
@@ -338,9 +300,7 @@ class InformationInventoryTests(unittest.TestCase):
 
     def test_joint_component_identity_survives_filtering_and_later_verification(self):
         evaluator = InventoryEvaluator(
-            # Canonical source/text ordering places frequency before retention,
-            # independently of the deliberately reversed discovery order below.
-            joint={self.source: {"splittable": .99, "component0": .99, "component1": .1}},
+            joint={self.source: {"splittable": .99, "component0": .1, "component1": .99}},
             verification={self.source: dict.fromkeys(DECOMPOSITION_QUESTIONS, .5)},
             relation={frozenset((self.source, self.retention["text"])): "equivalent",
                       frozenset((self.source, self.frequency["text"])): "equivalent"})
@@ -349,7 +309,7 @@ class InformationInventoryTests(unittest.TestCase):
         decomposition = next(item for item in report.decompositions if item.parent_candidate_id == "c0")
         self.assertEqual(("c2",), decomposition.component_candidate_ids)
         checks = dict(decomposition.signals)
-        self.assertEqual((.99, .1, .1, .99),
+        self.assertEqual((.1, .99, .1, .99),
                          tuple(checks[key] for key in ("component0", "component1", "proper_part:c1", "proper_part:c2")))
         relations = {frozenset((item.left_candidate_id, item.right_candidate_id)): item for item in report.relations}
         self.assertEqual("equivalent", relations[frozenset(("c0", "c1"))].equivalence_state)
@@ -401,8 +361,6 @@ class InformationInventoryTests(unittest.TestCase):
 
     def test_verified_partition_also_conflicts_with_parent_equivalence_and_restores_parent(self):
         run = self.seeded_inventory([self.parent, self.frequency, self.retention])
-        run.config = replace(run.config, max_granularity_checks=1)
-        run._review_atomicity(run.snapshot.current_segments[0])
         run._record_decomposition(run.candidates[0], run.candidates[1:], "verified",
                                   dict.fromkeys(DECOMPOSITION_QUESTIONS, .99).items())
         run.relations = [InformationRelation("c0", "c1", "equivalent", .99, .99)]
@@ -437,11 +395,10 @@ class InformationInventoryTests(unittest.TestCase):
                 if fail_refresh and context.startswith("{"):
                     state = json.loads(context)
                     if (state.get("focus", {}).get("text") == focus_text
-                            and any(item["candidate"]["text"] != self_source for item in state.get("claims", []))):
+                            and any(item["id"] != "c0" for item in state.get("claims", []))):
                         raise InvalidResponseError("Fixture interrupted the post-decomposition focus refresh.")
                 return super().evaluate(context, noul, choice)
 
-        self_source = self.source
         evaluator = RefreshEvaluator(
             splits={self.source: (child["text"], self.retention["text"])},
             matches={(focus_text, self.source): (.99, .01, .99),
@@ -449,11 +406,8 @@ class InformationInventoryTests(unittest.TestCase):
             coverage={"v0:s0": [.99, .01]},
             relation={frozenset((child["text"], self.retention["text"])): "equivalent"}
             if conflicting_pair else None)
-        # Isolate post-decomposition correspondence from the separate promotion
-        # route, whose default behavior has dedicated integration regressions.
-        with patch.object(_AnalysisRun, "_promote_validated_foci", return_value=()):
-            report, _ = self.run_inventory(direct=[self.parent], foci=[self.frequency, self.retention],
-                                          recovery=[child, self.retention], evaluator=evaluator)
+        report, _ = self.run_inventory(direct=[self.parent], foci=[self.frequency, self.retention],
+                                      recovery=[child, self.retention], evaluator=evaluator)
         return report
 
     def test_failed_refresh_cannot_leave_covered_focus_bound_only_to_inactive_parent(self):
@@ -567,28 +521,27 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual(2, report.counts.candidates)
         self.assertEqual(2, len(report.coverage_foci))
         focus = next(item for item in report.coverage_foci if item.proposition.text == self.retention["text"])
-        self.assertEqual(("covered", ()), (focus.state, focus.history))
+        self.assertEqual(("covered", "resolved"), (focus.state, focus.history[0].outcome))
         self.assertEqual(("c1",), focus.candidate_ids)
         self.assertEqual(("u1",), focus.unit_ids)
         self.assertEqual(focus.id, report.candidates[1].recovery_focus_id)
-        self.assertEqual("coverage_promotion", report.candidates[1].route)
-        self.assertEqual(focus.id, report.candidates[1].validation_reused_from)
-        self.assertEqual(["gap_detected"], [item.state for item in report.coverage])
+        self.assertEqual("missing", focus.history[0].previous_state)
+        self.assertEqual(["gap_detected", "no_gap_signaled"], [item.state for item in report.coverage])
         self.assertFalse(json.loads(report.metadata_json)["completeness_proven"])
         requests = [json.loads(item.prompt.split("\nInput:\n", 1)[1]) for item in generator.requests]
         discovery = next(item for item in requests if item.get("analysis_task") == "discover_coverage_foci")
         self.assertNotIn("accepted", discovery)
         self.assertNotIn("repair_candidates", discovery)
-        self.assertFalse(any("coverage_focus" in item for item in requests))
+        repair = next(item for item in requests if "coverage_focus" in item)
+        self.assertEqual(focus.id, repair["coverage_focus"]["id"])
 
     def test_reformulations_and_exact_duplicate_rows_do_not_close_a_different_gap(self):
         reformulation = candidate("v0:s0", self.source, text="Os backups do Alfa ocorrem a cada 24 horas.", quantities=("24 horas",))
         for recovery in ([self.frequency], [reformulation]):
             with self.subTest(recovery=recovery[0]["text"]):
                 evaluator = InventoryEvaluator(coverage={"v0:s0": [.99, .01]})
-                with patch.object(_AnalysisRun, "_promote_validated_foci", return_value=()):
-                    report, _ = self.run_inventory(direct=[self.frequency], foci=[self.retention],
-                                                  recovery=recovery, evaluator=evaluator)
+                report, _ = self.run_inventory(direct=[self.frequency], foci=[self.retention],
+                                              recovery=recovery, evaluator=evaluator)
                 focus = report.coverage_foci[0]
                 self.assertEqual("missing", focus.state)
                 self.assertEqual("no_progress", focus.history[0].outcome)
@@ -603,9 +556,8 @@ class InformationInventoryTests(unittest.TestCase):
                                   ((.99, .01, .01), "missing")):
             with self.subTest(signals=signals):
                 evaluator = InventoryEvaluator(matches={(self.retention["text"], self.frequency["text"]): signals})
-                with patch.object(_AnalysisRun, "_promote_validated_foci", return_value=()):
-                    report, _ = self.run_inventory(direct=[self.frequency], foci=[self.retention], evaluator=evaluator,
-                                                  max_coverage_rounds=0)
+                report, _ = self.run_inventory(direct=[self.frequency], foci=[self.retention], evaluator=evaluator,
+                                              max_coverage_rounds=0)
                 self.assertEqual(expected, report.coverage_foci[0].state)
                 self.assertEqual((), report.coverage_foci[0].unit_ids)
                 self.assertTrue(report.counts.counts_provisional)
@@ -652,9 +604,8 @@ class InformationInventoryTests(unittest.TestCase):
         one = candidate("v0:s0", source, quote="A cópia é diária.", offset=0)
         two = candidate("v0:s0", source, quote="A cópia é diária.", offset=18)
         report, _ = self.run_inventory(texts=[source], direct=[one], foci=[two], max_coverage_rounds=0)
-        self.assertEqual("covered", report.coverage_foci[0].state)
-        self.assertEqual(2, report.counts.occurrences)
-        self.assertEqual({0, 18}, {e.start_char for item in report.occurrences for e in item.assertion_evidence})
+        self.assertEqual("missing", report.coverage_foci[0].state)
+        self.assertEqual(1, report.counts.occurrences)
         self.assertEqual(18, report.coverage_foci[0].proposition.evidence[0].start_char)
 
     def test_all_four_modes_share_validation_granularity_and_frozen_input(self):
@@ -689,10 +640,8 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual(2, len(report.coverage_foci))
         self.assertEqual("not_evaluated", report.coverage_foci[1].proposal_record.validation)
         self.assertEqual("uncertain", report.coverage_foci[1].state)
-        self.assertEqual(1, report.counts.candidates)
-        self.assertEqual(1, report.counts.unique_units)
-        self.assertEqual("accepted", report.coverage_foci[0].proposal_record.validation)
-        self.assertEqual("coverage_promotion", report.candidates[0].route)
+        self.assertEqual(0, report.counts.candidates)
+        self.assertEqual(0, report.counts.unique_units)
         self.assertEqual(1, len(report.coverage))
         self.assertFalse(report.counts.valid_zero)
         self.assertEqual(5, json.loads(report.metadata_json)["logical_calls"])
@@ -741,7 +690,7 @@ class InformationInventoryTests(unittest.TestCase):
         with redirect_stdout(stream):
             _print_information_report(report, None)
         self.assertIn("Granularity alternatives:", stream.getvalue())
-        self.assertIn("Source coverage foci: 1 tracked; 0 pending", stream.getvalue())
+        self.assertIn("Source coverage foci: 1 tracked; 1 pending", stream.getvalue())
 
 
 if __name__ == "__main__":
