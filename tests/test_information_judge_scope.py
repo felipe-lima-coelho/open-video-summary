@@ -54,7 +54,8 @@ class InformationJudgeScopeTests(unittest.TestCase):
                 calls = [(state, questions) for state, questions in evaluator.inventory_calls
                          if "splittable" in questions]
                 self.assertEqual(2, len(calls))
-                state, questions = calls[0]
+                state, questions = next((state, questions) for state, questions in calls
+                                        if state["parent_claim_text"] == claim)
                 self.assertEqual(claim, state["parent_claim_text"])
                 self.assertEqual([peer_text], state["component_claim_texts"])
                 self.assert_claim_only_state(state)

@@ -164,7 +164,7 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual(1, json.loads(report.metadata_json)["atomicity_review_requests"])
         self.assertIn("coverage_no_progress", [item.kind for item in report.issues])
 
-    def test_legacy_recovery_does_not_reset_the_shared_atomicity_review_budget(self):
+    def test_legacy_recovery_joins_one_final_atomicity_batch_without_resetting_cap(self):
         evaluator = InventoryEvaluator(coverage={"v0:s0": [.99, .01]})
         report, _ = self.run_inventory(direct=[self.frequency], recovery=[self.retention],
             evaluator=evaluator, max_coverage_foci=0, max_granularity_checks=1, max_calls=200)
@@ -172,10 +172,10 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertEqual(1, metadata["atomicity_review_requests"])
         self.assertLessEqual(metadata["granularity_checks"], 1)
         self.assertLessEqual(metadata["logical_calls"], 200)
-        self.assertEqual(["atomic", "not_reviewed"], [item.atomicity_state for item in report.candidates])
+        self.assertEqual(["atomic", "atomic"], [item.atomicity_state for item in report.candidates])
         self.assertEqual(2, report.counts.unique_units)
         self.assertTrue(report.counts.counts_provisional)
-        self.assertIn("atomicity_review_budget", [item.kind for item in report.issues])
+        self.assertNotIn("atomicity_review_budget", [item.kind for item in report.issues])
 
     def test_legacy_recovered_compound_stays_visible_when_the_call_budget_prevents_its_split(self):
         for max_calls, atomicity in ((5, "not_reviewed"), (8, "compound")):

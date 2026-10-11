@@ -312,6 +312,7 @@ class _AnalysisRun(SemanticInventory):
         self.atomicity_reviews = {}
         self.granularity_reviewed = set()
         self.decomposition_generated = set()
+        self.defer_granularity = parent is not None
         self.focus_match_cache = {}
         self.discovery = parent.discovery if parent else None
         self.lookahead = {}
@@ -1363,18 +1364,24 @@ class _AnalysisRun(SemanticInventory):
                     future.cancel()
                 executor.shutdown(wait=True, cancel_futures=True)
         for worker in workers:
+            # Discovery forks are already closed. All source visitation finishes
+            # before structural work can consume the shared remaining budget.
+            worker.generator, worker.evaluator = self.generator, self.evaluator
+            target = targets[worker.target_index]
             if self.config.max_source_sentences:
-                # All original target workflows finish before this serial
-                # source supplement. Closed target forks are never reused.
-                worker.generator, worker.evaluator = self.generator, self.evaluator
-                target = targets[worker.target_index]
                 try:
                     worker._source_sentence_hypotheses(target)
-                    worker._reconcile_granularity(target)
-                    if self.config.coverage_enabled:
-                        worker._refresh_foci(target)
                 except Exception as exc:
                     worker.issue("source_sentence_analysis_failed", type(exc).__name__, (target.id,))
+        for worker in workers:
+            target = targets[worker.target_index]
+            worker.defer_granularity = False
+            try:
+                worker._reconcile_granularity(target)
+                if self.config.coverage_enabled:
+                    worker._refresh_foci(target)
+            except Exception as exc:
+                worker.issue("granularity_review_failed", type(exc).__name__, (target.id,))
             self.candidates.extend(worker.candidates)
             self.coverage.extend(worker.coverage)
             self.calls.extend(worker.calls)
@@ -2038,6 +2045,15 @@ class _AnalysisRun(SemanticInventory):
             "experimental_mode": self.config.effective_mode,
             "coverage_enabled": self.config.coverage_enabled,
             "granularity_checks": self.granularity_checks,
+            "granularity_scheduling": "All original discovery, focus recovery and bounded source-sentence validation finish before independent atomicity and joint review. Each target uses one deterministic agenda: confirmed compounds, compound Choice proposals, complete literal claims containing at least two shorter source-overlapping peer texts or literal assertion fragments, then other candidates. Containment sets priority only, never semantic acceptance. Source coordinates and full text break ties. One joint opportunity and at most one generation attempt apply to each exact parent family. Unprocessed candidates remain visible and provisional; existing per-target and shared caps never reset.",
+            "decomposition_only_units": [
+                {"unit_id": unit.id, "candidate_ids": list(unit.candidate_ids),
+                 "inventory_state": unit.inventory_state,
+                 "decomposition_ids": list(unit.decomposition_ids)}
+                for unit in units if unit.candidate_ids and all(
+                    next(record for record in self.candidates if record.id == identifier).route == "decomposition"
+                    for identifier in unit.candidate_ids)],
+            "decomposition_origin_policy": "Generation route is provenance, not support or non-support. Source-validated decomposition-only proposals remain visible under ordinary content and structural gates, even if their proposed partition fails. They may contain independently true neighboring source facts. The decomposition_only_units diagnostic exposes this origin; it never suppresses such content or certifies extra distinct information. Unverified parent/part alternatives remain provisional.",
             "atomicity_review_requests": self.atomicity_review_requests,
             "source_focus_count": len(self.coverage_foci),
             "source_focus_states": {state: sum(item.state == state for item in self.coverage_foci)
@@ -2107,7 +2123,7 @@ class _AnalysisRun(SemanticInventory):
             "scope": "verbal_transcript",
             "timestamp_resolution": "source_segment",
             "completeness_proven": False,
-            "joint_granularity": "Single-candidate atomicity is followed by bounded joint review of overlapping original-source assertions, including already accepted parents. A verified decomposition requires distinct independent components, mutual collective content preservation, unchanged qualifiers and source occurrence. Only then is the parent retained as provenance outside unit counts. Gray abstract splittability may request bounded concrete witnesses, never automatic replacement. One generation attempt is allowed per exact parent meaning; new semantic peers can receive another bounded joint review. Independent equivalence conflicts only with a verified partition or a positively verified proper part, including a source-grounded residual with every other decomposition gate passed. Joint component checks retain both their original index and candidate identity; legacy indices never imply an unknown filtered association. Unresolved alternatives stay visible and provisional unless every member is an accepted atom in one complete-link equivalence group with no positive compound, part or residual evidence. Specificity alone never suppresses content.",
+            "joint_granularity": "Single-candidate atomicity is followed by bounded joint review of overlapping original-source assertions, including already accepted parents. A verified decomposition requires distinct independent components, mutual collective content preservation, unchanged qualifiers and source occurrence. Only then is the parent retained as provenance outside unit counts. Gray abstract splittability may request bounded concrete witnesses, never automatic replacement. One generation attempt and one joint opportunity are allowed per exact parent meaning after discovery and source visitation finish. Independent equivalence conflicts only with a verified partition or a positively verified proper part, including a source-grounded residual with every other decomposition gate passed. Joint component checks retain both their original index and candidate identity; legacy indices never imply an unknown filtered association. Unresolved alternatives stay visible and provisional unless every member is an accepted atom in one complete-link equivalence group with no positive compound, part or residual evidence. Specificity alone never suppresses content.",
             "source_content_ledger": "Independent source traversal proposes source foci without access to the accepted inventory. Each focus keeps literal evidence, a full proposal validation, stable ID, verified per-candidate correspondence and bounded individual repair history. Only complete qualified meaning at the same source occurrence closes a gap. Final covered states require a verified correspondence to an active inventory unit; inactive matches remain provenance and decomposition alone never transfers coverage to children. Citations, reformulations, extra candidates and no-progress stops do not prove coverage. The separate open source audit can still signal undiscovered content. Foci do not count as inventory units. An accepted uncovered focus may be promoted verbatim to an ordinary candidate with explicit focus provenance, independent atomicity and normal consolidation; failed hypotheses and verified decomposed parents are never promoted.",
             "thresholds_calibrated": False,
             "content_acceptance": "accepted retains its original source-fidelity and atomic Choice meaning. supported_pending_granularity passes every unchanged content, anchor and reference gate, but the original atomic/compound Choice has a granularity defect. Both states are inventory-eligible; the latter remains provisional until an independent structural audit resolves atomicity. Original labels, probabilities, reasons and source provenance are retained. Unknown references, needs_context, not_information and failed fidelity remain ineligible. Newly eligible gray/compound children need independent atomicity evidence before all collective partition checks; content support alone never authorizes replacement.",

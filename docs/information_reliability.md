@@ -170,6 +170,25 @@ consume the shared logical-call budget and remain subject to context and provide
 limits. The report records `atomicity_review_requests` separately from
 `granularity_checks`.
 
+These budgets are spent after direct/QA discovery, literal and focus recovery,
+and bounded source-sentence validation finish. Atomicity sees the resulting
+candidate set in canonical source order. The joint agenda prioritizes confirmed
+compounds, original compound Choice proposals, and complete literal claims that
+contain at least two shorter supported peer texts or assertion fragments.
+Containment only schedules review; it establishes no semantic relationship.
+Canonical source coordinates and complete text break ties. Each exact parent
+family receives at most one joint opportunity and one generation attempt.
+Remaining work receives explicit budget-pending records; caps do not reset.
+The post-structure focus refresh cannot automatically transfer a parent's
+coverage to its children. Closed discovery adapters are never reused.
+
+`metadata.decomposition_only_units` lists units discovered solely through
+decomposition proposals. These may be true neighboring source assertions even
+when they are not valid parts of the proposed parent. Ordinary source validation
+still applies, and uncertain parent/part alternatives remain provisional.
+The diagnostic does not suppress information or treat route provenance as a
+semantic proof.
+
 These judges receive explicit claim-text fields: `parent_claim_text` and indexed
 `component_claim_texts` for joint review, and `claim0_text`, `claim1_text`, etc. for
 atomicity. Questions name those fields directly. Separate `source_scopes` retain
@@ -195,8 +214,8 @@ atomicity-based reliability evidence.
 
 A gray abstract splittability decision can now request concrete component
 witnesses within the same joint-review budget. Each exact parent meaning has
-at most one generation attempt. Newly discovered semantic peers can prompt a
-new bounded joint review; repeated route or annotation variants cannot.
+at most one generation attempt. The final candidate view supplies its peers;
+repeated route or annotation variants cannot spend another joint opportunity.
 Only the full concrete parent/parts verification can authorize replacement,
 including its unchanged parent-compound, collective preservation, independence,
 distinctness, source-occurrence and qualifier gates. Gray or failed concrete

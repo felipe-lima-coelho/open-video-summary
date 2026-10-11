@@ -14,7 +14,7 @@ from open_video_summary.core.summarizers.information_contracts import (
     canonical_json, fingerprint,
 )
 from open_video_summary.core.summarizers.information_evaluation import (
-    exact_proposition_key, passes_probability_cutoff, local_assertion_scopes, _marked_source,
+    exact_proposition_key, canonical_candidate_key, passes_probability_cutoff, local_assertion_scopes, _marked_source,
 )
 
 
@@ -332,7 +332,8 @@ class SemanticInventory:
     def _review_atomicity(self, target):
         """Audit each supported meaning, including gray claims and false atoms."""
         groups = {}
-        for record in self._accepted(target.id):
+        source_order = {identifier: index for index, identifier in enumerate(self.snapshot.current_order)}
+        for record in sorted(self._accepted(target.id), key=lambda item: canonical_candidate_key(item, source_order)):
             groups.setdefault(exact_proposition_key(record), []).append(record)
         pending = []
         for key, records in groups.items():
@@ -387,6 +388,8 @@ class SemanticInventory:
                        (target.id,), tuple(item.id for item in pending))
 
     def _reconcile_granularity(self, target):
+        if self.defer_granularity:
+            return
         self._inherit_decomposition_state()
         if not self.config.max_granularity_checks:
             return
@@ -394,13 +397,22 @@ class SemanticInventory:
         eligible = [record for record in self.candidates if record.target_segment_id == target.id
                     and record.candidate is not None and record.inventory_role != "decomposed_parent"
                     and self._content_eligible(record)]
-        # Reserve the bounded decomposition opportunities for observed compounds
-        # before lower-priority overlapping atomic alternatives. sort is stable,
-        # so candidates of equal priority retain their original source order.
-        eligible.sort(key=lambda record: (
-            0 if record.atomicity_state == "compound" else
-            1 if record.granularity == "compound" else
-            2 if record.atomicity_state == "uncertain" else 3))
+        source_order = {identifier: index for index, identifier in enumerate(self.snapshot.current_order)}
+        def agenda_key(record):
+            text = record.candidate.text
+            literal = any(item.role == "assertion" and item.quote == text for item in record.candidate.evidence)
+            contained = {exact_proposition_key(peer) for peer in eligible
+                if peer.id != record.id and len(peer.candidate.text) < len(text)
+                and assertion_overlap(record.candidate, peer.candidate)
+                and any(fragment and len(fragment) < len(text) and fragment.casefold() in text.casefold()
+                    for fragment in (peer.candidate.text.rstrip(".!?"),
+                        *(item.quote for item in peer.candidate.evidence if item.role == "assertion")))}
+            priority = (0 if record.atomicity_state == "compound" else
+                        1 if record.granularity == "compound" else
+                        2 if literal and len(contained) >= 2 else
+                        3 if record.atomicity_state == "uncertain" else 4)
+            return priority, canonical_candidate_key(record, source_order)
+        eligible.sort(key=agenda_key)
         reviewed_meanings = set()
         for initial_parent in eligible:
             parent = next(item for item in self.candidates if item.id == initial_parent.id)
@@ -420,9 +432,9 @@ class SemanticInventory:
             compound = parent.granularity == "compound" or parent.atomicity_state == "compound"
             if not peers and not compound and parent.atomicity_state != "uncertain":
                 continue
-            # New semantic witnesses can justify another review; repeated
-            # routes and annotation changes alone cannot.
-            signature = (meaning, frozenset(exact_proposition_key(peer) for peer in peers))
+            # Discovery has finished: one canonical parent opportunity uses the
+            # final peer view. Later route aliases inherit its structural proof.
+            signature = meaning
             if signature in self.granularity_reviewed:
                 continue
             if self.granularity_checks >= self.config.max_granularity_checks or self.budget.remaining <= 2:

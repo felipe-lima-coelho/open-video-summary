@@ -260,6 +260,10 @@ class InformationStabilityTests(unittest.TestCase):
                                  report.candidates[0].inventory_role)
                 self.assertEqual(2 if expected else 3, report.counts.unique_units)
                 self.assertTrue(all(record.validation == "supported_pending_granularity" for record in report.candidates))
+                origins = json.loads(report.metadata_json)["decomposition_only_units"]
+                self.assertEqual(2, len(origins))
+                self.assertTrue(all(row["inventory_state"] == "provisional_granularity"
+                                    for row in origins) if not expected else True)
 
     def test_supported_parent_aliases_inherit_partition_across_default_source_route(self):
         source = "O backup é diário e a retenção dura 30 dias."
@@ -350,18 +354,56 @@ class InformationStabilityTests(unittest.TestCase):
                            for row in json.loads(report.metadata_json)["source_sentence_hypotheses"]))
         self.assertFalse(any(item.kind == "source_sentence_analysis_failed" for item in report.issues))
 
-    def test_source_supplement_does_not_reset_spent_atomicity_cap(self):
+    def test_final_atomicity_batch_includes_source_supplement_under_one_cap(self):
         source = "O serviço parou. A equipe chegou."
         proposals = [candidate("v0:s0", source, quote="O serviço parou.")]
         generator = ScriptedGenerator(callback=lambda data, route: proposals if route == "direct" else [])
         report = InformationAnalyzer(generator, InventoryEvaluator(),
             InformationAnalysisConfig(max_granularity_checks=1)).analyze(capture_snapshot(videos([source])))
         new = next(record for record in report.candidates if record.candidate.text == "A equipe chegou.")
-        self.assertEqual("not_reviewed", new.atomicity_state)
+        self.assertEqual("atomic", new.atomicity_state)
         unit = next(unit for unit in report.units if new.id in unit.candidate_ids)
-        self.assertEqual("provisional_granularity", unit.inventory_state)
+        self.assertEqual("validated", unit.inventory_state)
         self.assertEqual(1, json.loads(report.metadata_json)["atomicity_review_requests"])
-        self.assertIn("atomicity_review_budget", {issue.kind for issue in report.issues})
+        self.assertNotIn("atomicity_review_budget", {issue.kind for issue in report.issues})
+
+    def test_final_atomicity_cap_still_exposes_unaudited_source_claims(self):
+        source = " ".join(f"A máquina {index} parou." for index in range(9))
+        report = InformationAnalyzer(ScriptedGenerator(), InventoryEvaluator(),
+            InformationAnalysisConfig(max_granularity_checks=1)).analyze(capture_snapshot(videos([source])))
+        self.assertEqual(1, json.loads(report.metadata_json)["atomicity_review_requests"])
+        pending = [record for record in report.candidates if record.atomicity_state == "not_reviewed"]
+        self.assertEqual(1, len(pending))
+        self.assertTrue(any(pending[0].id in issue.candidate_ids for issue in report.issues
+                            if issue.kind == "atomicity_review_budget"))
+        self.assertTrue(any(pending[0].id in unit.candidate_ids and
+                            unit.inventory_state == "provisional_granularity" for unit in report.units))
+
+    def test_late_whole_source_parent_precedes_speculative_short_parent_reviews(self):
+        source = "O sistema faz o telefone funcionar e permite usar aplicativos."
+        parts = [candidate("v0:s0", source, quote="O sistema faz o telefone funcionar",
+                           text="O sistema faz o telefone funcionar."),
+                 candidate("v0:s0", source, quote="permite usar aplicativos",
+                           text="O sistema permite usar aplicativos.")]
+        short = [candidate("v0:s0", source, text=text) for text in
+                 ("O telefone funciona com o sistema.", "O sistema permite o funcionamento do telefone.",
+                  "Usar aplicativos é possível com o sistema.", "O sistema viabiliza o uso de aplicativos.")]
+        evaluator = GranularityEvaluator(atomicity=.5,
+            splits={source: tuple(item["text"] for item in parts)})
+        generator = ScriptedGenerator(callback=lambda data, route: [*short, *parts] if route == "direct" else [])
+        report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
+            qa_enabled=False, max_granularity_checks=1)).analyze(capture_snapshot(videos([source])))
+        parent = next(record for record in report.candidates if record.candidate.text == source)
+        self.assertEqual("source_sentence", parent.route)
+        self.assertEqual("decomposed_parent", parent.inventory_role)
+        reviewed = [state["parent_claim_text"] for state, questions in evaluator.inventory_calls
+                    if "splittable" in questions]
+        self.assertEqual([source], reviewed)
+        self.assertEqual(1, json.loads(report.metadata_json)["granularity_checks"])
+        self.assertFalse(any('"analysis_task":"decompose_candidate"' in request.prompt
+                             for request in generator.requests))
+        self.assertTrue(any(item.reason == "joint_review_budget" for item in report.decompositions))
+        self.assertTrue(all(unit.text in {item["text"] for item in [*parts, *short]} for unit in report.units))
 
     def test_source_qualified_child_must_still_be_a_part_of_the_explicit_parent(self):
         source = "O sistema faz o telefone funcionar e permite usar aplicativos."

@@ -223,7 +223,10 @@ class InformationDiscoveryParallelTests(unittest.TestCase):
         self.assertEqual(0, new.active)
         self.assertTrue(all(item.closed for item in new.instances[2:]))
         self.assertEqual([], new.instances[0].records)
-        self.assertEqual([], new.instances[1].records)
+        self.assertFalse(new.instances[1].closed)
+        self.assertEqual(sum(call.operation in {"review_candidate_atomicity", "review_joint_granularity",
+                                               "verify_decomposition"} for call in parallel.calls),
+                         len(new.instances[1].records))
 
     def test_independent_first_requests_overlap_and_reduce_controlled_wall_time(self):
         serial, _, serial_seconds = self.replay(lookahead=False, delay=.07, other_delay=0,
