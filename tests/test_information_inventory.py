@@ -35,6 +35,8 @@ class InventoryEvaluator(SyntheticEvaluator):
         if not context.startswith("{"):
             return super().evaluate(context, noul, choice)
         state = json.loads(context)
+        if "left_claim_text" in state:
+            return super().evaluate(context, noul, choice)
         self.inventory_states.append(state)
         self.inventory_calls.append((state, dict(noul)))
         if "claim0_text" in state:

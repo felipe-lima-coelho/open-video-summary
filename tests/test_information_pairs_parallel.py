@@ -117,8 +117,8 @@ class ForkingEvaluator:
         return ForkingEvaluator(self.tracker, self.relations)
 
     def evaluate(self, context, noul=None, choice=None):
-        left = context.split("Left claim:\n", 1)[1].split("\n\n", 1)[0]
-        right = context.split("Right claim:\n", 1)[1].split("\n\n", 1)[0]
+        state = json.loads(context)
+        left, right = state["left_claim_text"], state["right_claim_text"]
         error = None
         try:
             self.tracker.evaluate(left, right)

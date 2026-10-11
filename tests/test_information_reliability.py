@@ -146,7 +146,7 @@ class InformationReliabilityTests(unittest.TestCase):
         self.assertEqual("equivalent", confirmed.equivalence_state)
         self.assertEqual(1, json.loads(report.metadata_json)["relation_adjudications"])
         followup = next(request for request in requests if "left_entails_right" in request["questions"])
-        self.assertIn("Left candidate id: c1", followup["state"])
+        self.assertEqual("c1", json.loads(followup["state"])["left_candidate_id"])
 
     def test_anchor_binding_receives_local_subject_and_condition_but_no_other_sentence(self):
         source = "Se a rede cair, os backups não são realizados. A retenção dura 30 dias."

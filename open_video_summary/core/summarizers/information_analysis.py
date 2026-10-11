@@ -117,7 +117,7 @@ QA_WINDOW_INSTRUCTION = " Discover only assertions whose first assertion evidenc
 DIRECT_WINDOW_INSTRUCTION = " Discover only assertions whose first assertion evidence starts in the discovery window. The complete original target remains reference scope; keep governing qualifiers even if outside the window. Evidence quotes and offsets always refer to the ORIGINAL target. Traverse the window directly without questions or candidates from another route."
 RECOVERY_INSTRUCTION = "Re-examine the ORIGINAL target for omissions or qualifier/granularity defects flagged in the audit. Propose additional atomic propositions or repaired candidates; do not repeat accepted content."
 RECOVERY_STATE_INSTRUCTION = " In recovery state, evidence references point to the literal evidence_table. Entries sharing an ids list are exact duplicates of the projected state. All accepted meanings, verified qualifiers and essential evidence are retained. Proposed annotations in repair candidates remain unverified; reasons identify checks needing repair. Use the original target for every new assertion."
-RELATION_INSTRUCTION = "Compare complete meaning and original evidence: entities, attribution, quantities, negation, modality, conditions and scope. Equivalent requires mutual entailment; topical similarity is insufficient. Preserve corrections and contradictions as distinct communicated units."
+RELATION_INSTRUCTION = "Compare only left_claim_text and right_claim_text using their own source_scopes for reference resolution and governing qualifiers. Equivalent requires mutual entailment of their complete meaning; topical similarity is insufficient. Preserve corrections and contradictions as distinct communicated units."
 RELATIONS = (
     "equivalent",
     "complementary",

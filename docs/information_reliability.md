@@ -135,6 +135,25 @@ atomicity-based reliability evidence.
 The exact duplicate shortcut applies only when validated candidate text, type and
 complete evidence match. Every other proposed semantic merge needs an individual
 source-scoped follow-up with directional entailment checks in both directions.
+Relation template v11 presents `left_claim_text` and `right_claim_text` before
+separate `source_scopes` containing each claim's complete original marked target
+and its own cited reference segments. Primary comparisons and directional
+follow-ups share that representation. In a batch, every independently keyed
+question names its own pair and claim IDs. Source material resolves references
+and governing scope; its other assertions never enlarge the compared claims.
+Six shorter field-specific questions retain both directional checks, correction
+and incompatibility checks, and the separate complete-meaning check. Thresholds,
+Choice order, conflict handling and merging rules are unchanged.
+
+This follows the [Jev 1.13 guidance](https://docs.typesafe.ai/model-jaggedness/jev-1.13.md)
+to use explicit inputs and focused semantic questions instead of asking one
+judge to recover the comparison target from a broader task. It reduces an
+avoidable ambiguity in the payload; offline payload tests establish its
+construction, not better model accuracy. Fixed-input fresh provider comparisons
+and full fresh runs are separate evidence. Identical wording with different
+anchors still requires source-aware confirmation; neither the prompt change
+nor a high primary probability is an automatic equivalence proof.
+
 The analyzer prioritizes prospective equivalents and uncertain pair decisions
 under `--information-relation-adjudications` (default 256, at most one follow-up
 per pair); prospective equivalence confirmations are prioritized before other
