@@ -338,6 +338,19 @@ certificates and unverified generation ancestry are not graph edges. A fresh rev
 with repeated scores receives a new provenance revision if the earlier certificate
 was invalidated or superseded, preserving the earlier decision and its reason.
 
+One pair decision may contradict several partitions. Reconciliation first records
+all affected active certificates from one unchanged relation snapshot, matching
+their exact component families, then changes their states together. An identity
+relation between aliases of a single component is not a conflict between parts.
+The original relation label, probabilities and audit signals remain available.
+
+Alternative partitions are compared after expanding verified acyclic refinements
+to independently audited terminal unit memberships. Thus a nested partition and
+its direct equivalent can resolve to the same units without false uncertainty.
+An unresolved inner alternative, missing atomicity evidence, circular refinement
+or overlapping terminal components prevents a resolved alternative count. This
+expansion only uses existing evidence and adds no model calls.
+
 For a comparison, keep and report every run's signature, digest, status, settings,
 counts and diagnostics. A changed signature means a recorded manifest field
 differs. A matching signature with a changed digest shows that the canonical

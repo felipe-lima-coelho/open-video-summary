@@ -981,6 +981,58 @@ class SemanticInventory:
                                                self.config.acceptance_threshold)
                 and all(yes(key) for key in DECOMPOSITION_QUESTIONS if key != "components_cover_parent"))
 
+    def _terminal_component_units(self, decomposition, membership):
+        """Expand verified acyclic alternatives to independently atomic units."""
+        records = {item.id:item for item in self.candidates if item.candidate is not None}
+        active, families = {}, {}
+        for record in records.values():
+            families.setdefault(exact_proposition_key(record), []).append(record)
+        for proof in self.decompositions:
+            if proof.superseded_by is None and proof.parent_candidate_id in records:
+                active.setdefault(exact_proposition_key(records[proof.parent_candidate_id]), []).append(proof)
+        cyclic = self._cyclic_decomposition_ids(active, records)
+        resolved = {}
+
+        def terminal_units(record, ancestors):
+            if record is None or not self._content_eligible(record):
+                return None
+            key = exact_proposition_key(record)
+            if key in ancestors:
+                return None
+            if key in resolved:
+                return resolved[key]
+            proofs = active.get(key, ())
+            verified = [item for item in proofs if item.state == "verified"]
+            if verified:
+                alternatives = [component_units(item, ancestors | {key}) for item in verified]
+                result = (alternatives[0] if alternatives[0] is not None
+                          and all(item == alternatives[0] for item in alternatives) else None)
+            elif any(all(name in dict(item.signals) and passes_probability_cutoff(
+                    dict(item.signals)[name], self.config.acceptance_threshold)
+                    for name in DECOMPOSITION_QUESTIONS) for item in proofs):
+                result = None
+            else:
+                aliases = [item for item in families[key] if self._content_eligible(item)]
+                units = frozenset(membership.get(item.id) for item in aliases)
+                result = (units if len(units) == 1 and None not in units
+                          and all(self._component_eligible(item) for item in aliases) else None)
+            resolved[key] = result
+            return result
+
+        def component_units(proof, ancestors):
+            if proof.state != "verified" or proof.superseded_by is not None or proof.id in cyclic:
+                return None
+            result = frozenset()
+            for identifier in proof.component_candidate_ids:
+                units = terminal_units(records.get(identifier), ancestors)
+                if units is None or result & units:
+                    return None
+                result |= units
+            return result or None
+
+        parent = records.get(decomposition.parent_candidate_id)
+        return component_units(decomposition, {exact_proposition_key(parent)}) if parent is not None else None
+
     def _decomposition_is_provisional(self, decomposition, membership):
         """Keep real structural uncertainty without duplicating resolved atoms."""
         if decomposition.superseded_by is not None:
@@ -993,10 +1045,8 @@ class SemanticInventory:
                 and exact_proposition_key(records[item.parent_candidate_id]) == exact_proposition_key(parent)]
             if len(alternatives) < 2:
                 return False
-            components = [frozenset(membership.get(value) for value in item.component_candidate_ids)
-                          for item in alternatives]
-            return (any(None in group or len(group) != len(item.component_candidate_ids)
-                        for group, item in zip(components, alternatives))
+            components = [self._terminal_component_units(item, membership) for item in alternatives]
+            return (any(group is None for group in components)
                     or any(group != components[0] for group in components[1:]))
         if not decomposition.component_candidate_ids:
             return True
@@ -1025,33 +1075,48 @@ class SemanticInventory:
 
     def _reconcile_decomposition_relations(self):
         """Do not conceal conflicts between joint structure and later pair checks."""
-        restored = set()
+        restored, conflicting_proofs, conflicting_relations = set(), set(), set()
         records = {item.id: item for item in self.candidates if item.candidate is not None}
+        # One relation can contradict several certificates. Collect every
+        # affected proof from the same evidence snapshot before mutating either.
+        relations = tuple(self.relations)
         for index, decomposition in enumerate(self.decompositions):
             if decomposition.superseded_by is not None:
                 continue
             components = set(decomposition.component_candidate_ids)
+            component_meanings = {exact_proposition_key(records[value]) for value in components if value in records}
             parent = records.get(decomposition.parent_candidate_id)
+            parent_meaning = exact_proposition_key(parent) if parent is not None else None
             parents = {decomposition.parent_candidate_id}
             if parent is not None:
                 parents.update(item.id for item in records.values() if self._content_eligible(item)
                                and exact_proposition_key(item) == exact_proposition_key(parent))
-            for position, relation in enumerate(self.relations):
+            for position, relation in enumerate(relations):
                 pair = {relation.left_candidate_id, relation.right_candidate_id}
-                component_pair = len(pair) == 2 and pair <= components
-                parent_pair = bool(pair & parents) and bool(pair & components)
+                pair_meanings = {exact_proposition_key(records[value]) for value in pair if value in records}
+                component_pair = len(pair_meanings) == 2 and pair_meanings <= component_meanings
+                parent_pair = (len(pair_meanings) == 2 and parent_meaning in pair_meanings
+                               and bool(pair_meanings & component_meanings))
                 proper_part = parent_pair and any(self._verified_proper_part(decomposition, identifier)
-                                                 for identifier in pair & components)
+                    for identifier in components if identifier in records
+                    and exact_proposition_key(records[identifier]) in pair_meanings)
                 if relation.equivalence_state != "equivalent" or not (
                         (decomposition.state == "verified" and (component_pair or parent_pair))
                         or proper_part):
                     continue
-                self.relations[position] = replace(relation, relation="uncertain", equivalence_state="uncertain",
-                    equivalence_origin="conflicting_joint_granularity", equivalence_strength=None)
+                conflicting_relations.add(position)
                 if decomposition.state == "verified":
-                    self.decompositions[index] = replace(decomposition, state="conflicting",
-                        reason="component_equivalence_conflicts_with_joint_distinctness")
+                    conflicting_proofs.add(index)
                     restored.update(parents)
+        for position in conflicting_relations:
+            relation = relations[position]
+            self.relations[position] = replace(relation, relation="uncertain", equivalence_state="uncertain",
+                equivalence_origin="conflicting_joint_granularity", equivalence_strength=None,
+                initial_relation=relation.initial_relation if relation.initial_relation is not None else relation.relation,
+                initial_probability=relation.initial_probability if relation.initial_probability is not None else relation.probability)
+        for index in conflicting_proofs:
+            self.decompositions[index] = replace(self.decompositions[index], state="conflicting",
+                reason="component_equivalence_conflicts_with_joint_distinctness")
         if restored:
             self._inherit_decomposition_state()
         return bool(restored)
