@@ -70,18 +70,21 @@ class InformationJudgeScopeTests(unittest.TestCase):
                 self.assertEqual([proposal["text"] for proposal in proposals],
                                  [record.candidate.text for record in run.candidates])
 
-    def test_single_identical_component_is_judged_and_cannot_bypass_minimum_partition_size(self):
+    def test_single_identical_component_preserves_provenance_without_impossible_verification(self):
         source = "A repercussão é mundial. Outra notícia foi publicada."
         proposal = candidate("v0:s0", source, text="A repercussão é mundial.")
         run, target, evaluator, _ = self.seeded_run([source], [proposal, proposal])
-        record = run._verify_decomposition(target, run.candidates[0], run.candidates[1:])
-        state, questions = evaluator.inventory_calls[-1]
+        state = run._joint_state(target, run.candidates[0], run.candidates[1:])
         self.assertEqual(state["parent_claim_text"], state["component_claim_texts"][0])
-        self.assertIn("An identical statement or complete paraphrase covers", questions["components_cover_parent"])
-        # Deliberately inconsistent all-positive fixture scores still cannot replace
-        # a parent with one child; scores remain visible rather than being rewritten.
-        self.assertEqual(dict.fromkeys(DECOMPOSITION_QUESTIONS, .99), dict(record.signals))
+        joint = (("splittable", .8), ("proper_part:" + run.candidates[1].id, .9))
+        before = (len(run.calls), run.budget.remaining, run.granularity_checks)
+        record = run._verify_decomposition(target, run.candidates[0], run.candidates[1:], joint)
+        self.assertEqual(before, (len(run.calls), run.budget.remaining, run.granularity_checks))
+        self.assertEqual([], evaluator.inventory_calls)
+        self.assertEqual(joint, record.signals)
+        self.assertEqual("insufficient_distinct_components", record.reason)
         self.assertEqual("partial", record.state)
+        self.assertEqual((run.candidates[1].id,), record.component_candidate_ids)
         self.assertEqual("unit_candidate", run.candidates[0].inventory_role)
 
     def test_true_compound_generation_and_verification_use_only_explicit_parent_meaning(self):

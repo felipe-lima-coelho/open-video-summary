@@ -1010,6 +1010,7 @@ class _AnalysisRun(SemanticInventory):
                 parent_candidate_ids=parent_candidate_ids, recovery_focus_id=recovery_focus_id,
                 inventory_role=record.inventory_role, decomposition_ids=record.decomposition_ids,
             )
+            records[-1] = self._with_known_atomicity(records[-1])
             return records[-1]
         state, questions, granularity = validation_spec(
             candidate, identifier, target, tuple(self.segments[item] for item in permitted_ids if item != target.id)
@@ -1109,6 +1110,7 @@ class _AnalysisRun(SemanticInventory):
         except Exception as exc:
             records[-1] = replace(record, reasons=(type(exc).__name__,))
             raise
+        records[-1] = self._with_known_atomicity(records[-1])
         return records[-1]
 
     @staticmethod

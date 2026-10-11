@@ -405,6 +405,111 @@ class InformationStabilityTests(unittest.TestCase):
         self.assertTrue(any(item.reason == "joint_review_budget" for item in report.decompositions))
         self.assertTrue(all(unit.text in {item["text"] for item in [*parts, *short]} for unit in report.units))
 
+    def test_generated_exact_aliases_do_not_displace_fixed_parent_agenda_or_peers(self):
+        early = "O backup é diário e a retenção dura 30 dias."
+        whole = "O sistema faz o telefone funcionar e permite usar aplicativos."
+        source = early + " " + whole
+        parent = candidate("v0:s0", source, quote=early, quantities=("30 dias",))
+        late = candidate("v0:s0", source, quote=whole)
+        parts = [candidate("v0:s0", source, quote="O sistema faz o telefone funcionar",
+                           text="O sistema faz o telefone funcionar."),
+                 candidate("v0:s0", source, quote="permite usar aplicativos",
+                           text="O sistema permite usar aplicativos.")]
+        captures = []
+        for aliases in ([], [late, *parts, late, *parts]):
+            def generate(data, route):
+                if route == "direct":
+                    return [parent, *parts]
+                if route == "decompose_candidate" and data["parent_claim_text"] == early:
+                    return aliases
+                return []
+            evaluator = InventoryEvaluator(splits={early: ("O backup é diário.", "A retenção dura 30 dias."),
+                whole: tuple(item["text"] for item in parts)},
+                verification={early: {"parent_covers_components": .01}})
+            generator = ScriptedGenerator(callback=generate)
+            report = InformationAnalyzer(generator, evaluator, InformationAnalysisConfig(
+                concurrency=1, qa_enabled=False, max_coverage_foci=0, max_literal_repairs=0,
+                max_granularity_checks=2, max_calls=256)).analyze(capture_snapshot(videos([source])))
+            reviews = [(state, questions) for state, questions in evaluator.inventory_calls if "splittable" in questions]
+            self.assertEqual([early, whole], [state["parent_claim_text"] for state, _ in reviews])
+            later_review = reviews[1]
+            self.assertEqual([item["text"] for item in parts], later_review[0]["component_claim_texts"])
+            self.assertEqual(2, json.loads(report.metadata_json)["granularity_checks"])
+            self.assertEqual(1, sum('"analysis_task":"decompose_candidate"' in item.prompt for item in generator.requests))
+            parents = [row for row in report.candidates if row.candidate.text == whole]
+            self.assertTrue(all(row.inventory_role == "decomposed_parent" for row in parents))
+            self.assertTrue(all(row.atomicity_state == "compound" for row in parents))
+            self.assertEqual(len(aliases), sum(row.route == "decomposition" for row in report.candidates))
+            captures.append((later_review, [unit.text for unit in report.units]))
+        self.assertEqual(captures[0], captures[1])
+
+    def test_exact_alias_replays_current_atomicity_before_component_eligibility(self):
+        source = "O backup é diário e a retenção dura 30 dias."
+        raw = candidate("v0:s0", source, quantities=("30 dias",))
+        for state, expected in (("compound", False), ("atomic", True), ("uncertain", False)):
+            with self.subTest(state=state):
+                evaluator = GranularityEvaluator(choice_probability=.7,
+                    atomicity=.5 if state == "uncertain" else None,
+                    splits={source:("O backup é diário.", "A retenção dura 30 dias.")} if state == "compound" else {})
+                run = self.run_for(source, evaluator=evaluator)
+                original = self.validate(run, raw)
+                target = run.snapshot.current_segments[0]
+                run._review_atomicity(target)
+                before = len(run.calls)
+                alias = run._validate(raw, target, "decomposition", 0, (target.id,), parent_candidate_ids=(original.id,))
+                self.assertEqual(before, len(run.calls))
+                self.assertEqual("supported_pending_granularity", alias.validation)
+                self.assertEqual(original.signals, alias.signals)
+                self.assertEqual(raw, json.loads(alias.raw_json))
+                self.assertEqual((state, original.id, original.id),
+                    (alias.atomicity_state, alias.atomicity_review_origin, alias.validation_reused_from))
+                self.assertEqual(expected, run._component_eligible(alias))
+                # A later authoritative family state takes precedence over the
+                # stale immutable alias passed by an earlier caller.
+                run.atomicity_reviews[exact_proposition_key(alias)] = (
+                    "uncertain", (("atomic", .5), ("compound", .5)), "new-audit-origin")
+                self.assertFalse(run._component_eligible(alias))
+                refreshed = run._with_known_atomicity(alias)
+                self.assertEqual(("uncertain", "new-audit-origin"),
+                                 (refreshed.atomicity_state, refreshed.atomicity_review_origin))
+
+    def test_unaudited_alias_and_duplicate_children_never_fabricate_partition_proof(self):
+        source = "O backup é diário e a retenção dura 30 dias."
+        run = self.run_for(source, evaluator=GranularityEvaluator(choice_probability=.7))
+        parent = self.validate(run, candidate("v0:s0", source))
+        raw = candidate("v0:s0", source, text="O backup é diário.")
+        first, alias = self.validate(run, raw), self.validate(run, raw)
+        self.assertEqual(("not_reviewed", None), (alias.atomicity_state, alias.atomicity_review_origin))
+        self.assertFalse(run._component_eligible(alias))
+        # Even two independently accepted aliases are only one distinct meaning.
+        children = [replace(row, validation="accepted", granularity="atomic") for row in (first, alias)]
+        signals = (("splittable", .99), ("proper_part:" + first.id, .99))
+        before = (len(run.calls), run.budget.remaining, run.granularity_checks)
+        proof = run._verify_decomposition(run.snapshot.current_segments[0], parent, children, signals)
+        self.assertEqual(before, (len(run.calls), run.budget.remaining, run.granularity_checks))
+        self.assertEqual(("partial", "insufficient_distinct_components", signals),
+                         (proof.state, proof.reason, proof.signals))
+        self.assertEqual((first.id, alias.id), proof.component_candidate_ids)
+        self.assertTrue(all(row.inventory_role == "unit_candidate" for row in run.candidates))
+
+    def test_known_compound_alias_cannot_supply_second_eligible_component(self):
+        source = "O backup é diário e a retenção dura 30 dias. A rede mudou."
+        compound = candidate("v0:s0", source, quote="O backup é diário e a retenção dura 30 dias.")
+        other = candidate("v0:s0", source, quote="A rede mudou.")
+        run = self.run_for(source, evaluator=InventoryEvaluator(splits={compound["text"]:("O backup é diário.", "A retenção dura 30 dias.")}))
+        parent = self.validate(run, candidate("v0:s0", source))
+        original, atom = self.validate(run, compound), self.validate(run, other)
+        target = run.snapshot.current_segments[0]
+        run._review_atomicity(target)
+        alias = run._validate(compound, target, "decomposition", 0, (target.id,))
+        before = len(run.calls)
+        proof = run._verify_decomposition(target, parent, [alias, atom])
+        self.assertEqual(before, len(run.calls))
+        self.assertEqual("insufficient_distinct_components", proof.reason)
+        self.assertEqual("compound", alias.atomicity_state)
+        self.assertEqual(original.id, alias.atomicity_review_origin)
+        self.assertEqual((alias.id, atom.id), proof.component_candidate_ids)
+
     def test_source_qualified_child_must_still_be_a_part_of_the_explicit_parent(self):
         source = "O sistema faz o telefone funcionar e permite usar aplicativos."
         parent = candidate("v0:s0", source, text="O sistema faz o telefone funcionar.")
@@ -418,9 +523,11 @@ class InformationStabilityTests(unittest.TestCase):
         self.validate(run, parent)
         run._reconcile_granularity(run.snapshot.current_segments[0])
         self.assertEqual("accepted", run.candidates[1].validation)
-        self.assertEqual("conflicting", run.decompositions[-1].state)
+        self.assertEqual("partial", run.decompositions[-1].state)
+        self.assertEqual("insufficient_distinct_components", run.decompositions[-1].reason)
         self.assertEqual("unit_candidate", run.candidates[0].inventory_role)
-        self.assertEqual(.01, dict(run.decompositions[-1].signals)["parent_covers_components"])
+        self.assertNotIn("parent_covers_components", dict(run.decompositions[-1].signals))
+        self.assertFalse(any(call.operation == "verify_decomposition" for call in run.calls))
 
     def test_source_span_identity_does_not_depend_on_generator_order(self):
         source = "O serviço parou. A equipe chegou."

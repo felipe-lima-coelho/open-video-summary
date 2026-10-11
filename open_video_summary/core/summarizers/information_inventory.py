@@ -158,8 +158,20 @@ class SemanticInventory:
         """Keep source support separate from the unresolved number of atoms."""
         return record.content_supported
 
+    def _with_known_atomicity(self, record):
+        """Replay the current exact-family audit without replacing validation."""
+        if not self._content_eligible(record):
+            return record
+        known = self.atomicity_reviews.get(exact_proposition_key(record))
+        if known is None:
+            return record
+        state, signals, origin = known
+        return replace(record, atomicity_state=state, atomicity_signals=signals,
+                       atomicity_review_origin=origin)
+
     def _component_eligible(self, record):
         """A supported compound or unaudited gray child is not a verified atom."""
+        record = self._with_known_atomicity(record)
         return (self._content_eligible(record) and record.atomicity_state != "compound"
                 and (record.atomicity_state == "atomic" or
                      record.validation == "accepted" and record.granularity == "atomic"))
@@ -309,6 +321,10 @@ class SemanticInventory:
         return changed
 
     def _verify_decomposition(self, target, parent, children, joint_signals=()):
+        meanings = {exact_proposition_key(item) for item in children if self._component_eligible(item)}
+        if len(meanings) < 2:
+            return self._record_decomposition(parent, children, "partial", joint_signals,
+                                              reason="insufficient_distinct_components")
         try:
             signals, _ = self._evaluate("verify_decomposition", self._joint_state(target, parent, children),
                 DECOMPOSITION_QUESTIONS, correlation={"parent_candidate_id": parent.id,

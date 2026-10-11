@@ -293,6 +293,14 @@ Renaming an internal record therefore does not change its semantic request hash.
 This removes one irrelevant input difference; it does not make provider responses
 deterministic or resolve uncertainty about meaning.
 
+A partition with fewer than two distinct eligible component meanings cannot
+replace its parent. The analyzer records it as `partial` with reason
+`insufficient_distinct_components`, retaining its original signals, candidate
+links and source evidence without spending a decomposition-verification call.
+An exact alias inherits the current independent atomicity audit before component
+eligibility is checked; a previously identified compound cannot become an atomic
+child merely by arriving again through a different discovery route.
+
 For a comparison, keep and report every run's signature, digest, status, settings,
 counts and diagnostics. A changed signature means a recorded manifest field
 differs. A matching signature with a changed digest shows that the canonical
