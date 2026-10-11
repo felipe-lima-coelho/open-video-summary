@@ -124,6 +124,75 @@ class InformationInventoryTests(unittest.TestCase):
         self.assertTrue(all(item.source_identity == report.snapshot.current_segments[0].source_identity
                             for item in report.occurrences))
 
+    def test_legacy_recovery_reviews_and_decomposes_a_newly_accepted_false_atom(self):
+        source = "O backup é diário e a retenção dura 30 dias."
+        parent = candidate("v0:s0", source, quantities=("30 dias",))
+        parts = [candidate("v0:s0", source, text="O backup é diário."),
+                 candidate("v0:s0", source, text="A retenção dura 30 dias.", quantities=("30 dias",))]
+        evaluator = InventoryEvaluator(coverage={"v0:s0": [.99, .01]},
+            splits={source: tuple(item["text"] for item in parts)})
+        report, generator = self.run_inventory(texts=[source], recovery=[parent], components=parts,
+            evaluator=evaluator, max_coverage_foci=0, max_granularity_checks=8, max_calls=200)
+        self.assertEqual(["gap_detected", "no_gap_signaled"], [item.state for item in report.coverage])
+        self.assertEqual(("accepted", "atomic", "compound", "decomposed_parent"),
+            (report.candidates[0].validation, report.candidates[0].granularity,
+             report.candidates[0].atomicity_state, report.candidates[0].inventory_role))
+        self.assertEqual("recovery", report.candidates[0].route)
+        self.assertEqual("verified", report.decompositions[0].state)
+        self.assertEqual(("c1", "c2"), report.decompositions[0].component_candidate_ids)
+        self.assertEqual((3, 1, 2), (report.counts.accepted_candidates,
+            report.counts.decomposed_parent_candidates, report.counts.unique_units))
+        self.assertTrue(all("c0" not in unit.candidate_ids for unit in report.units))
+        self.assertTrue(all(item.parent_candidate_ids == ("c0",) and item.atomicity_state == "atomic"
+                            for item in report.candidates[1:]))
+        self.assertFalse(report.counts.counts_provisional)
+        self.assertEqual(2, json.loads(report.metadata_json)["atomicity_review_requests"])
+        self.assertTrue(any(json.loads(item.prompt.split("\nInput:\n", 1)[1]).get("analysis_task")
+                            == "decompose_candidate" for item in generator.requests))
+
+    def test_legacy_recovery_reuses_atomicity_for_an_exact_duplicate_without_counting_it_twice(self):
+        evaluator = InventoryEvaluator(coverage={"v0:s0": [.99]})
+        report, _ = self.run_inventory(direct=[self.frequency], recovery=[self.frequency],
+                                      evaluator=evaluator, max_coverage_foci=0)
+        self.assertEqual(1, report.counts.unique_units)
+        self.assertEqual(("c0", "c1"), report.units[0].candidate_ids)
+        self.assertEqual([("atomic", "c0"), ("atomic", "c0")],
+                         [(item.atomicity_state, item.atomicity_review_origin) for item in report.candidates])
+        self.assertEqual(1, json.loads(report.metadata_json)["atomicity_review_requests"])
+        self.assertIn("coverage_no_progress", [item.kind for item in report.issues])
+
+    def test_legacy_recovery_does_not_reset_the_shared_atomicity_review_budget(self):
+        evaluator = InventoryEvaluator(coverage={"v0:s0": [.99, .01]})
+        report, _ = self.run_inventory(direct=[self.frequency], recovery=[self.retention],
+            evaluator=evaluator, max_coverage_foci=0, max_granularity_checks=1, max_calls=200)
+        metadata = json.loads(report.metadata_json)
+        self.assertEqual(1, metadata["atomicity_review_requests"])
+        self.assertLessEqual(metadata["granularity_checks"], 1)
+        self.assertLessEqual(metadata["logical_calls"], 200)
+        self.assertEqual(["atomic", "not_reviewed"], [item.atomicity_state for item in report.candidates])
+        self.assertEqual(2, report.counts.unique_units)
+        self.assertTrue(report.counts.counts_provisional)
+        self.assertIn("atomicity_review_budget", [item.kind for item in report.issues])
+
+    def test_legacy_recovered_compound_stays_visible_when_the_call_budget_prevents_its_split(self):
+        for max_calls, atomicity in ((5, "not_reviewed"), (8, "compound")):
+            with self.subTest(max_calls=max_calls):
+                evaluator = self.split_evaluator(coverage={"v0:s0": [.99, .01]})
+                report, _ = self.run_inventory(recovery=[self.parent],
+                    components=[self.frequency, self.retention], evaluator=evaluator,
+                    max_coverage_foci=0, max_calls=max_calls)
+                metadata = json.loads(report.metadata_json)
+                self.assertLessEqual(metadata["logical_calls"], max_calls)
+                self.assertEqual(0 if atomicity == "not_reviewed" else 1,
+                                 metadata["atomicity_review_requests"])
+                self.assertEqual(1, report.counts.unique_units)
+                self.assertEqual(("accepted", atomicity, "unit_candidate"),
+                    (report.candidates[0].validation, report.candidates[0].atomicity_state,
+                     report.candidates[0].inventory_role))
+                self.assertEqual(("c0",), report.units[0].candidate_ids)
+                self.assertEqual("provisional_granularity", report.units[0].inventory_state)
+                self.assertTrue(report.counts.counts_provisional)
+
     def test_partial_decomposition_keeps_parent_and_parts_as_visible_provisional_alternatives(self):
         for children in ([self.frequency], [self.frequency, self.retention]):
             with self.subTest(children=len(children)):

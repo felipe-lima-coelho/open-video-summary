@@ -1233,6 +1233,7 @@ class _AnalysisRun(SemanticInventory):
                 return
             previous_content, previous_annotations = self._recovery_progress(target.id)
             self._extract(target, "recovery", round_number + 1, audit)
+            self._reconcile_granularity(target)
             current_content, current_annotations = self._recovery_progress(target.id)
             if not (current_content - previous_content or current_annotations - previous_annotations):
                 self.issue(
