@@ -12,7 +12,7 @@ from open_video_summary.errors import ConfigurationError
 from open_video_summary.utils.paths import project_path
 
 
-def validate_information_destination(path, *, reserved=(), suffix=".json") -> Path:
+def validate_information_destination(path, *, reserved=(), suffix=".json", _owned_update=False) -> Path:
     destination = project_path(path).resolve()
     outputs = project_path("outputs").resolve()
     if not destination.is_relative_to(outputs) or destination.suffix.lower() != suffix:
@@ -31,10 +31,59 @@ def validate_information_destination(path, *, reserved=(), suffix=".json") -> Pa
             raise ConfigurationError(
                 "The information report aliases a protected input or summary artifact."
             )
-    if destination.exists():
+    if destination.exists() and not _owned_update:
         raise ConfigurationError(
             "The information destination already exists; choose a new report path."
         )
+    return destination
+
+
+def information_file_identity(path):
+    status = project_path(path).stat()
+    return status.st_dev, status.st_ino
+
+
+def append_information_stage(previous, report, path, *, reserved=(), owned_identity=None) -> Path:
+    """Atomically extend only this run's untouched report with one stage appendix.
+
+    Creation still refuses preexisting paths. Updating requires exact previous
+    content, unchanged initial inventory, and an append-only stage prefix. An
+    externally modified/replaced file is preserved and reported as a failure.
+    """
+    original_path = project_path(path)
+    if original_path.is_symlink():
+        raise ConfigurationError("The owned information path was replaced with a symlink.")
+    destination = validate_information_destination(path, reserved=reserved, _owned_update=True)
+    old, new = previous.to_dict(), report.to_dict()
+    prior_stages, stages = old.pop("stage_reports"), new.pop("stage_reports")
+    if (old != new or len(stages) != len(prior_stages) + 1
+            or stages[:-1] != prior_stages):
+        raise ConfigurationError("Information stage updates must preserve the complete initial report.")
+    expected = (json.dumps(previous.to_dict(), ensure_ascii=False, indent=2, allow_nan=False)
+                + "\n").encode("utf-8")
+
+    def unchanged():
+        if (destination.is_symlink() or not destination.is_file()
+                or destination.stat().st_nlink != 1
+                or (owned_identity is not None and information_file_identity(destination) != owned_identity)
+                or destination.read_bytes() != expected):
+            raise ConfigurationError("The owned information report changed; it was not overwritten.")
+
+    unchanged()
+    payload = json.dumps(report.to_dict(), ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="",
+                dir=destination.parent, prefix=".information-", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        unchanged()
+        os.replace(temporary, destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return destination
 
 

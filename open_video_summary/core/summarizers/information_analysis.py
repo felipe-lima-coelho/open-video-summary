@@ -260,6 +260,11 @@ class InformationAnalyzer:
     def analyze(self, snapshot: AnalysisSnapshot) -> InformationReport:
         return _AnalysisRun(self, snapshot).run()
 
+    def analyze_discarded(self, initial_report, stage):
+        """Assess fixed initial questions in a discarded-only source scope."""
+        from open_video_summary.core.summarizers.information_plugin import analyze_discarded_questions
+        return analyze_discarded_questions(self, initial_report, stage)
+
 
 class _AnalysisRun(SemanticInventory):
     def __init__(self, analyzer, snapshot, *, budget=None, parent=None, target_index=None):
@@ -2033,7 +2038,7 @@ class _AnalysisRun(SemanticInventory):
         metadata["reliability_diagnostics"] = reliability_diagnostics(self.issues, self.candidates,
             self.relations, self.coverage_foci, self.unexamined_pair_count)
         report = InformationReport(
-            10,
+            11,
             PROTOCOL_VERSION,
             self.run_id,
             status,
@@ -2050,6 +2055,8 @@ class _AnalysisRun(SemanticInventory):
             tuple(self.decompositions),
             tuple(self.coverage_foci),
         )
+        from open_video_summary.core.summarizers.information_questions import with_information_questions
+        report = with_information_questions(report, self.config.acceptance_threshold)
         self._notify("analysis_completed", status=status)
         return report
 
@@ -2197,7 +2204,7 @@ def failed_information_report(snapshot, exc) -> InformationReport:
         counts_provisional=True,
     )
     return InformationReport(
-        10,
+        11,
         PROTOCOL_VERSION,
         uuid.uuid4().hex,
         "failed",

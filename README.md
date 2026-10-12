@@ -232,10 +232,13 @@ consume random state.
 
 ## Inventory information before summary selection
 
-Information analysis is opt-in. It runs **once before Introduction** in the
+Information analysis is opt-in. Its inventory runs **once before Introduction** in the
 existing HSM pipeline, using all source transcript segments while the selection
 handler's output is still empty. It returns a separate information report and
-adds no include, discard, pick, or output decisions. The original `summarize`
+adds no include, discard, pick, or output decisions. Initial source-based questions
+are saved with their units and literal evidence. The plugin then assesses those
+fixed questions after each module that removes segments, including QualityPick
+non-winners, and appends separate stage reports to the inventory JSON. The original `summarize`
 command continues to work without provider credentials when this option is absent.
 
 The generator uses the existing Ollama/OpenAI adapters. An independently selected
@@ -267,8 +270,11 @@ by the inventory analyzer. API services can incur usage charges.
 
 `summarize --analyze-information` enables the same hook and automatically chooses
 `outputs/information/<run-id>.json`. `--information-report` also enables it.
-Explicit report files are never overwritten, including when the HSM singleton is
-used twice. Reports and optional CSV tables must live under `outputs/`; resolved
+Creating a report refuses existing destinations, including when the HSM singleton
+is used twice. Within that same run, stage appends atomically update its owned JSON
+only when the saved previous content and original inventory are unchanged; external
+edits are preserved. The optional CSV remains the initial inventory. Reports and
+optional CSV tables must live under `outputs/`; resolved
 aliases of the input dataset, source videos and summary artifacts are refused.
 Writes publish a complete UTF-8 file atomically. If analysis fails or reaches a
 limit, summary selection proceeds and the CLI prints the analysis status. A
@@ -548,7 +554,9 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--information-coverage-foci` | `OVS_INFORMATION_COVERAGE_FOCI` | 16 independent source foci per target (0–256); 0 selects the legacy segment audit |
 | `--information-gap-repairs` | `OVS_INFORMATION_GAP_REPAIRS` | 2 attempts per source focus (0–10), also bounded by target rounds and global calls |
 | `--information-concurrency` | `OVS_INFORMATION_CONCURRENCY` | 2 independent source targets (range 1–8) |
-| `--information-max-calls` | `OVS_INFORMATION_MAX_CALLS` | 256 logical calls |
+| `--information-max-calls` | `OVS_INFORMATION_MAX_CALLS` | 256 logical calls for the initial inventory |
+| Library config `stage_max_calls` | `OVS_INFORMATION_STAGE_MAX_CALLS` | 128 additional evaluator requests per module with removals (0–10000); pending matches remain explicit |
+| Library plugin exclusions | `OVS_INFORMATION_EXCLUDE_MODULES` | Empty: attach to all modules; exact comma-separated criterion names or fully qualified class names |
 | `--information-rounds` | `OVS_INFORMATION_ROUNDS` | 2 recovery rounds per target |
 | `--information-pair-concurrency` | `OVS_INFORMATION_PAIR_CONCURRENCY` | 8 comparison requests in flight (range 1–8) |
 | `--information-pair-batch-size` | `OVS_INFORMATION_PAIR_BATCH_SIZE` | 4 independently keyed pair decisions per request (range 1–8); 1 enables the individual baseline |
@@ -876,9 +884,14 @@ not forcibly abort their sockets.
 The neutral `AnalysisSnapshot -> InformationReport` contract lives alongside the
 analyzer in `core/summarizers/`. Original source provenance and allowed current
 stage context are distinct: removed source content cannot be reintroduced solely
-through provenance. A future plugin that consumes another module's stage result
-is **not implemented**; there is no generic multi-hook framework or stage delta
-tracking in this change.
+through provenance. The plugin that consumes a module's stage result
+uses the generic criterion observation hook. Existing and future `SelectionCriteria`
+constructors accept `information_analyzer=analyzer` or an `InformationAnalysisPlugin`;
+`information_analyzer=False` or `None` explicitly excludes that module. Pipeline
+injection attaches by default, including to duck-typed modules. See
+[Information-analysis plugin](docs/information_plugin.md) for API examples,
+QualityPick removal semantics, bounded fixed-question assessment, uncertainty,
+deduplication and owned report persistence.
 
 Offline tests use synthetic Portuguese fixtures, mocked generators and evaluators,
 and real adapter serializers with fake HTTP transport. They check integration and

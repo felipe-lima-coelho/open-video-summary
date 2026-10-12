@@ -1,9 +1,12 @@
-from functools import reduce
 import warnings
+from contextlib import nullcontext
 from dataclasses import replace
 
 from open_video_summary.entities.video import Video
 from open_video_summary.core.selection_criteria.base import SelectionCriteria
+from open_video_summary.core.selection_criteria.observation import (
+    INHERIT_INFORMATION, InformationObservation, information_observation, observe_evaluation,
+)
 from open_video_summary.handlers.summary import (
     SummarySegmentHandler,
     SummarySegmentHandlerIO,
@@ -13,8 +16,9 @@ from open_video_summary.utils.audit import finalize_summary_audit, save_summary_
 
 
 class Summarizer:
-    def __init__(self, selection_criteria: list[SelectionCriteria]) -> None:
+    def __init__(self, selection_criteria: list[SelectionCriteria], *, information_analyzer=None) -> None:
         self.selection_criteria = selection_criteria
+        self.information_analyzer = information_analyzer
         self.last_handler = None
         self.last_audit = None
         self.last_information_report = None
@@ -30,7 +34,7 @@ class Summarizer:
         save_output: bool = True,
         audit_output_path: str | None = None,
         collect_audit: bool = True,
-        information_analyzer=None,
+        information_analyzer=INHERIT_INFORMATION,
         information_output_path: str | None = None,
         information_csv_path: str | None = None,
         information_input_path: str | None = None,
@@ -39,9 +43,19 @@ class Summarizer:
         self.last_information_report = None
         self.last_information_path = None
         self.last_information_error = None
+        self._information_reserved = ()
+        self._information_identity = None
+        if information_analyzer is INHERIT_INFORMATION:
+            information_analyzer = self.information_analyzer
+        for criterion in self.selection_criteria:
+            try:
+                criterion.last_information_report = None
+            except Exception:
+                pass
         handler = SummarySegmentHandler(audit_enabled=collect_audit)
         handler.set_source_videos(videos)
-        if information_analyzer is not None:
+        observation = None
+        if information_analyzer is not None and information_analyzer is not False:
             self._analyze_information(
                 handler, information_analyzer, information_output_path,
                 information_csv_path, information_input_path, video_output_path,
@@ -53,9 +67,18 @@ class Summarizer:
                                                 self.last_information_path)
                 except Exception:
                     pass
+            if self.last_information_report is not None:
+                try:
+                    observation = InformationObservation(information_analyzer,
+                        self.last_information_report, on_report=self._append_information)
+                except Exception as exc:
+                    self.last_information_error = type(exc).__name__
         error = None
         try:
-            handler = reduce(lambda h, c: c.evaluate(h), self.selection_criteria, handler)
+            with information_observation(observation) if observation is not None else nullcontext():
+                for criterion in self.selection_criteria:
+                    handler = observe_evaluation(criterion, handler,
+                        lambda: criterion.evaluate(handler))
             handler.finalize()
         except Exception as exc:
             error = exc
@@ -64,6 +87,8 @@ class Summarizer:
                     report["status"] = "failed"
             raise
         finally:
+            if observation is not None and observation.last_error is not None:
+                self.last_information_error = observation.last_error
             finalize_summary_audit(handler, status="failed" if error else "completed", error=error)
             self.last_handler = handler
             self.last_audit = handler.audit if collect_audit else None
@@ -86,7 +111,7 @@ class Summarizer:
     def _analyze_information(self, handler, analyzer, report_path, csv_path, input_path, video_path, handler_path, audit_path, save_output):
         from open_video_summary.core.summarizers.information_analysis import failed_information_report
         from open_video_summary.core.summarizers.information_contracts import AnalysisIssue, capture_snapshot
-        from open_video_summary.core.summarizers.information_io import save_information_report
+        from open_video_summary.core.summarizers.information_io import information_file_identity, save_information_report
 
         try:
             snapshot = capture_snapshot(handler.source, stage_id="before_introduction", selection_stage_order=tuple(criterion.name for criterion in self.selection_criteria))
@@ -94,15 +119,20 @@ class Summarizer:
                 report = analyzer.analyze(snapshot)
             except Exception as exc:
                 report = failed_information_report(snapshot, exc)
+            from open_video_summary.core.summarizers.information_questions import with_information_questions
+            report = with_information_questions(report,
+                getattr(getattr(analyzer, "config", None), "acceptance_threshold", 0.85))
             self.last_information_report = report
             if save_output or report_path is not None:
                 output = project_path(video_path)
                 reserved = [input_path, video_path, handler_path, audit_path or output.with_name(f"{output.stem}_audit.json"), output.with_suffix(".json"), output.with_name(f"{output.stem}_visual_profile.json")]
                 reserved.extend(video.path for video in handler.source)
                 reserved.extend(segment.video_path for video in handler.source for segment in video.segments)
+                self._information_reserved = tuple(reserved)
                 destination = report_path or f"outputs/information/{report.run_id}.json"
                 try:
                     self.last_information_path = save_information_report(report, destination, reserved=reserved, csv_path=csv_path)
+                    self._information_identity = information_file_identity(self.last_information_path)
                 except Exception as exc:
                     self.last_information_error = type(exc).__name__
                     report = replace(report, status="partial" if report.units else "failed", counts=replace(report.counts, valid_zero=False), issues=report.issues + (AnalysisIssue("report_write_failed", type(exc).__name__),))
@@ -111,6 +141,7 @@ class Summarizer:
                     # the existing selection flow continues without a new log action.
                     try:
                         self.last_information_path = save_information_report(report, f"outputs/information/{report.run_id}_failed.json", reserved=reserved)
+                        self._information_identity = information_file_identity(self.last_information_path)
                     except Exception:
                         pass
             if report.status != "completed":
@@ -118,3 +149,32 @@ class Summarizer:
         except Exception as exc:
             self.last_information_error = type(exc).__name__
             warnings.warn(f"Information analysis failed ({type(exc).__name__}); summary selection continues.", RuntimeWarning, stacklevel=2)
+
+    def _append_information(self, previous, report):
+        """Keep the initial inventory available while safely adding stage results."""
+        from open_video_summary.core.summarizers.information_contracts import AnalysisIssue
+        from open_video_summary.core.summarizers.information_io import (
+            append_information_stage, information_file_identity, save_information_report,
+        )
+        self.last_information_report = report
+        if self.last_information_path is not None:
+            try:
+                append_information_stage(previous, report, self.last_information_path,
+                                         reserved=self._information_reserved,
+                                         owned_identity=self._information_identity)
+                self._information_identity = information_file_identity(self.last_information_path)
+            except Exception as exc:
+                self.last_information_error = type(exc).__name__
+                stage = report.stage_reports[-1]
+                stage = replace(stage, status="partial" if stage.matches else "failed",
+                    issues=stage.issues + (AnalysisIssue("stage_report_write_failed", type(exc).__name__),))
+                report = replace(report, stage_reports=report.stage_reports[:-1] + (stage,))
+                self.last_information_report = report
+                try:
+                    self.last_information_path = save_information_report(report,
+                        f"outputs/information/{report.run_id}_stage_{len(report.stage_reports)}_failed.json",
+                        reserved=self._information_reserved)
+                    self._information_identity = information_file_identity(self.last_information_path)
+                except Exception:
+                    self.last_information_path = None
+        return report

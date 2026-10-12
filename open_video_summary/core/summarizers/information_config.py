@@ -32,6 +32,8 @@ class InformationAnalysisConfig:
     gap_threshold: float = 0.65
     equivalence_threshold: float = 0.90
     concurrency: int = 2
+    stage_max_calls: int = 128
+    excluded_modules: tuple[str, ...] = ()
 
     def __post_init__(self):
         if not isinstance(self.qa_enabled, bool):
@@ -40,6 +42,9 @@ class InformationAnalysisConfig:
             raise ConfigurationError("Information reproducible must be a boolean.")
         if self.experimental_mode not in {None, "direct", "qa", "hybrid", "hybrid_coverage"}:
             raise ConfigurationError("Information mode must be direct, qa, hybrid or hybrid_coverage.")
+        if not isinstance(self.excluded_modules, tuple) or not all(
+                isinstance(name, str) and name.strip() == name and name for name in self.excluded_modules):
+            raise ConfigurationError("Information excluded_modules must be a tuple of nonempty module names.")
         limits = {
             "max_granularity_checks": (0, 64),
             "max_coverage_foci": (0, 256),
@@ -53,6 +58,7 @@ class InformationAnalysisConfig:
             "qa_window_chars": (80, 4000),
             "max_qa_windows": (1, 64),
             "max_calls": (1, 10000),
+            "stage_max_calls": (0, 10000),
             "max_coverage_rounds": (0, 10),
             "max_literal_repairs": (0, 64),
             "max_pair_comparisons": (0, 10000),
@@ -166,6 +172,10 @@ def configured_information_analyzer(overrides=None, *, environ=None, env_file=No
         qa_window_chars=get("information_qa_window_chars", "OVS_INFORMATION_QA_WINDOW_CHARS", 240, int),
         max_qa_windows=get("information_max_qa_windows", "OVS_INFORMATION_MAX_QA_WINDOWS", 16, int),
         max_calls=get("information_max_calls", "OVS_INFORMATION_MAX_CALLS", 256, int),
+        stage_max_calls=get("information_stage_max_calls", "OVS_INFORMATION_STAGE_MAX_CALLS", 128, int),
+        excluded_modules=get("information_exclude_modules", "OVS_INFORMATION_EXCLUDE_MODULES", (),
+                             lambda value: tuple(name.strip() for name in
+                                (value if isinstance(value, (tuple, list)) else str(value).split(",")) if name.strip())),
         max_coverage_rounds=get("information_rounds", "OVS_INFORMATION_ROUNDS", 2, int),
         max_literal_repairs=get("information_literal_repairs", "OVS_INFORMATION_LITERAL_REPAIRS", 4, int),
         max_pair_comparisons=get(

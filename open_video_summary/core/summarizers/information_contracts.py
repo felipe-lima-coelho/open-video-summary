@@ -53,9 +53,9 @@ class SnapshotVideo:
 class AnalysisSnapshot:
     """Provenance remains available; semantic context is limited to current input.
 
-    This is a data contract, not a plugin/hook framework. A future caller must
-    explicitly construct its current stage input and cannot reintroduce removed
-    source segments as semantic context merely because provenance retains them.
+    Callers construct their current stage input explicitly and cannot reintroduce
+    removed source segments as semantic context merely because provenance retains
+    them. The information plugin uses discarded-only scopes for stage questions.
     """
 
     stage_id: str
@@ -463,6 +463,71 @@ class AnalysisProgress:
 
 
 @dataclass(frozen=True)
+class InformationQuestion:
+    """An initial-inventory query; different queries never add information units."""
+
+    id: str
+    unit_id: str
+    question: str
+    answer: str
+    candidate_ids: tuple[str, ...]
+    occurrence_ids: tuple[str, ...]
+    assertion_evidence: tuple[Evidence, ...]
+    context_evidence: tuple[Evidence, ...]
+    origin: str
+    signals: tuple[tuple[str, float], ...] = ()
+
+
+@dataclass(frozen=True)
+class DiscardQuestionMatch:
+    question_id: str
+    unit_id: str
+    occurrence_id: str
+    segment_id: str
+    state: str
+    answer: str | None
+    assertion_evidence: tuple[Evidence, ...]
+    context_evidence: tuple[Evidence, ...]
+    signals: tuple[tuple[str, float], ...] = ()
+    reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class InformationLossEstimate:
+    """Known-inventory stage risk, never proof of loss from a final summary."""
+
+    removed_unit_ids: tuple[str, ...]
+    retained_unit_ids: tuple[str, ...]
+    potentially_lost_unit_ids: tuple[str, ...]
+    unresolved_unit_ids: tuple[str, ...]
+    context_affected_unit_ids: tuple[str, ...]
+    removed_unique_units: int
+    potentially_lost_unique_units: int
+    potential_loss_lower_bound: int
+    potential_loss_upper_bound: int
+    counts_provisional: bool
+    definitely_lost_unique_units: int | None = None
+
+
+@dataclass(frozen=True)
+class InformationStageReport:
+    stage_id: str
+    module_name: str
+    module_type: str
+    initial_run_id: str
+    status: str
+    discarded_segment_ids: tuple[str, ...]
+    explicit_discard_action_ids: tuple[str, ...]
+    available_segment_ids: tuple[str, ...]
+    current_discarded_segment_ids: tuple[str, ...]
+    matches: tuple[DiscardQuestionMatch, ...]
+    loss: InformationLossEstimate
+    issues: tuple[AnalysisIssue, ...]
+    calls: tuple[AnalysisCall, ...]
+    metadata_json: str
+
+
+@dataclass(frozen=True)
 class InformationReport:
     schema_version: int
     protocol_version: str
@@ -480,6 +545,8 @@ class InformationReport:
     metadata_json: str
     decompositions: tuple[InformationDecomposition, ...] = ()
     coverage_foci: tuple[CoverageFocus, ...] = ()
+    questions: tuple[InformationQuestion, ...] = ()
+    stage_reports: tuple[InformationStageReport, ...] = ()
 
     def __post_init__(self):
         # Keep the aggregate flag consistent even for manually assembled partial

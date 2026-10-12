@@ -3,14 +3,25 @@ from abc import ABC, abstractmethod
 
 from open_video_summary.entities.video import Video, VideoSegment
 from open_video_summary.handlers.summary import SummarySegmentHandler
+from open_video_summary.core.selection_criteria.observation import INHERIT_INFORMATION, extend_criterion
 
 
 class SelectionCriteria(ABC):
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        extend_criterion(cls)
+
     def __init__(
-        self, read_from: str = "source", source_criteria: Optional[str] = None
+        self, read_from: str = "source", source_criteria: Optional[str] = None,
+        *, information_analyzer=INHERIT_INFORMATION,
     ) -> None:
         self.read_from = read_from
         self.source_criteria = source_criteria
+        self.information_analyzer = information_analyzer
+
+    def information_removed_segments(self, handler):
+        """Optional observational outcome for modules that retain only winners."""
+        return ()
 
     @abstractmethod
     def evaluate(self, handler: SummarySegmentHandler) -> SummarySegmentHandler:

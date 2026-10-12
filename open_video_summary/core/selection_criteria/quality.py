@@ -114,6 +114,8 @@ class QualityPick(SelectionCriteria):
         cache = _DescriptorCache(self.max_descriptor_cache_bytes)
         cache_token = _descriptor_cache.set(cache)
         self._last_extraction_details = {}
+        self._information_non_winners = ()
+        evaluated_candidates, stage_winners = set(), set()
         self.last_audit = (
             {
                 "status": "in_progress",
@@ -206,6 +208,9 @@ class QualityPick(SelectionCriteria):
                             if cluster_audit is not None:
                                 self._finish_cluster_audit(handler, cluster_audit, df, top_segments)
 
+                            evaluated_candidates.update(cluster)
+                            stage_winners.update(top_segments)
+
                             # Discarding whole cluster and including only best-quality segment
                             map(lambda s: self.discard(handler, s), cluster)
                             for segment in top_segments:
@@ -237,7 +242,16 @@ class QualityPick(SelectionCriteria):
             }
             log.info(f"Visual quality profile: {json.dumps(self.last_profile)}")
 
+        self._information_non_winners = tuple(
+            segment for segment in evaluated_candidates - stage_winners
+            if segment not in handler.include and segment not in handler.output
+            and segment not in handler.discard
+        )
         return handler
+
+    def information_removed_segments(self, handler):
+        """Report ranked-out candidates while preserving existing handler actions."""
+        return getattr(self, "_information_non_winners", ())
 
     def _start_cluster_audit(self, handler, cluster_index, cluster):
         if self.last_audit is None:
