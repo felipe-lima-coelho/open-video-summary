@@ -490,6 +490,9 @@ class DiscardQuestionMatch:
     context_evidence: tuple[Evidence, ...]
     signals: tuple[tuple[str, float], ...] = ()
     reasons: tuple[str, ...] = ()
+    initial_occurrence_ids: tuple[str, ...] = ()
+    evidence_granularity: str = "source_segment"
+    origin: str = "stage_question_source"
 
 
 @dataclass(frozen=True)

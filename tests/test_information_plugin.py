@@ -76,8 +76,10 @@ def fixture_report(snapshot, *, qa=False, repeat_questions=False, context_id=Non
 
 
 class StageEvaluator:
-    def __init__(self, signals=None, error=None):
+    def __init__(self, signals=None, error=None, signals_by_pair=None):
         self.signals, self.error = signals or {}, error
+        self.signals_by_pair = signals_by_pair or {}
+        self.pairs = []
         self.contexts, self.records = [], []
         self.preflight_calls = 0
         self.config = SimpleNamespace(provider="fixture", model="jev-fixture")
@@ -92,24 +94,51 @@ class StageEvaluator:
         metadata = EvaluationMetadata("jev-fixture", "jev-fixture", 0, 1, "success",
                                       provider="fixture")
         self.records.append(metadata)
-        return EvaluationResult(tuple(NoulResult(key, self.signals.get(key, .99))
+        target_id = context.split("Target id: ", 1)[1].split("\n", 1)[0]
+        claim = context.split("Candidate claim:\n", 1)[1].split("\n\n", 1)[0]
+        source = context.split(f"Original target scope [{target_id}]:\n", 1)[1].split("\n\n", 1)[0]
+        pair = claim, target_id
+        self.pairs.append(pair)
+        explicit = self.signals_by_pair.get(pair)
+        # These literal fixture defaults are not a semantic matching algorithm.
+        # Nonliteral/source-fidelity decisions are scripted explicitly per pair.
+        probability = (.99 if claim in source else .01) if explicit is None else (
+            .99 if isinstance(explicit, dict) else explicit)
+        overrides = {**(explicit if isinstance(explicit, dict) else {}), **self.signals}
+        return EvaluationResult(tuple(NoulResult(key, overrides.get(key, probability))
                                       for key in noul), (), metadata)
 
 
 class FixtureAnalyzer:
     def __init__(self, *, evaluator=None, qa=False, repeat_questions=False, context_id=None,
-                 status="completed", **settings):
+                 status="completed", inventory_ids=None, **settings):
         self.generator, self.evaluator = SimpleNamespace(), evaluator or StageEvaluator()
         self.config = InformationAnalysisConfig(**settings)
         self.progress, self.progress_interval_seconds = None, 10
         self.qa, self.repeat_questions = qa, repeat_questions
         self.context_id, self.status = context_id, status
+        self.inventory_ids = inventory_ids
         self.snapshots = []
 
     def analyze(self, snapshot):
         self.snapshots.append(snapshot)
-        return fixture_report(snapshot, qa=self.qa, repeat_questions=self.repeat_questions,
-                              context_id=self.context_id, status=self.status)
+        targets = snapshot if self.inventory_ids is None else replace(snapshot,
+            current_order=tuple(self.inventory_ids), allowed_context_ids=tuple(self.inventory_ids))
+        report = fixture_report(targets, qa=self.qa, repeat_questions=self.repeat_questions,
+                                context_id=self.context_id, status=self.status)
+        if self.inventory_ids is None:
+            return report
+        counts = replace(report.counts,
+            by_segment=tuple(ScopeCount(segment.id,
+                sum(item.segment_id == segment.id for item in report.occurrences),
+                len({item.unit_id for item in report.occurrences if item.segment_id == segment.id}))
+                for segment in snapshot.current_segments),
+            by_video=tuple(ScopeCount(video.id,
+                sum(item.segment_id in {segment.id for segment in video.segments} for item in report.occurrences),
+                len({item.unit_id for item in report.occurrences
+                     if item.segment_id in {segment.id for segment in video.segments}}))
+                for video in snapshot.source))
+        return replace(report, snapshot=snapshot, counts=counts)
 
     def analyze_discarded(self, report, stage):
         return analyze_discarded_questions(self, report, stage)
@@ -316,14 +345,121 @@ class InformationPluginTests(unittest.TestCase):
             self.assertIn(text, analyzer.evaluator.contexts[0])
 
     def test_missing_context_is_not_imported_from_retained_provenance(self):
-        analyzer = FixtureAnalyzer(context_id="v0:s0")
+        analyzer = FixtureAnalyzer(context_id="v0:s0", evaluator=StageEvaluator({"support": .5}))
         summarizer = Summarizer([Remove((1,))])
         summarizer.summarize(videos(["The reference is a proposed deadline.", "It may be extended."]),
                              save_output=False, information_analyzer=analyzer)
         stage = summarizer.last_information_report.stage_reports[0]
-        self.assertEqual("context_missing", stage.matches[0].state)
-        self.assertFalse(analyzer.evaluator.contexts)
+        self.assertEqual(2, len(stage.matches))
+        self.assertEqual("uncertain", stage.matches[1].state)
+        self.assertTrue(analyzer.evaluator.contexts)
+        for context in analyzer.evaluator.contexts:
+            self.assertIn("Original reference scope:\nNone", context)
         self.assertEqual(["v0:s1"], json.loads(stage.metadata_json)["semantic_context_ids"])
+
+    def test_full_question_source_product_checks_cross_question_sources(self):
+        analyzer = FixtureAnalyzer()
+        summarizer = Summarizer([Remove((0, 1))])
+        summarizer.summarize(videos(["First claim.", "Second claim."]), save_output=False,
+                             information_analyzer=analyzer)
+        report = summarizer.last_information_report
+        stage = report.stage_reports[0]
+        self.assertEqual({(question.id, segment.id) for question in report.questions
+            for segment in report.snapshot.current_segments},
+            {(match.question_id, match.segment_id) for match in stage.matches})
+        self.assertEqual(["answerable", "not_answerable", "not_answerable", "answerable"],
+                         [match.state for match in stage.matches])
+        self.assertEqual(4, json.loads(stage.metadata_json)["planned_comparisons"])
+        self.assertEqual(0, json.loads(stage.metadata_json)["pending_comparisons"])
+        self.assertEqual(4, len(analyzer.evaluator.contexts))
+        self.assertEqual(2, stage.loss.removed_unique_units)
+        for match in stage.matches:
+            evidence = match.assertion_evidence[0]
+            target = next(segment for segment in report.snapshot.current_segments if segment.id == match.segment_id)
+            self.assertEqual(target.content, evidence.quote)
+            self.assertEqual((0, len(target.content)), (evidence.start_char, evidence.end_char))
+            self.assertEqual(target.source_identity, evidence.source_identity)
+            self.assertEqual("source_segment", match.evidence_granularity)
+            self.assertEqual("stage_question_source", match.origin)
+            self.assertNotIn(match.occurrence_id, {item.id for item in report.occurrences})
+
+    def test_missed_initial_occurrence_adds_new_removed_and_potential_unit_without_changing_inventory(self):
+        baseline = "The mayor might step down tomorrow."
+        source = videos(["The mayor may resign tomorrow.", baseline])
+        analyzer = FixtureAnalyzer(inventory_ids=("v0:s1",), status="partial",
+            evaluator=StageEvaluator(signals_by_pair={(baseline, "v0:s0"): .99}))
+        summarizer = Summarizer([Remove((1,), information_analyzer=False), Remove((0,))])
+        seen = []
+        summarizer.summarize(source, save_output=False, information_analyzer=analyzer,
+            information_report_observer=lambda report, path: seen.append(report))
+        report = summarizer.last_information_report
+        stage = report.stage_reports[0]
+        self.assertFalse(any(item.segment_id == "v0:s0" for item in seen[0].occurrences))
+        self.assertEqual(("v0:s0",), stage.discarded_segment_ids)
+        self.assertEqual("answerable", stage.matches[0].state)
+        self.assertFalse(stage.matches[0].initial_occurrence_ids)
+        self.assertEqual(("u0",), stage.loss.removed_unit_ids)
+        self.assertEqual(("u0",), stage.loss.potentially_lost_unit_ids)
+        self.assertEqual(1, stage.loss.removed_unique_units)
+        self.assertEqual(1, stage.loss.potentially_lost_unique_units)
+        self.assertTrue(stage.loss.counts_provisional)
+        self.assertIsNone(stage.loss.definitely_lost_unique_units)
+        self.assertEqual(seen[0].counts, report.counts)
+        self.assertEqual(seen[0].units, report.units)
+        self.assertEqual(seen[0].occurrences, report.occurrences)
+        self.assertEqual(seen[0].questions, report.questions)
+
+    def test_new_source_negative_and_gray_modality_checks_do_not_create_supported_loss(self):
+        baseline = "The mayor might step down tomorrow."
+        for signals, expected, upper in (({"modality": .01}, "not_answerable", 0),
+                                         ({"modality": .5}, "uncertain", 1)):
+            analyzer = FixtureAnalyzer(inventory_ids=("v0:s1",), status="partial",
+                evaluator=StageEvaluator(signals_by_pair={(baseline, "v0:s0"): signals}))
+            summarizer = Summarizer([Remove((1,), information_analyzer=False), Remove((0,))])
+            summarizer.summarize(videos(["The mayor may resign tomorrow.", baseline]),
+                                 save_output=False, information_analyzer=analyzer)
+            stage = summarizer.last_information_report.stage_reports[0]
+            self.assertEqual(expected, stage.matches[0].state)
+            self.assertIsNone(stage.matches[0].answer)
+            self.assertFalse(stage.loss.removed_unit_ids)
+            self.assertEqual(0, stage.loss.potentially_lost_unique_units)
+            self.assertEqual(upper, stage.loss.potential_loss_upper_bound)
+            self.assertEqual(signals["modality"], dict(stage.matches[0].signals)["modality"])
+
+    def test_repeated_new_sources_and_multiple_questions_add_only_one_baseline_unit(self):
+        baseline = "The mayor might step down tomorrow."
+        analyzer = FixtureAnalyzer(inventory_ids=("v0:s2",), qa=True, repeat_questions=True,
+            status="partial", evaluator=StageEvaluator(signals_by_pair={
+                (baseline, "v0:s0"): .99, (baseline, "v0:s1"): .99}))
+        summarizer = Summarizer([Remove((2,), information_analyzer=False), Remove((0, 1))])
+        summarizer.summarize(videos(["The mayor may resign tomorrow.", "The mayor may resign tomorrow.", baseline]),
+                             save_output=False, information_analyzer=analyzer)
+        stage = summarizer.last_information_report.stage_reports[0]
+        self.assertEqual(4, len(stage.matches))
+        self.assertEqual(4, json.loads(stage.metadata_json)["planned_comparisons"])
+        self.assertTrue(all(match.state == "answerable" for match in stage.matches))
+        self.assertTrue(all(not match.initial_occurrence_ids for match in stage.matches))
+        self.assertEqual(1, stage.loss.removed_unique_units)
+        self.assertEqual(1, stage.loss.potentially_lost_unique_units)
+        self.assertEqual(1, stage.loss.potential_loss_upper_bound)
+
+    def test_full_product_zero_and_limited_budgets_record_each_pending_pair(self):
+        for limit in (0, 2):
+            analyzer = FixtureAnalyzer(stage_max_calls=limit)
+            summarizer = Summarizer([Remove((0, 1))])
+            summarizer.summarize(videos(["First claim.", "Second claim."]), save_output=False,
+                                 information_analyzer=analyzer)
+            stage = summarizer.last_information_report.stage_reports[0]
+            metadata = json.loads(stage.metadata_json)
+            self.assertEqual(4, metadata["planned_comparisons"])
+            self.assertEqual(4 - limit, metadata["pending_comparisons"])
+            self.assertEqual(4, len(stage.matches))
+            self.assertEqual(4 - limit, sum(match.state == "not_evaluated" for match in stage.matches))
+            self.assertEqual(limit, metadata["logical_calls"])
+            self.assertEqual(limit, len(analyzer.evaluator.contexts))
+            self.assertEqual(0 if limit == 0 else 1, analyzer.evaluator.preflight_calls)
+            self.assertTrue(stage.loss.counts_provisional)
+            self.assertEqual(2, stage.loss.potential_loss_upper_bound)
 
     def test_bounded_failed_stage_does_not_change_selection_or_mask_criterion_failure(self):
         source = videos(["First statement.", "Second statement."])

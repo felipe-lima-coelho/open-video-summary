@@ -106,12 +106,30 @@ invent a natural question, translate the proposition, add model requests or enab
 independent QA discovery. Accepted units without usable occurrences are listed in
 `metadata.question_inventory.uncovered_unit_ids`.
 
-Each stage uses those fixed questions and known initial occurrences whose assertion
-segments were removed. Evidence quotes and offsets must still match the frozen
-source exactly. The evaluator sees only the discarded target and discarded cited
-reference context. Original provenance is not permission to import a retained or
-previously removed reference into that scope. Missing context stays
-`context_missing`; no substituted context or cropped transcript is used.
+Each stage compares **every initial question with every newly removed source
+transcript**, including source occurrences missed by the initial inventory.
+`metadata.planned_comparisons` records the full question/source product. Budget,
+context-limit and provider failures leave explicit `not_evaluated` pairs and a
+`pending_comparisons` count; zero budget leaves the whole product pending without
+evaluator preflight or provider requests.
+
+Each pair has a stage-local `occurrence_id` identifying its support candidate,
+`origin="stage_question_source"`, and exact literal full-transcript assertion
+evidence at `[0, len(content))` with `evidence_granularity="source_segment"`. These
+are source-segment support records, not localized answer spans or new initial
+inventory occurrences. `initial_occurrence_ids` retains any corresponding initial
+anchors as optional provenance and never determines which pairs are checked.
+Quotes, source identities, offsets and segment timestamps must match the frozen
+source. Multiple queries/source matches do not increment initial inventory counts.
+
+The evaluator sees the discarded target and up to `context_segments` nearby
+discarded segments from the same video as reference context. Only target assertion
+wording can support the answer; reference context can resolve references but cannot
+supply a new assertion. The proposed baseline answer is a hypothesis to validate,
+never evidence for itself. Original provenance is not permission to import a
+retained or previously removed reference into that scope. Missing grounding must
+remain unsupported or uncertain; no substituted context or cropped transcript is
+used. Whole-segment evidence does not itself establish semantic support.
 
 Matches retain raw probabilities for support, governing conditions/exceptions,
 negation, quantities, modality, attribution, question answerability and complete
@@ -122,10 +140,12 @@ particular, a contradiction or loss of a source's uncertainty cannot satisfy a
 baseline question merely through topical similarity. These are model probability
 signals, not calibrated accuracy or proof of external truth.
 
-The search is scoped to evidence catalogued in the initial inventory; undiscovered
-answer occurrences can exist. It does not establish complete recall or claim that
-a question has no answer anywhere else in the transcripts. Initial partial results,
-unknown equivalence, provisional granularity and bounded stage work stay visible.
+The fixed question set still depends on the initial inventory; this pass does not
+discover new question meanings or units. Pending pairs, bounded discarded reference
+context and probabilistic decisions prevent a complete-recall claim. Retained
+support diagnostics use known initial occurrences and do not reanalyze retained
+transcripts. Initial partial results, unknown equivalence and provisional
+granularity stay visible.
 
 ## Removal and potential loss
 
@@ -146,12 +166,17 @@ distinguishes these ranked-out outcomes from explicit handler discard actions.
 This observation works with summary auditing disabled and does not change the
 existing visual scores, ties, chosen winners or decision log.
 
-`loss.removed_unit_ids` counts known semantic units with an assertion occurrence
-removed. Repeated occurrences and multiple questions contribute once per initial
-unit. A remaining known occurrence, with all its required context still available,
-places its unit in `retained_unit_ids`, preventing a potential-loss claim.
+`loss.removed_unit_ids` includes initial semantic units with an inventoried
+assertion occurrence removed **or a newly supported discarded question/source
+match**, even if that source occurrence was missed initially. Repeated occurrences,
+source aliases and multiple questions contribute once per baseline unit. Initial
+inventory counts stay unchanged. A remaining known initial occurrence, with all
+its required context still available, places its unit in `retained_unit_ids`,
+preventing a potential-loss claim.
 `potentially_lost_unit_ids` contains units with a supported discarded answer and no
-such remaining occurrence. Missing/failed/gray matches and context-only impacts
+such remaining occurrence. Failed/pending/gray matches on any discarded source
+can widen the provisional risk bound even without an initial occurrence there;
+context-only impacts
 remain in `unresolved_unit_ids` and `context_affected_unit_ids`.
 
 `potentially_lost_unique_units` is the nominal estimate for those known initial
