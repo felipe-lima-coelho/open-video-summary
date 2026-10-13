@@ -27,7 +27,8 @@ def analysis_manifest(snapshot, config, templates, generator, evaluator, provide
     """Hash source/code/settings without paths, secrets, clocks or run IDs."""
     package = Path(__file__).resolve().parents[2]
     paths = [*sorted((package / "core" / "summarizers").glob("information_*.py")),
-             *(package / "adapters" / name for name in ("llm.py", "information_llm.py", "typesafe.py", "information_schema.py")),
+             *(package / "adapters" / name for name in ("llm.py", "information_llm.py", "typesafe.py",
+                "decisions.py", "evaluation_http.py", "factory.py", "information_schema.py")),
              package / "contracts.py", package / "utils" / "providers.py"]
     source_files = {path.relative_to(package).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                     for path in paths}

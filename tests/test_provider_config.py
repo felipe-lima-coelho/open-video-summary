@@ -68,8 +68,12 @@ class ProviderConfigurationTests(unittest.TestCase):
 
     def test_evaluator_window_defaults_and_overrides_are_independent(self):
         defaults = load_evaluator_config(environ={}, env_file=self.env)
-        self.assertEqual((60, 80000, 1, 90), (defaults.request_limit, defaults.token_limit,
+        self.assertEqual((None, None, 60, 90), (defaults.request_limit, defaults.token_limit,
             defaults.rate_window_seconds, defaults.operation_timeout_seconds))
+        self.assertTrue(defaults.learn_rate_limits)
+        legacy = load_evaluator_config({"evaluator_provider": "typesafe"}, environ={}, env_file=self.env)
+        self.assertEqual((60, 80000, 1), (legacy.request_limit, legacy.token_limit, legacy.rate_window_seconds))
+        self.assertFalse(legacy.learn_rate_limits)
         self.env.write_text("OVS_EVALUATOR_REQUEST_LIMIT=55\nOVS_EVALUATOR_TOKEN_LIMIT=75000\n"
             "OVS_EVALUATOR_OPERATION_TIMEOUT_SECONDS=80\n", encoding="utf-8")
         selected = load_evaluator_config({"evaluator_request_limit": 40},
@@ -220,19 +224,52 @@ class EvaluatorConfigurationTests(unittest.TestCase):
             overrides, environ={} if environ is None else environ, env_file=self.env
         )
 
-    def test_default_role_selects_typesafe_with_pinned_jev_and_optional_key(self):
+    def test_default_role_selects_openai_decisions_with_optional_key(self):
         config = self.load()
-        self.assertEqual("typesafe", config.provider)
-        self.assertEqual("jev-1.13.0", config.model)
-        self.assertEqual("https://api.typesafe.ai", config.base_url)
+        self.assertEqual("openai", config.provider)
+        self.assertEqual("gpt-6-luna", config.model)
+        self.assertEqual("https://api.openai.com/v1", config.base_url)
         self.assertIsNone(config.api_key)
         self.assertEqual(30.0, config.timeout_seconds)
         self.assertEqual(2, config.max_attempts)
         evaluator = create_evaluator(config)
-        self.assertEqual("typesafe", evaluator.config.provider)
+        self.assertEqual("openai", evaluator.config.provider)
         self.assertEqual(config.model, evaluator.config.model)
         self.assertEqual(config.base_url, evaluator.config.base_url)
         self.assertEqual(0.5, evaluator.config.retry_backoff_seconds)
+
+    def test_explicit_legacy_provider_keeps_its_model_endpoint_and_limits(self):
+        config = self.load({"evaluator_provider": "typesafe"})
+        self.assertEqual(("typesafe", "jev-1.13.0", "https://api.typesafe.ai"),
+                         (config.provider, config.model, config.base_url))
+        evaluator = create_evaluator(config)
+        self.assertEqual((60, 80000, 1), (evaluator.config.request_limit,
+            evaluator.config.token_limit, evaluator.config.rate_window_seconds))
+
+    def test_decisions_model_cli_process_file_and_provider_defaults_are_independent_of_generator(self):
+        self.env.write_text("OVS_EVALUATOR_MODEL=file-decision-model\n", encoding="utf-8")
+        file = self.load()
+        process = self.load(environ={"OVS_EVALUATOR_MODEL": "process-decision-model", "OVS_LLM_MODEL": "generator-model"})
+        explicit = self.load({"evaluator_model": "cli-decision-model"},
+                             {"OVS_EVALUATOR_MODEL": "process-decision-model"})
+        default = self.load(environ={"OVS_EVALUATOR_MODEL": " "})
+        self.assertEqual(("file-decision-model", "process-decision-model", "cli-decision-model", "gpt-6-luna"),
+                         tuple(config.model for config in (file, process, explicit, default)))
+        for config in (file, process, explicit, default):
+            self.assertEqual("openai", config.provider)
+            self.assertEqual(config.model, create_evaluator(config).config.model)
+
+    def test_decisions_rate_learning_organization_and_project_precedence(self):
+        self.env.write_text("OVS_EVALUATOR_LEARN_RATE_LIMITS=true\nOVS_EVALUATOR_ORGANIZATION=file-org\n"
+                            "OVS_EVALUATOR_PROJECT=file-project\n", encoding="utf-8")
+        config = self.load({"evaluator_learn_rate_limits": False, "evaluator_project": "cli-project"},
+                           {"OVS_EVALUATOR_ORGANIZATION": "process-org", "OVS_EVALUATOR_PROJECT": "process-project",
+                            "OVS_LLM_ORGANIZATION": "generator-org", "OVS_LLM_PROJECT": "generator-project"})
+        evaluator = create_evaluator(config)
+        self.assertEqual((False, "process-org", "cli-project"), (evaluator.config.learn_rate_limits,
+            evaluator.config.organization, evaluator.config.project))
+        with self.assertRaises(ConfigurationError):
+            self.load(environ={"OVS_EVALUATOR_LEARN_RATE_LIMITS": "maybe"})
 
     def test_cli_process_file_precedence_covers_each_role_setting(self):
         self.env.write_text(
@@ -308,8 +345,8 @@ class EvaluatorConfigurationTests(unittest.TestCase):
         }
         config = self.load(environ=environment)
         self.assertIsNone(config.api_key)
-        self.assertEqual("jev-1.13.0", config.model)
-        self.assertEqual("https://api.typesafe.ai", config.base_url)
+        self.assertEqual("gpt-6-luna", config.model)
+        self.assertEqual("https://api.openai.com/v1", config.base_url)
         self.assertEqual(30.0, config.timeout_seconds)
         self.assertEqual(2, config.max_attempts)
         self.assertEqual(
@@ -379,6 +416,7 @@ class EvaluatorConfigurationTests(unittest.TestCase):
 
         evaluator = create_configured_evaluator(
             {
+                "evaluator_provider": "typesafe",
                 "evaluator_model": "jev-1.12.0",
                 "evaluator_base_url": "https://gateway.example/tenant",
                 "evaluator_timeout": 4.5,

@@ -49,20 +49,23 @@ class STTConfig:
 class EvaluatorConfig:
     """Independent, non-generative evaluator settings without exposed keys."""
 
-    provider: str = "typesafe"
-    model: str = "jev-1.13.0"
-    base_url: str = "https://api.typesafe.ai"
+    provider: str = "openai"
+    model: str = "gpt-6-luna"
+    base_url: str = "https://api.openai.com/v1"
     api_key: str | None = field(default=None, repr=False)
     timeout_seconds: float = 30.0
     max_attempts: int = 2
     retry_backoff_seconds: float = 0.5
     operation_timeout_seconds: float = 90.0
-    request_limit: float = 60.0
-    token_limit: int = 80000
-    rate_window_seconds: float = 1.0
+    request_limit: float | None = None
+    token_limit: int | None = None
+    rate_window_seconds: float = 60.0
     limit_group: str | None = None
     token_request_overhead: int = 256
     token_question_overhead: int = 128
+    learn_rate_limits: bool = True
+    organization: str | None = None
+    project: str | None = None
 
 
 @dataclass(frozen=True)
@@ -278,7 +281,7 @@ def load_evaluator_config(
     def get(argument: str, variable: str, default=None):
         return _setting(supplied, values, argument, variable, default)
 
-    provider = get("evaluator_provider", "OVS_EVALUATOR_PROVIDER", "typesafe").lower()
+    provider = get("evaluator_provider", "OVS_EVALUATOR_PROVIDER", "openai").lower()
     if provider not in EVALUATOR_PROVIDERS:
         raise ConfigurationError(f"Unknown evaluator provider '{provider}'.")
     definition = EVALUATOR_PROVIDERS[provider]
@@ -302,14 +305,14 @@ def load_evaluator_config(
         operation_timeout_seconds=_positive(
             get("evaluator_operation_timeout", "OVS_EVALUATOR_OPERATION_TIMEOUT_SECONDS", "90"),
             "OVS_EVALUATOR_OPERATION_TIMEOUT_SECONDS"),
-        request_limit=_positive(
-            get("evaluator_request_limit", "OVS_EVALUATOR_REQUEST_LIMIT", "60"),
+        request_limit=_optional_positive(
+            get("evaluator_request_limit", "OVS_EVALUATOR_REQUEST_LIMIT", definition.request_limit),
             "OVS_EVALUATOR_REQUEST_LIMIT"),
-        token_limit=_positive(
-            get("evaluator_token_limit", "OVS_EVALUATOR_TOKEN_LIMIT", "80000"),
+        token_limit=_optional_positive(
+            get("evaluator_token_limit", "OVS_EVALUATOR_TOKEN_LIMIT", definition.token_limit),
             "OVS_EVALUATOR_TOKEN_LIMIT", integer=True),
         rate_window_seconds=_positive(
-            get("evaluator_rate_window", "OVS_EVALUATOR_RATE_WINDOW_SECONDS", "1"),
+            get("evaluator_rate_window", "OVS_EVALUATOR_RATE_WINDOW_SECONDS", definition.rate_window_seconds),
             "OVS_EVALUATOR_RATE_WINDOW_SECONDS"),
         limit_group=get("evaluator_limit_group", "OVS_EVALUATOR_LIMIT_GROUP"),
         token_request_overhead=_token_overhead(
@@ -318,6 +321,11 @@ def load_evaluator_config(
         token_question_overhead=_token_overhead(
             get("evaluator_token_question_overhead", "OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD", "128"),
             "OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD"),
+        learn_rate_limits=_boolean(
+            get("evaluator_learn_rate_limits", "OVS_EVALUATOR_LEARN_RATE_LIMITS", definition.learn_rate_limits),
+            "OVS_EVALUATOR_LEARN_RATE_LIMITS"),
+        organization=get("evaluator_organization", "OVS_EVALUATOR_ORGANIZATION"),
+        project=get("evaluator_project", "OVS_EVALUATOR_PROJECT"),
     )
     try:
         endpoint = urlsplit(config.base_url)

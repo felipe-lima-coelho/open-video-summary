@@ -20,6 +20,10 @@ class ProviderDefinition:
     default_model: str
     base_url: str = ""
     key_variable: str = ""
+    request_limit: float | None = None
+    token_limit: int | None = None
+    rate_window_seconds: float = 60.0
+    learn_rate_limits: bool = False
 
 
 def _ollama(config: LLMConfig) -> LanguageModel:
@@ -68,6 +72,23 @@ def _typesafe(config: EvaluatorConfig) -> Evaluator:
     )
 
 
+def _openai_decisions(config: EvaluatorConfig) -> Evaluator:
+    from open_video_summary.adapters.decisions import DecisionsConfig, OpenAIDecisionsEvaluator
+
+    return OpenAIDecisionsEvaluator(DecisionsConfig(
+        api_key=config.api_key, model=config.model, base_url=config.base_url,
+        timeout_seconds=config.timeout_seconds, max_attempts=config.max_attempts,
+        retry_backoff_seconds=config.retry_backoff_seconds,
+        operation_timeout_seconds=config.operation_timeout_seconds,
+        request_limit=config.request_limit, token_limit=config.token_limit,
+        rate_window_seconds=config.rate_window_seconds, limit_group=config.limit_group,
+        token_request_overhead=config.token_request_overhead,
+        token_question_overhead=config.token_question_overhead,
+        learn_rate_limits=config.learn_rate_limits,
+        organization=config.organization, project=config.project,
+    ))
+
+
 LLM_PROVIDERS: dict[str, ProviderDefinition] = {
     "ollama": ProviderDefinition(_ollama, "gemma2", "http://localhost:11434"),
     "openai": ProviderDefinition(
@@ -81,8 +102,13 @@ STT_PROVIDERS: dict[str, ProviderDefinition] = {
     ),
 }
 EVALUATOR_PROVIDERS: dict[str, ProviderDefinition] = {
+    "openai": ProviderDefinition(
+        _openai_decisions, "gpt-6-luna", "https://api.openai.com/v1", "OVS_EVALUATOR_API_KEY",
+        learn_rate_limits=True,
+    ),
     "typesafe": ProviderDefinition(
-        _typesafe, "jev-1.13.0", "https://api.typesafe.ai", "OVS_EVALUATOR_API_KEY"
+        _typesafe, "jev-1.13.0", "https://api.typesafe.ai", "OVS_EVALUATOR_API_KEY",
+        request_limit=60.0, token_limit=80000, rate_window_seconds=1.0,
     ),
 }
 

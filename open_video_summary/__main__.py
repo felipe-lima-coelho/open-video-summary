@@ -468,8 +468,10 @@ def _information_arguments(parser):
     parser.add_argument("--information-acceptance", type=float, default=None)
     parser.add_argument("--information-gap-threshold", type=float, default=None)
     parser.add_argument("--information-equivalence", type=float, default=None)
-    parser.add_argument("--evaluator-provider", default=None)
-    parser.add_argument("--evaluator-model", default=None)
+    parser.add_argument("--evaluator-provider", default=None,
+                        help="Typed evaluator service (default openai Decisions; legacy typesafe is available).")
+    parser.add_argument("--evaluator-model", default=None,
+                        help="Evaluator model override, independent of --llm-model (OpenAI default gpt-6-luna).")
     parser.add_argument("--evaluator-base-url", default=None)
     parser.add_argument("--evaluator-timeout", type=float, default=None)
     parser.add_argument("--evaluator-max-attempts", type=int, default=None)
@@ -478,6 +480,9 @@ def _information_arguments(parser):
     parser.add_argument("--evaluator-token-limit", type=int, default=None)
     parser.add_argument("--evaluator-rate-window", type=float, default=None)
     parser.add_argument("--evaluator-limit-group", default=None)
+    parser.add_argument("--evaluator-learn-rate-limits", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--evaluator-organization", default=None)
+    parser.add_argument("--evaluator-project", default=None)
     parser.add_argument("--evaluator-token-request-overhead", type=int, default=None)
     parser.add_argument("--evaluator-token-question-overhead", type=int, default=None)
     parser.add_argument("--llm-provider", default=None)

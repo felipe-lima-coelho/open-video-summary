@@ -244,27 +244,27 @@ command continues to work without provider credentials when this option is absen
 The generator uses the existing Ollama/OpenAI adapters. An independently selected
 evaluator checks support, qualifiers and granularity, audits the original text
 for possible omissions, and compares candidate meanings. Its provider selects the
-API service: the currently implemented evaluator provider is `typesafe`, and
-`jev-1.13.0` is its pinned model. Set the evaluator role's key in the process
+API service: the default evaluator provider is `openai`, using the Decisions API
+with `gpt-6-luna`. Set an OpenAI-issued key for the evaluator role in the process
 environment or root `.env`, then use a **new report path**:
 
 ```powershell
-$env:OVS_EVALUATOR_API_KEY = "your-evaluator-key"
+$env:OVS_EVALUATOR_API_KEY = "your-openai-evaluator-key"
 .\.venv\Scripts\python.exe -m open_video_summary summarize `
   --dataset data/processed/bebe_real.json `
   --output outputs/bebe_real_summary.mp4 `
   --information-report outputs/bebe_real_information_run01.json `
   --information-csv outputs/bebe_real_information_run01.csv `
   --llm-provider ollama --llm-model gemma2 `
-  --evaluator-provider typesafe --evaluator-model jev-1.13.0
+  --evaluator-provider openai --evaluator-model gpt-6-luna
 ```
 
 The summary still needs its normal video and classifier assets. Ollama must have
 the configured generator model available. Alternatively, set `OPENAI_API_KEY`
 and replace the generator options with `--llm-provider openai --llm-model gpt-6-luna
---llm-reasoning-effort high`. With either generator, TypeSafe/Jev receives the
-selected transcript context, candidates and evaluation questions through HTTPS. OpenAI
-also receives extraction prompts and transcript context when selected; an Ollama
+--llm-reasoning-effort high`. With either generator, OpenAI Decisions receives the
+selected transcript context, candidates and evaluation questions through HTTPS.
+OpenAI generation also receives extraction prompts and transcript context when selected; an Ollama
 server receives them at its configured endpoint. No source video or audio is sent
 by the inventory analyzer. API services can incur usage charges.
 
@@ -290,7 +290,7 @@ running Whisper, or requiring FFmpeg:
   --dataset data/processed/bebe_real.json `
   --output outputs/bebe_real_information_text_run01.json `
   --llm-provider ollama --llm-model gemma2 `
-  --evaluator-provider typesafe --evaluator-model jev-1.13.0
+  --evaluator-provider openai --evaluator-model gpt-6-luna
 ```
 
 This command exits nonzero for a partial or failed analysis after saving its
@@ -375,7 +375,7 @@ Every resolved candidate still requires semantic validation. Timestamps are
 copied from source segments, with segment-level resolution, never estimated by a
 model. Context citations can resolve a reference but create no occurrence.
 
-Jev's source-fidelity checks receive readable assertion quotations, the whole
+The evaluator's source-fidelity checks receive readable assertion quotations, the whole
 original target, whole source segments for cited reference context, and the
 proposed claim. The source-owned scope exposes governing conditions, attribution,
 modality and negation outside a generator-selected quote. It does not authorize
@@ -508,7 +508,7 @@ specific unresolved evidence issue.
 issues. It is **not proof of complete extraction or calibrated semantic accuracy**.
 `partial` retains accepted units alongside pending work and provisional counts;
 `failed` distinguishes unusable analysis from a valid empty result. Only a
-completed empty inventory has `counts.valid_zero=true`. Jev's Noul value is a
+completed empty inventory has `counts.valid_zero=true`. The evaluator's Noul value is a
 probability of a yes answer; Choice's selected-option probability and its separate
 confidence metric are recorded distinctly. Neither is a measured accuracy rate in
 this application. The defaults below need validation on Portuguese annotations.
@@ -534,13 +534,23 @@ credentials. Evaluator settings use the independent `OVS_EVALUATOR_*` role;
 `OVS_EVALUATOR_API_KEY` is routed only to the selected evaluator and never falls
 back to generator/transcription keys. Provider constructors, model defaults and
 endpoint defaults are selected through `EVALUATOR_PROVIDERS` in the existing
-adapter factory. Only `typesafe` is currently implemented; registering another
+adapter factory. `openai` (Decisions) and legacy `typesafe` are implemented; registering another
 adapter requires the typed evaluator contract rather than the generative LLM
 interface. Unsupported names raise an explicit configuration error.
 
-TypeSafe defaults to the pinned `jev-1.13.0`, not a moving latest alias;
-`OVS_EVALUATOR_MODEL` or `--evaluator-model` can explicitly select another model.
-The stdlib HTTP adapter implements the official
+OpenAI Decisions defaults to `gpt-6-luna`; `OVS_EVALUATOR_MODEL` or
+`--evaluator-model` selects a different model independently of the generator.
+CLI settings override the process environment, then root `.env`, then provider
+defaults. The public beta currently documents only `gpt-6-luna`; an explicitly
+selected model must be supported by the Decisions endpoint. Boolean questions use
+literal true/false `choice` alternatives and retain P(true), while categorical
+questions preserve their stable option identifiers and descriptions. Refusals or
+invalid distributions fail visibly. The stdlib REST adapter needs no SDK upgrade.
+See [evaluator setup and model switching](docs/decisions_evaluator.md) and the
+official [Decisions guide](https://developers.openai.com/api/docs/guides/decisions).
+
+Explicit `--evaluator-provider typesafe` retains the pinned `jev-1.13.0` default
+and the stdlib adapter for the official
 [TypeSafe API](https://docs.typesafe.ai/api); model version and confidence semantics
 are described in [models](https://docs.typesafe.ai/models) and
 [confidence](https://docs.typesafe.ai/confidence).
@@ -573,16 +583,18 @@ are described in [models](https://docs.typesafe.ai/models) and
 | `--information-acceptance` | `OVS_INFORMATION_ACCEPTANCE` | 0.85 for each support/qualifier signal and atomicity |
 | `--information-gap-threshold` | `OVS_INFORMATION_GAP_THRESHOLD` | 0.65 yes signals a gap; at most 0.35 means no gap signaled |
 | `--information-equivalence` | `OVS_INFORMATION_EQUIVALENCE` | 0.90 selected relation probability |
-| `--evaluator-provider` | `OVS_EVALUATOR_PROVIDER` | `typesafe` |
-| `--evaluator-model` | `OVS_EVALUATOR_MODEL` | `jev-1.13.0` for TypeSafe |
-| No CLI credential flag | `OVS_EVALUATOR_API_KEY` | Unset; required when analysis runs |
-| `--evaluator-base-url` | `OVS_EVALUATOR_BASE_URL` | Selected provider endpoint; `https://api.typesafe.ai` for TypeSafe |
+| `--evaluator-provider` | `OVS_EVALUATOR_PROVIDER` | `openai` Decisions; explicit `typesafe` remains available |
+| `--evaluator-model` | `OVS_EVALUATOR_MODEL` | `gpt-6-luna` for OpenAI; `jev-1.13.0` for TypeSafe |
+| No CLI credential flag | `OVS_EVALUATOR_API_KEY` | Unset; an OpenAI-issued key for the default evaluator, independent of the generator key |
+| `--evaluator-base-url` | `OVS_EVALUATOR_BASE_URL` | `https://api.openai.com/v1` for OpenAI; `https://api.typesafe.ai` for TypeSafe |
 | `--evaluator-timeout` | `OVS_EVALUATOR_TIMEOUT_SECONDS` | 30 seconds per HTTP attempt |
-| `--evaluator-max-attempts` | `OVS_EVALUATOR_MAX_ATTEMPTS` | 2 attempts; TypeSafe allows at most 5 |
+| `--evaluator-max-attempts` | `OVS_EVALUATOR_MAX_ATTEMPTS` | 2 attempts; HTTP evaluators allow at most 5 |
 | `--evaluator-operation-timeout` | `OVS_EVALUATOR_OPERATION_TIMEOUT_SECONDS` | 90 seconds for the complete evaluation operation, including admission and retries |
-| `--evaluator-request-limit` | `OVS_EVALUATOR_REQUEST_LIMIT` | 60 physical requests per window |
-| `--evaluator-token-limit` | `OVS_EVALUATOR_TOKEN_LIMIT` | 80000 estimated input tokens per window |
-| `--evaluator-rate-window` | `OVS_EVALUATOR_RATE_WINDOW_SECONDS` | 1 second |
+| `--evaluator-request-limit` | `OVS_EVALUATOR_REQUEST_LIMIT` | Unset for OpenAI; TypeSafe defaults to 60 physical requests per window |
+| `--evaluator-token-limit` | `OVS_EVALUATOR_TOKEN_LIMIT` | Unset for OpenAI; TypeSafe defaults to 80000 estimated input tokens per window |
+| `--evaluator-rate-window` | `OVS_EVALUATOR_RATE_WINDOW_SECONDS` | 60 seconds for OpenAI; 1 second for TypeSafe |
+| `--evaluator-learn-rate-limits`, `--no-evaluator-learn-rate-limits` | `OVS_EVALUATOR_LEARN_RATE_LIMITS` | `true` for OpenAI minute-window header learning; `false` for TypeSafe |
+| `--evaluator-organization`, `--evaluator-project` | `OVS_EVALUATOR_ORGANIZATION`, `OVS_EVALUATOR_PROJECT` | Unset; independent OpenAI evaluator headers and controller scope |
 | `--evaluator-limit-group` | `OVS_EVALUATOR_LIMIT_GROUP` | Model identifier; explicitly group models sharing a service limit |
 | `--evaluator-token-request-overhead` | `OVS_EVALUATOR_TOKEN_REQUEST_OVERHEAD` | 256 predicted input tokens for unknown request templates (range 0–100000) |
 | `--evaluator-token-question-overhead` | `OVS_EVALUATOR_TOKEN_QUESTION_OVERHEAD` | 128 predicted input tokens per question for unknown question templates (range 0–100000) |
@@ -757,8 +769,8 @@ when conservative target-prefix call headroom is available. Their exact prompts
 and source context stay unchanged; responses, candidate validation, adaptive
 window recovery, IDs and subsequent audits are applied in the original order.
 Each independent provider endpoint has the configured physical-request bound,
-including foreground and lookahead generation. Jev validation can proceed while
-OpenAI generation occupies its slots. Roles using the same provider endpoint
+including foreground and lookahead generation. Evaluation and generation using
+different endpoints can occupy their own slots. Roles using the same provider endpoint
 share a conservative cap across accounts, models and rate groups; unidentified
 services also share slots. Existing provider rate controls remain independent of
 this concurrency cap. Local queue waiting occurs before the
@@ -783,7 +795,7 @@ regardless of completion order. All workers share the logical-call cap, so targe
 coverage at cap exhaustion can depend on scheduling. Isolated failed comparisons
 remain unexamined while other admitted comparisons can finish.
 
-Every physical send, including retries and all Jev validation, anchor, coverage
+Every physical send, including retries and all evaluator validation, anchor, coverage
 and pair requests, passes through one shared process-local controller for its
 provider, endpoint, credential, organization/project and limit group. Native
 worker forks keep private clients and records while sharing this controller.
@@ -793,9 +805,9 @@ other processes or external account users. A model family sharing a provider
 limit needs an explicit common limit group; project headers alone do not provide
 cross-group or organization-wide enforcement.
 
-Jev starts at 60 requests/s and 80000 estimated input tokens/s, leaving headroom
+Explicit legacy TypeSafe starts at 60 requests/s and 80000 estimated input tokens/s, leaving headroom
 against the user organization's 80 requests/s and 100000 input tokens/s allowance.
-OpenAI account limits are not assumed. Valid response headers establish local
+OpenAI Decisions and generation account limits are not assumed. Valid response headers establish local
 ceilings at 90% of their published request/token limits, conservatively reconcile
 remaining/reset allowances with in-flight reservations, and can only tighten
 explicit ceilings. Optional project token headers further tighten the group.
@@ -807,18 +819,18 @@ disable it when configuring another OpenAI window duration.
 Token predictions use the complete serialized UTF-8 request length plus a
 64-token envelope allowance, including questions, criteria, state and output
 schema. Provider templates are unknown, so this is not an upper bound or exact
-tokenization. Jev also predicts 256 tokens per request and 128 per question for
+tokenization. Typed evaluators also predict 256 tokens per request and 128 per question for
 unknown template overhead; both allowances are configurable. If reported input
 usage exceeds its prediction, the shared controller raises future predictions to
 125% of that observed ratio. Queued sends and retries use the current multiplier.
 Reported excess is charged to the shared window, including for invalid decisions
 with valid usage. Late excess feedback adds debt for a full window after arrival;
-lower usage never refunds capacity. Actual Jev output usage is reported separately
+lower usage never refunds capacity. Actual evaluator output usage is reported separately
 and does not consume its input-only token window. Records expose base prediction,
 multiplier before/after feedback, original reservation, accounted tokens, excess
 adjustment and whether usage is reported, unknown or invalid.
 
-OpenAI additionally reserves its explicit `max_output_tokens` ceiling (including
+OpenAI generation additionally reserves its explicit `max_output_tokens` ceiling (including
 reasoning); incomplete responses are rejected and recorded. A request predicted
 larger than a configured or learned token window fails visibly before sending,
 without truncating source text. Adjust the output budget, overhead or limit
@@ -829,7 +841,8 @@ consumers; these local controls are not an account-wide usage guarantee.
 
 A temporary 429 publishes a cooldown for both new requests and retries in the
 affected controller. Already sent requests finish; recovery is paced gradually
-over ten seconds. An OpenAI cooldown does not pause Jev. Isolated timeouts back
+over ten seconds. Separate evaluator/generator controllers keep independent
+cooldowns; roles sharing the same scope share feedback. Isolated timeouts back
 off only their operation. Three service-unavailable failures within 30 seconds
 pause the affected group for at least five seconds and then ramp its pace.
 `Retry-After` seconds and HTTP dates are minimum waits and are never clipped;
@@ -899,6 +912,7 @@ invariants, not scientific fidelity, coverage or superiority. Run them with:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_information*.py" -v
+.\.venv\Scripts\python.exe -m unittest tests.test_decisions_adapter -v
 .\.venv\Scripts\python.exe -m unittest tests.test_typesafe_adapter -v
 ```
 

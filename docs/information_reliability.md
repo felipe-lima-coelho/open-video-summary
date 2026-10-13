@@ -20,12 +20,12 @@ evaluator credential in the process environment or root `.env`, then give every
 run a new report path:
 
 ```powershell
-$env:OVS_EVALUATOR_API_KEY = "your-evaluator-key"
+$env:OVS_EVALUATOR_API_KEY = "your-openai-evaluator-key"
 .\.venv\Scripts\python.exe -m open_video_summary analyze-information `
   --dataset data/processed/bebe_real.json `
   --output outputs/information/bebe_reliability_run01.json `
   --llm-provider ollama --llm-model gemma2 `
-  --evaluator-provider typesafe --evaluator-model jev-1.13.0 `
+  --evaluator-provider openai --evaluator-model gpt-6-luna `
   --information-reproducible
 ```
 
